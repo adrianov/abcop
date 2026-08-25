@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 /// Bump whenever counting rules or output shape change so stale entries are
 /// never served.
 pub const RULES_REV: u32 = 2;
-const MAX_ENTRIES: usize = 2000;
+const MAX_ENTRIES: usize = 20_000;
 
 pub struct Cache {
     dir: PathBuf,
@@ -31,27 +31,18 @@ pub type CachedDiags = (
 );
 
 impl Cache {
-    /// Cache directory: `$ABCOP_CACHE_DIR` if set, otherwise
-    /// `<git toplevel | cwd>/.abcop_cache`.
+    /// Cache directory: `$ABCOP_CACHE_DIR` if set, otherwise the user-wide
+    /// XDG cache dir (`$XDG_CACHE_HOME/abcop`, falling back to
+    /// `~/.cache/abcop`). Keys hash the full file path, so entries from
+    /// different projects never collide.
     pub fn open(disabled: bool) -> Option<Cache> {
         if disabled {
             return None;
         }
-        let base = match std::env::var("ABCOP_CACHE_DIR") {
-            Ok(dir) => PathBuf::from(dir),
-            Err(_) => {
-                let root =
-                    crate::git_changes::git(&["rev-parse", "--show-toplevel"])
-                        .ok()
-                        .map(|s| s.trim().to_string())
-                        .unwrap_or_else(|| ".".to_string());
-                Path::new(&root).join(".abcop_cache")
-            }
-        };
+        let base = cache_base()?;
         fs::create_dir_all(&base).ok()?;
         Some(Cache { dir: base })
     }
-
     pub fn file_key(
         &self,
         path: &Path,
@@ -99,16 +90,7 @@ impl Cache {
 
     /// Keep the newest MAX_ENTRIES entries; drop the rest.
     pub fn prune(&self) {
-        let Ok(entries) = fs::read_dir(&self.dir) else {
-            return;
-        };
-        let mut by_age: Vec<(std::time::SystemTime, PathBuf)> = entries
-            .flatten()
-            .filter_map(|e| {
-                let m = e.metadata().ok()?.modified().ok()?;
-                Some((m, e.path()))
-            })
-            .collect();
+        let mut by_age = self.entry_ages();
         if by_age.len() <= MAX_ENTRIES {
             return;
         }
@@ -117,4 +99,39 @@ impl Cache {
             let _ = fs::remove_file(path);
         }
     }
+
+    fn entry_ages(&self) -> Vec<(std::time::SystemTime, PathBuf)> {
+        match fs::read_dir(&self.dir) {
+            Ok(entries) => entries.flatten().filter_map(entry_age).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+}
+
+/// `$ABCOP_CACHE_DIR`, else `$XDG_CACHE_HOME/abcop` when set, else
+/// `~/.cache/abcop`.
+fn cache_base() -> Option<PathBuf> {
+    if let Some(dir) = non_empty_env("ABCOP_CACHE_DIR") {
+        return Some(PathBuf::from(dir));
+    }
+    if let Some(dir) = non_empty_env("XDG_CACHE_HOME") {
+        return Some(PathBuf::from(dir).join("abcop"));
+    }
+    home_cache_dir()
+}
+
+/// Variable value without surrounding blanks; unset or blank means absent.
+fn non_empty_env(key: &str) -> Option<String> {
+    std::env::var(key).ok().map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
+}
+
+fn home_cache_dir() -> Option<PathBuf> {
+    let home = non_empty_env("HOME")?;
+    Some(PathBuf::from(home).join(".cache").join("abcop"))
+}
+
+/// Modification time and path of one cache entry; unreadable entries drop out.
+fn entry_age(e: fs::DirEntry) -> Option<(std::time::SystemTime, PathBuf)> {
+    let m = e.metadata().ok()?.modified().ok()?;
+    Some((m, e.path()))
 }

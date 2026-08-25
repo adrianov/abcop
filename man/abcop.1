@@ -104,8 +104,15 @@ Language;Extensions / files;Notes
 Ruby;.rb .rake .ru .gemspec plus Gemfile/Rakefile;full parity, directives
 Rust;.rs;spec defined in this manual
 .br
-Additional languages (JavaScript, TypeScript, C/C++, Objective\-C, Swift) are
-planned on the same engine; see the repository TODO list.
+JavaScript (.js .mjs .cjs .jsx), TypeScript (.ts .tsx .mts .cts), C/C++
+(.c .h .cc .cpp .cxx .hpp .hxx .hh), Objective\-C (.m .mm) and Swift
+(.swift) are scored on the same engine: named declarations are units,
+anonymous function\-likes roll into the enclosing unit, assignments count
+A, calls/new/message sends/yield/throw and arithmetic operators count B,
+and if/ternary/guard, loops, switch arms, catch clauses, comparisons and
+logical operators count C. Directives apply to `//` comments as well.
+UsedOnce/NeverUsed stay Ruby/Rust\-only: their safety proofs are
+language\-specific.
 .SH DIRECTIVES
 For scanned Ruby sources abcop honours RuboCop suppression comments, so
 existing codebases do not need new markers:
@@ -189,13 +196,17 @@ shallowest files first, then deeper ones. Within the same depth, files are
 ordered by parent directory, extension, and file name. Explicit file
 arguments always come first.
 .SH CACHING
-Results for unchanged files are cached under
-.IB . "abcop_cache"
-(next to the repository root, or
+Results for unchanged files are cached in the user\-wide XDG cache dir
+(
+.IB $XDG_CACHE_HOME/abcop
+or
+.IR ~/.cache/abcop ;
+override with
 .BR $ABCOP_CACHE_DIR ).
 Keys hash file contents plus tool version, rule revision, threshold,
-selected checks and path, so stale entries cannot be served. The cache is
-auto\-pruned to the 2000 newest entries.
+selected checks and path, so stale entries cannot be served and entries
+from different projects never collide. The cache is auto\-pruned to the
+20 000 newest entries.
 .TP
 .B \-\-no\-cache
 Disable reading and writing the cache.

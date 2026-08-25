@@ -183,8 +183,8 @@ rubocop itself.
 ## Caching
 
 Repeated scans of unchanged trees are served from a content-addressed
-cache (`.abcop_cache/` next to your repo root), making editor-loop and
-pre-commit invocations ~5× faster:
+user-wide cache (`$XDG_CACHE_HOME/abcop`, falling back to `~/.cache/abcop`),
+making editor-loop and pre-commit invocations ~5× faster:
 
 ```sh
 abcop lib          # cold: full analysis
@@ -193,10 +193,10 @@ abcop --no-cache   # force full analysis
 ```
 
 Cache keys include file contents, tool version, rule revision, threshold,
-selected checks and path — stale results are impossible. The directory is
-auto-pruned to the 2000 most recent entries; disable entirely with
-`--no-cache`, relocate with `ABCOP_CACHE_DIR=/path`. Add `.abcop_cache`
-to your `.gitignore`.
+selected checks and path — stale results are impossible, and entries from
+different projects never collide. The store is auto-pruned to the 20 000
+most recent entries; disable entirely with `--no-cache`, relocate with
+`ABCOP_CACHE_DIR=/path`. Nothing is ever written inside your project.
 
 ## Supported languages
 
@@ -204,7 +204,16 @@ to your `.gitignore`.
 |---|---|---|
 | Ruby | `.rb .rake .ru .gemspec`, `Gemfile`, `Rakefile`, … | AbcSize parity + directives + UsedOnce |
 | Rust | `.rs` | AbcSize + UsedOnce (spec in `src/rustlang.rs`) |
-| JavaScript, TypeScript, C/C++, Objective-C, Swift | — | planned on the same engine |
+| JavaScript | `.js .mjs .cjs .jsx` | AbcSize + directives |
+| TypeScript | `.ts .tsx .mts .cts` | AbcSize + directives |
+| C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | AbcSize + directives |
+| Objective-C | `.m .mm` | AbcSize + directives |
+| Swift | `.swift` | AbcSize + directives |
+
+C-family scoring lives in `src/clike.rs`: named declarations are units,
+anonymous function-likes roll into their enclosing unit, and nested units
+never double-count. UsedOnce/NeverUsed remain Ruby/Rust-only by design --
+their safety proofs are language-specific.
 
 ## Benchmarks
 
