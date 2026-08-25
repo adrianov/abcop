@@ -66,7 +66,7 @@ struct Found {
 /// The parallel walk itself is unordered; the deterministic order is
 /// produced by the final multi-key sort over the recorded depths.
 pub fn collect_files(paths: &[String]) -> Vec<std::path::PathBuf> {
-    let mut found: Vec<Found> = Vec::new();
+    let mut found = Vec::new();
     let mut roots = Vec::new();
     for raw in paths {
         let p = std::path::Path::new(raw);
@@ -167,7 +167,7 @@ impl ignore::ParallelVisitor for Collector<'_> {
             && is_code_path(entry.path())
             && let Ok(mut sink) = self.sink.lock()
         {
-            let depth = entry.depth() as usize;
+            let depth = entry.depth();
             sink.push(Found {
                 path: entry.into_path(),
                 depth,
