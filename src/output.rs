@@ -29,13 +29,20 @@ pub fn print_text(results: &[FileResult], max: f64) {
                 r.path, o.line, o.column, o.name
             );
         }
+        for o in &r.never_used {
+            println!(
+                "{}:{}:{}: W: NeverUsed: variable `{}` is assigned but never used",
+                r.path, o.line, o.column, o.name
+            );
+        }
         print_module_size(r);
     }
     println!(
-        "{} files, {} abc offenses, {} used-once offenses, {} module-size warnings",
+        "{} files, {} abc offenses, {} used-once offenses, {} never-used warnings, {} module-size warnings",
         results.len(),
         results.iter().map(|r| r.abc.len()).sum::<usize>(),
         results.iter().map(|r| r.used_once.len()).sum::<usize>(),
+        results.iter().map(|r| r.never_used.len()).sum::<usize>(),
         results.iter().filter_map(|r| r.oversize).count()
     );
 }
@@ -74,6 +81,21 @@ pub fn print_json(file_count: &usize, results: &[FileResult]) {
                 ),
                 score: Some(o.score),
                 vector: Some(o.vector.clone()),
+            });
+        }
+        for o in &r.never_used {
+            diags.push(Diagnostic {
+                file: r.path.clone(),
+                line: o.line,
+                column: o.column,
+                severity: "W",
+                rule: "NeverUsed",
+                message: format!(
+                    "variable `{}` is assigned but never used",
+                    o.name
+                ),
+                score: None,
+                vector: None,
             });
         }
         for o in &r.used_once {

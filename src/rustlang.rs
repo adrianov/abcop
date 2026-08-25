@@ -127,10 +127,13 @@ fn skip_subtree(kind: &str) -> bool {
 
 /// Identifiers bound by a let/for/if-let/match pattern.
 fn pattern_identifiers<'t>(pattern: Node<'t>, src: &[u8], out: &mut Vec<Node<'t>>) {
-    // a bare identifier IS the whole pattern (let total = ...)
+    // A bare identifier IS the whole pattern (let total = ...). Enum
+    // constructors (Some/None/Ok/Err) start uppercase and bind nothing.
     if pattern.kind() == "identifier" {
         let name = pattern.utf8_text(src).unwrap_or("");
-        if !name.starts_with('_') {
+        if !name.starts_with('_')
+            && name.chars().next().is_some_and(|c| c.is_lowercase())
+        {
             out.push(pattern);
         }
         return;
@@ -143,7 +146,9 @@ fn pattern_identifiers<'t>(pattern: Node<'t>, src: &[u8], out: &mut Vec<Node<'t>
         let k = child.kind();
         if k == "identifier" {
             let name = child.utf8_text(src).unwrap_or("");
-            if !name.starts_with('_') {
+            if !name.starts_with('_')
+                && name.chars().next().is_some_and(|c| c.is_lowercase())
+            {
                 out.push(child);
             }
         } else if k != "_" && !skip_subtree(k) {
@@ -161,7 +166,9 @@ fn match_binders<'t>(pattern: Node<'t>, src: &[u8], out: &mut Vec<Node<'t>>) {
             "if" => return,
             "identifier" => {
                 let name = child.utf8_text(src).unwrap_or("");
-                if !name.starts_with('_') {
+                if !name.starts_with('_')
+                    && name.chars().next().is_some_and(|c| c.is_lowercase())
+                {
                     out.push(child);
                 }
             }
@@ -447,6 +454,12 @@ impl<'m> Builder<'m> {
     #[allow(dead_code)]
     fn old_walk_removed(&mut self) {}
     fn walk_other(&mut self, n: Node, scope: usize, kind: &str) {
+        if matches!(kind, "string_literal" | "raw_string_literal" | "c_string_literal")
+        {
+            // format strings implicitly capture named arguments as reads
+            self.record_format_captures(n, scope);
+            return;
+        }
         if kind == "token_tree" {
             self.macro_depth += 1;
             self.walk_children(n, scope);
@@ -494,6 +507,61 @@ impl<'m> Builder<'m> {
         let mut cursor = n.walk();
         for child in n.children(&mut cursor) {
             self.walk_skip_ids(child, scope, skip);
+        }
+    }
+
+    /// Rust format strings implicitly capture named arguments:
+    /// `format!("{msg}")` reads `msg`. Record those as variable reads.
+    fn record_format_captures(&mut self, literal: Node, scope: usize) {
+        let text = self.text(literal).to_string();
+        let base = literal.start_byte();
+        let bytes = text.as_bytes();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'{' if i + 1 < bytes.len() && bytes[i + 1] == b'{' => {
+                    i += 2;
+                }
+                b'{' => {
+                    let mut j = i + 1;
+                    while j < bytes.len() && bytes[j] != b'}' {
+                        j += 1;
+                    }
+                    if j >= bytes.len() {
+                        return;
+                    }
+                    let content = &text[i + 1..j];
+                    let content_abs = base + i + 1;
+                    self.capture_idents(content, content_abs, scope);
+                    i = j + 1;
+                }
+                _ => i += 1,
+            }
+        }
+    }
+
+    fn capture_idents(&mut self, content: &str, content_abs_start: usize, scope: usize) {
+        let bytes = content.as_bytes();
+        let mut k = 0usize;
+        while k < bytes.len() {
+            let b = bytes[k];
+            if b == b'_' || b.is_ascii_alphabetic() {
+                let start = k;
+                while k < bytes.len()
+                    && (bytes[k] == b'_' || bytes[k].is_ascii_alphanumeric())
+                {
+                    k += 1;
+                }
+                let name = &content[start..k];
+                let abs = content_abs_start + start;
+                if !name.starts_with('_')
+                    && self.lookup(scope, abs, name).is_some()
+                {
+                    self.record_read(scope, name, abs);
+                }
+            } else {
+                k += 1;
+            }
         }
     }
 
@@ -1017,6 +1085,80 @@ mod tests {
         // a and b are params (Binding), rhs references them -> identifiers are
         // not pure per spec... `a * b + 1` contains identifier reads, so the
         // conservative purity gate rejects it.
+        assert!(f.is_empty());
+    }
+}
+
+/// NeverUsed for Rust sources: bindings with writes but zero reads.
+fn contains_macro(n: Node) -> bool {
+    let mut cursor = n.walk();
+    n.children(&mut cursor).any(|c| {
+        c.kind() == "macro_invocation" || contains_macro(c)
+    })
+}
+
+pub fn never_used_offenses(fm: &RustFile) -> Vec<crate::never_used::NeverUsedOffense> {
+    let mut out = Vec::new();
+    for scope in &fm.scopes {
+        for (name, e) in &scope.entries {
+            if e.reads.is_empty()
+                && !e.writes.is_empty()
+                && e.writes.iter().all(|w| match w.rhs {
+                    Some((_, byte)) => fm
+                        .tree
+                        .root_node()
+                        .descendant_for_byte_range(byte, byte)
+                        .map(|node| !contains_macro(node))
+                        .unwrap_or(true),
+                    None => true,
+                })
+            {
+                let first = e.writes.iter().map(|w| w.byte).min().unwrap_or(0);
+                let (line, column) = fm.line_col(first);
+                out.push(crate::never_used::NeverUsedOffense {
+                    line,
+                    column,
+                    name: name.to_string(),
+                });
+            }
+        }
+    }
+    out.sort_by_key(|o| (o.line, o.column));
+    out.dedup_by(|a, b| a.line == b.line && a.column == b.column && a.name == b.name);
+    out
+}
+
+#[cfg(test)]
+mod never_used_tests {
+    use super::*;
+    use crate::never_used::NeverUsedOffense;
+
+    fn never_flags(src: &str) -> Vec<NeverUsedOffense> {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .expect("rust grammar");
+        let tree = parser.parse(src, None).expect("tree");
+        never_used_offenses(&build(src.as_bytes().to_vec(), tree))
+    }
+
+    #[test]
+    fn rust_dead_let_is_flagged() {
+        let f = never_flags("fn f() {\n  let gone = 5;\n}");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].name, "gone");
+        assert_eq!(f[0].line, 2);
+    }
+
+    #[test]
+    fn rust_shadow_chain_with_final_read_ok() {
+        let f = never_flags("fn f() {\n  let n = 1;\n  let n = n + 1;\n  p(n);\n}");
+        assert!(f.is_empty());
+    }
+
+    #[test]
+    fn rust_read_inside_macro_counts_as_use() {
+        let f = never_flags("fn f() {\n  let v = 3;\n  println!(\"{}\", v);\n}");
         assert!(f.is_empty());
     }
 }

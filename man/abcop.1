@@ -74,6 +74,11 @@ disqualify it;
 .TP
 \(bu parameters, pattern bindings, rescue variables and re\-assigned or
 shadowed names never qualify.
+.SS NeverUsed
+A local variable that is assigned but never read is dead code. abcop
+reports it once per binding at the first write. Underscore-prefixed names,
+parameters, enum constructors in patterns and reads inside macro input or
+format-string captures all count as uses or exemptions as appropriate.
 .SS ModuleSize
 Production source files of 200 lines or more are flagged for extraction.
 Test suites and test directories, lockfiles, schema dumps and documentation

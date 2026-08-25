@@ -80,7 +80,7 @@ cargo build --release
 | `[PATH]...` | — | files or directories (walked gitignore-aware) |
 | `--format text\|json` | `text` | human-readable or machine-readable output |
 | `--max-abc N` | `17` | report functions scoring above N |
-| `--only abc\|used-once` | both | run a single check |
+| `--only abc\|used-once\|never-used` | all | run a single check |
 | `--dump-tree FILE` | — | debug: print the syntax tree of one file |
 
 Exit codes: `0` clean, `1` diagnostics reported, `2` usage error.
@@ -107,6 +107,7 @@ JSON diagnostics carry `file`, `line`, `column`, `severity`, `rule`,
 |---|---|---|
 | `Metrics/AbcSize` | C | function ABC score exceeds `--max-abc` |
 | `UsedOnce` | W | local assigned once, read once, safe to inline |
+| `NeverUsed` | W | local assigned but never read (dead writes) |
 | `ModuleSize` | W | production module ≥ 200 lines |
 
 ### Directives

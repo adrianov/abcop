@@ -4,6 +4,7 @@ mod abc;
 mod abc_count;
 mod directives;
 mod model;
+mod never_used;
 mod modulesize;
 mod output;
 mod dump;
@@ -20,6 +21,7 @@ use serde::Serialize;
 use crate::abc::AbcOffense;
 pub use crate::model::build;
 use paths::{collect_files, lang_for, parse_file_lang, Lang};
+use never_used::NeverUsedOffense;
 use used_once::UsedOnceOffense;
 
 #[derive(ClapParser)]
@@ -34,7 +36,7 @@ struct Cli {
     #[arg(long, default_value_t = 17.0)]
     max_abc: f64,
     /// Run only one of the checks
-    #[arg(long, value_parser = ["abc", "used-once"])]
+    #[arg(long, value_parser = ["abc", "used-once", "never-used"])]
     only: Option<String>,
     /// Debug: dump the syntax tree of a single file
     #[arg(long, hide = true)]
@@ -59,6 +61,7 @@ pub(crate) struct FileResult {
     pub path: String,
     pub abc: Vec<AbcOffense>,
     pub used_once: Vec<UsedOnceOffense>,
+    pub never_used: Vec<NeverUsedOffense>,
     pub oversize: Option<usize>,
 }
 
@@ -115,7 +118,10 @@ fn render(results: &[FileResult], format: &str, max: f64) {
 fn exit_code(results: &[FileResult]) -> ExitCode {
     let clean = results
         .iter()
-        .all(|r| r.abc.is_empty() && r.used_once.is_empty() && r.oversize.is_none());
+        .all(|r| {
+            r.abc.is_empty() && r.used_once.is_empty() && r.never_used.is_empty()
+                && r.oversize.is_none()
+        });
     if clean {
         ExitCode::SUCCESS
     } else {
@@ -128,6 +134,7 @@ fn analyze_one(path: &std::path::PathBuf, only: Option<&str>, max: f64) -> FileR
         path: path.display().to_string(),
         abc: Vec::new(),
         used_once: Vec::new(),
+        never_used: Vec::new(),
         oversize: None,
     };
     let Some((lang, src_bytes, tree)) = load(path) else {
@@ -151,6 +158,11 @@ fn analyze_one(path: &std::path::PathBuf, only: Option<&str>, max: f64) -> FileR
                 } else {
                     Vec::new()
                 },
+                never_used: if checks.want_never {
+                    rustlang::never_used_offenses(&fm)
+                } else {
+                    Vec::new()
+                },
                 oversize,
             }
         }
@@ -164,6 +176,9 @@ fn analyze_one(path: &std::path::PathBuf, only: Option<&str>, max: f64) -> FileR
             if checks.want_used {
                 r.used_once = ruby_used(&src_bytes, lang, &dirs);
             }
+            if checks.want_never {
+                r.never_used = ruby_never_used(&src_bytes, lang);
+            }
             r
         }
     }
@@ -173,6 +188,7 @@ fn analyze_one(path: &std::path::PathBuf, only: Option<&str>, max: f64) -> FileR
 struct Checks {
     want_abc: bool,
     want_used: bool,
+    want_never: bool,
 }
 
 impl Checks {
@@ -180,6 +196,7 @@ impl Checks {
         Self {
             want_abc: only.is_none_or(|o| o == "abc"),
             want_used: only.is_none_or(|o| o == "used-once"),
+            want_never: only.is_none_or(|o| o == "never-used"),
         }
     }
 }
@@ -189,6 +206,7 @@ fn blank_with(path: &std::path::Path) -> FileResult {
         path: path.display().to_string(),
         abc: Vec::new(),
         used_once: Vec::new(),
+        never_used: Vec::new(),
         oversize: None,
     }
 }
@@ -221,6 +239,11 @@ fn ruby_used(
         .into_iter()
         .filter(|o| !dirs.suppresses_all(o.line))
         .collect()
+}
+
+fn ruby_never_used(src_bytes: &[u8], lang: Lang) -> Vec<NeverUsedOffense> {
+    let Some(fm) = reparsed(src_bytes, lang) else { return Vec::new() };
+    never_used::analyze(&fm)
 }
 
 fn load(path: &std::path::PathBuf) -> Option<(Lang, Vec<u8>, tree_sitter::Tree)> {
