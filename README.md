@@ -1,13 +1,16 @@
 # abcop
 
-Fast, multi-language static-analysis linter built around the **ABC software
-metric** and a **used-once variable** detector. One parse per file, one walk
-per metric, file-level parallelism — no language runtime required.
+**Blazing-fast, opinionated, multi-language static-analysis linter**, written
+in Rust with speed as a design constraint — not an afterthought. One parse
+per file, one walk per metric, file-level parallelism, zero language runtime.
+Whole trees in milliseconds; every run prints how many files it analysed and
+how long it took.
 
 ```text
 lib/sinatra/base.rb:1254:0: C: Metrics/AbcSize: Assignment Branch Condition size for `error_block!` is too high. [<7, 14, 9> 18.06/17]
 lib/foo.rb:12:2: W: UsedOnce: variable `tmp` is assigned once and read once -- consider inlining
 src/main.rs: W: ModuleSize: 227 lines (>= 200) -- extract a coherent subunit
+132 files analysed in 0.09s, 7 abc offenses, 52 used-once offenses, 0 never-used warnings, 14 module-size warnings
 ```
 
 ## Why
@@ -21,6 +24,35 @@ Two questions come up constantly during code review:
 
 abcop answers both for whole trees in milliseconds, and a third rule keeps
 source modules from growing without bound.
+
+## Built for CI in LLM-driven development
+
+abcop exists to gate AI-written code in CI pipelines. That mission dictates
+the rules it ships:
+
+- **Short modules, low complexity — enforced, not wished for.** A 200-line
+  module budget and per-function ABC limits keep every file small enough to
+  hold in a human's head and inside an LLM's context window at once. Small,
+  simple units are what models modify most reliably and what reviewers can
+  actually read; when something breaks, the debugging surface is tiny by
+  construction.
+- **Fast enough to run on every push.** Sub-second whole-tree scans make
+  linting free at the exact moment code is written — including code written
+  by an agent that will never re-read it tomorrow.
+
+## Opinionated by design
+
+abcop takes sides and does not apologize for them:
+
+- **No formatting or style rules — deliberately.** Formatting carries no
+  signal about defects; it cannot catch a single bug, only generate churn,
+  bikeshedding and diff noise. Formatting belongs to formatters, style to
+  taste. abcop spends its budget exclusively on findings that change what you
+  do next: a function too big to review, a dead write, an inline candidate.
+- **Vendored, generated and test material is skipped by default.** Your CI
+  minutes and your attention belong to production code. Name such a path
+  explicitly when you genuinely want it reviewed.
+- **One threshold to argue about (`--max-abc`), not fifty knobs.**
 
 ## Inspiration
 
@@ -77,7 +109,7 @@ cargo build --release
 
 | Option | Default | Meaning |
 |---|---|---|
-| `[PATH]...` | — | files or directories (walked gitignore-aware) |
+| `[PATH]...` | `.` | files or directories (walked gitignore-aware); omitted = current directory. Default walks prune test/fixture trees (`spec/`, `tests/`, `fixtures/`, `testdata/`, …), vendored/build trees (`vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …), Rails `db/migrate/`, and generated files (`*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`) — name such a path explicitly to scan it |
 | `--format text\|json` | `text` | human-readable or machine-readable output |
 | `--max-abc N` | `17` | report functions scoring above N |
 | `--only abc\|used-once\|never-used` | all | run a single check |
@@ -197,6 +229,9 @@ abcop src           # dogfood: abcop lints itself
 `scripts/compare_parity.py` joins abcop JSON against
 `rubocop --format json` output to verify per-method ABC vectors.
 
-## Copyright
+## License
+
+Released under the **GNU General Public License v3 or later**
+(SPDX: `GPL-3.0-or-later`). See [LICENSE](LICENSE).
 
 Copyright © 2026 Peter Adrianov. All rights reserved.
