@@ -25,8 +25,8 @@ impl Checks {
     }
 }
 
-fn blank_with(path: &std::path::Path) -> crate::FileResult {
-    crate::FileResult {
+fn blank_with(path: &std::path::Path) -> crate::output::FileResult {
+    crate::output::FileResult {
         path: path.display().to_string(),
         abc: Vec::new(),
         used_once: Vec::new(),
@@ -46,7 +46,7 @@ pub(crate) fn analyze_one(
     max: f64,
     changeset: Option<&git_changes::Changeset>,
     cache: Option<&cache::Cache>,
-) -> crate::FileResult {
+) -> crate::output::FileResult {
     let mut r = blank_with(path);
     let Ok(src_buf) = load_src(path) else { return r };
     let src_bytes: &[u8] = &src_buf;
@@ -60,7 +60,7 @@ pub(crate) fn analyze_one(
     if let (Some(cache), false) = (cache, key.is_empty())
         && let Some((abc, used_once, never_used, oversize)) = cache.get(&key)
     {
-        return crate::FileResult {
+        return crate::output::FileResult {
             path: path.display().to_string(),
             abc,
             used_once,

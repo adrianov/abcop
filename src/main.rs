@@ -13,25 +13,23 @@ mod cache;
 mod git_changes;
 mod paths;
 mod rustlang;
+mod skip;
+mod walker;
 mod used_once;
 
 use std::process::ExitCode;
 
 use clap::Parser as ClapParser;
 use rayon::prelude::*;
-use serde::Serialize;
-
-use crate::abc::AbcOffense;
 pub use crate::model::build;
-use paths::collect_files;
+use output::FileResult;
 use pipeline::analyze_one;
-use never_used::NeverUsedOffense;
-use used_once::UsedOnceOffense;
+use walker::collect_files;
 
 #[derive(ClapParser)]
 #[command(name = "abcop", version, about = "Fast multi-language ABC-size + used-once-variable linter")]
 struct Cli {
-    /// Files or directories to analyse
+    /// Files or directories to analyse (default: current directory)
     paths: Vec<String>,
     /// Output format
     #[arg(long, value_parser = ["text", "json"], default_value = "text")]
@@ -60,37 +58,19 @@ struct Cli {
     dump_tree: bool,
 }
 
-#[derive(Serialize)]
-struct Diagnostic {
-    file: String,
-    line: usize,
-    column: usize,
-    severity: &'static str,
-    rule: &'static str,
-    message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    score: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    vector: Option<String>,
-}
-
-pub(crate) struct FileResult {
-    pub path: String,
-    pub abc: Vec<AbcOffense>,
-    pub used_once: Vec<UsedOnceOffense>,
-    pub never_used: Vec<NeverUsedOffense>,
-    pub oversize: Option<usize>,
-}
-
 fn main() -> ExitCode {
     // die quietly on SIGPIPE instead of panicking when piped into head/less
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
 
     if cli.dump_tree {
         return run_dump_tree(&cli.paths);
+    }
+    // No paths given: walk the current directory
+    if cli.paths.is_empty() {
+        cli.paths.push(String::from("."));
     }
     run_scan(&cli)
 }
@@ -110,10 +90,6 @@ fn run_dump_tree(paths: &[String]) -> ExitCode {
 }
 
 fn run_scan(cli: &Cli) -> ExitCode {
-    if cli.paths.is_empty() {
-        eprintln!("no paths given");
-        return ExitCode::from(2);
-    }
     let changeset = match resolve_scope(cli) {
         Ok(v) => v,
         Err(e) => {
@@ -125,6 +101,7 @@ fn run_scan(cli: &Cli) -> ExitCode {
     if let Some(cache) = cache.as_ref() {
         cache.prune();
     }
+    let start = std::time::Instant::now();
     let results = scan_paths(
         &cli.paths,
         cli.only.as_deref(),
@@ -132,7 +109,7 @@ fn run_scan(cli: &Cli) -> ExitCode {
         changeset.as_ref(),
         cache.as_ref(),
     );
-    render(&results, &cli.format, cli.max_abc);
+    render(&results, &cli.format, cli.max_abc, start.elapsed());
     exit_code(&results)
 }
 
@@ -171,10 +148,15 @@ fn scan_paths(
         .collect();    results
 }
 
-fn render(results: &[FileResult], format: &str, max: f64) {
+fn render(
+    results: &[FileResult],
+    format: &str,
+    max: f64,
+    elapsed: std::time::Duration,
+) {
     match format {
-        "json" => output::print_json(&results.len(), results),
-        _ => output::print_text(results, max),
+        "json" => output::print_json(&results.len(), results, elapsed),
+        _ => output::print_text(results, max, elapsed),
     }
 }
 

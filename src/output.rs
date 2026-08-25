@@ -2,7 +2,31 @@
 
 use crate::abc;
 use crate::modulesize;
-use crate::{Diagnostic, FileResult};
+use crate::abc::AbcOffense;
+use crate::never_used::NeverUsedOffense;
+use crate::used_once::UsedOnceOffense;
+
+#[derive(serde::Serialize)]
+pub(crate) struct Diagnostic {
+    pub file: String,
+    pub line: usize,
+    pub column: usize,
+    pub severity: &'static str,
+    pub rule: &'static str,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector: Option<String>,
+}
+
+pub(crate) struct FileResult {
+    pub path: String,
+    pub abc: Vec<AbcOffense>,
+    pub used_once: Vec<UsedOnceOffense>,
+    pub never_used: Vec<NeverUsedOffense>,
+    pub oversize: Option<usize>,
+}
 
 fn print_module_size(r: &FileResult) {
     if let Some(lines) = r.oversize {
@@ -15,7 +39,11 @@ fn print_module_size(r: &FileResult) {
     }
 }
 
-pub fn print_text(results: &[FileResult], max: f64) {
+pub fn print_text(
+    results: &[FileResult],
+    max: f64,
+    elapsed: std::time::Duration,
+) {
     for r in results {
         for o in &r.abc {
             println!(
@@ -38,8 +66,9 @@ pub fn print_text(results: &[FileResult], max: f64) {
         print_module_size(r);
     }
     println!(
-        "{} files, {} abc offenses, {} used-once offenses, {} never-used warnings, {} module-size warnings",
+        "{} files analysed in {:.2}s, {} abc offenses, {} used-once offenses, {} never-used warnings, {} module-size warnings",
         results.len(),
+        elapsed.as_secs_f64(),
         results.iter().map(|r| r.abc.len()).sum::<usize>(),
         results.iter().map(|r| r.used_once.len()).sum::<usize>(),
         results.iter().map(|r| r.never_used.len()).sum::<usize>(),
@@ -47,7 +76,11 @@ pub fn print_text(results: &[FileResult], max: f64) {
     );
 }
 
-pub fn print_json(file_count: &usize, results: &[FileResult]) {
+pub fn print_json(
+    file_count: &usize,
+    results: &[FileResult],
+    elapsed: std::time::Duration,
+) {
     let mut diags = Vec::new();
     for r in results {
         if let Some(lines) = r.oversize {
@@ -114,12 +147,17 @@ pub fn print_json(file_count: &usize, results: &[FileResult]) {
             });
         }
     }
-    let out = JsonOut { files: *file_count, diagnostics: &diags };
+    let out = JsonOut {
+        files: *file_count,
+        elapsed_ms: elapsed.as_millis(),
+        diagnostics: &diags,
+    };
     println!("{}", serde_json::to_string(&out).unwrap());
 }
 
 #[derive(serde::Serialize)]
 struct JsonOut<'a> {
     files: usize,
+    elapsed_ms: u128,
     diagnostics: &'a Vec<Diagnostic>,
 }
