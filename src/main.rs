@@ -1,5 +1,6 @@
 mod abc;
 mod model;
+mod rustlang;
 mod used_once;
 
 use std::fs;
@@ -53,7 +54,7 @@ struct FileResult {
     used_once: Vec<UsedOnceOffense>,
 }
 
-const RUBY_EXTS: [&str; 4] = ["rb", "rake", "ru", "gemspec"];
+const RUBY_EXTS: [&str; 5] = ["rb", "rake", "ru", "gemspec", "rs"];
 const RUBY_NAMES: [&str; 6] = [
     "Gemfile",
     "Rakefile",
@@ -96,15 +97,37 @@ fn collect_files(paths: &[String]) -> Vec<std::path::PathBuf> {
     files
 }
 
-fn parse_file(src: &[u8]) -> Option<tree_sitter::Tree> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Lang {
+    Ruby,
+    Rust,
+}
+
+fn lang_for(path: &std::path::Path) -> Lang {
+    if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+        Lang::Rust
+    } else {
+        Lang::Ruby
+    }
+}
+
+fn parse_file_lang(src: &[u8], lang: Lang) -> Option<tree_sitter::Tree> {
     let mut parser = Parser::new();
-    parser.set_language(&tree_sitter_ruby::LANGUAGE.into()).ok()?;
+    match lang {
+        Lang::Ruby => parser
+            .set_language(&tree_sitter_ruby::LANGUAGE.into())
+            .ok()?,
+        Lang::Rust => parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .ok()?,
+    }
     parser.parse(src, None)
 }
 
 fn dump_tree(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let src = fs::read(path)?;
-    let tree = parse_file(&src).ok_or("parse failed")?;
+    let lang = lang_for(std::path::Path::new(path));
+    let tree = parse_file_lang(&src, lang).ok_or("parse failed")?;
     fn esc(s: &str) -> String {
         s.replace('\n', "\\n")
     }
@@ -276,9 +299,28 @@ fn analyze_one_with_max(path: &std::path::PathBuf, only: Option<&str>, max: f64)
     let Ok(src_bytes) = fs::read(path) else {
         return empty;
     };
-    let Some(tree) = parse_file(&src_bytes) else {
+    let lang = lang_for(path);
+    let Some(tree) = parse_file_lang(&src_bytes, lang) else {
         return empty;
     };
+    if lang == Lang::Rust {
+        let fm = rustlang::build(src_bytes, tree);
+        let do_abc = only.is_none_or(|o| o == "abc");
+        let do_used = only.is_none_or(|o| o == "used-once");
+        return FileResult {
+            path: empty.path,
+            abc: if do_abc {
+                rustlang::analyze(&fm, max)
+            } else {
+                Vec::new()
+            },
+            used_once: if do_used {
+                rustlang::used_once_offenses(&fm)
+            } else {
+                Vec::new()
+            },
+        };
+    }
     let fm = build(src_bytes, tree);
     let do_abc = only.is_none_or(|o| o == "abc");
     let do_used = only.is_none_or(|o| o == "used-once");
