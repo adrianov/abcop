@@ -7,7 +7,9 @@ mod model;
 mod never_used;
 mod modulesize;
 mod output;
+mod pipeline;
 mod dump;
+mod git_changes;
 mod paths;
 mod rustlang;
 mod used_once;
@@ -20,7 +22,8 @@ use serde::Serialize;
 
 use crate::abc::AbcOffense;
 pub use crate::model::build;
-use paths::{collect_files, lang_for, parse_file_lang, Lang};
+use paths::collect_files;
+use pipeline::analyze_one;
 use never_used::NeverUsedOffense;
 use used_once::UsedOnceOffense;
 
@@ -38,6 +41,12 @@ struct Cli {
     /// Run only one of the checks
     #[arg(long, value_parser = ["abc", "used-once", "never-used"])]
     only: Option<String>,
+    /// Only report on functions whose lines are changed in git
+    #[arg(long)]
+    changed: bool,
+    /// Git base ref for --changed (default HEAD)
+    #[arg(long)]
+    base: Option<String>,
     /// Debug: dump the syntax tree of a single file
     #[arg(long, hide = true)]
     dump_tree: bool,
@@ -93,16 +102,36 @@ fn run_scan(cli: &Cli) -> ExitCode {
         eprintln!("no paths given");
         return ExitCode::from(2);
     }
-    let results = scan_paths(&cli.paths, cli.only.as_deref(), cli.max_abc);
+    let changeset = if cli.changed {
+        let base = cli.base.as_deref().unwrap_or("HEAD");
+        match git_changes::Changeset::load(base) {
+            Ok(cs) => Some(cs),
+            Err(e) => {
+                eprintln!("--changed: {e}");
+                return ExitCode::from(2);
+            }
+        }
+    } else {
+        None
+    };
+    let results = scan_paths(&cli.paths, cli.only.as_deref(), cli.max_abc, changeset.as_ref());
     render(&results, &cli.format, cli.max_abc);
     exit_code(&results)
 }
 
-fn scan_paths(paths: &[String], only: Option<&str>, max: f64) -> Vec<FileResult> {
-    let files = collect_files(paths);
+fn scan_paths(
+    paths: &[String],
+    only: Option<&str>,
+    max: f64,
+    changeset: Option<&git_changes::Changeset>,
+) -> Vec<FileResult> {
+    let files: Vec<std::path::PathBuf> = match changeset {
+        Some(cs) => cs.code_files(),
+        None => collect_files(paths),
+    };
     let mut results: Vec<FileResult> = files
         .par_iter()
-        .map(|p| analyze_one(p, only, max))
+        .map(|p| analyze_one(p, only, max, changeset))
         .collect();
     results.sort_by(|x, y| x.path.cmp(&y.path));
     results
@@ -129,132 +158,3 @@ fn exit_code(results: &[FileResult]) -> ExitCode {
     }
 }
 
-fn analyze_one(path: &std::path::PathBuf, only: Option<&str>, max: f64) -> FileResult {
-    let blank = FileResult {
-        path: path.display().to_string(),
-        abc: Vec::new(),
-        used_once: Vec::new(),
-        never_used: Vec::new(),
-        oversize: None,
-    };
-    let Some((lang, src_bytes, tree)) = load(path) else {
-        return blank;
-    };
-    let checks = Checks::new(only);
-    let oversize =
-        std::str::from_utf8(&src_bytes).ok().and_then(|t| modulesize::offense(t, &path.display().to_string()));
-    match lang {
-        Lang::Rust => {
-            let fm = rustlang::build(src_bytes, tree);
-            FileResult {
-                path: blank.path,
-                abc: if checks.want_abc {
-                    rustlang::analyze(&fm, max)
-                } else {
-                    Vec::new()
-                },
-                used_once: if checks.want_used {
-                    rustlang::used_once_offenses(&fm)
-                } else {
-                    Vec::new()
-                },
-                never_used: if checks.want_never {
-                    rustlang::never_used_offenses(&fm)
-                } else {
-                    Vec::new()
-                },
-                oversize,
-            }
-        }
-        Lang::Ruby => {
-            let text = String::from_utf8_lossy(&src_bytes).into_owned();
-            let dirs = directives::parse(&text);
-            let mut r = blank_with(path);
-            if checks.want_abc {
-                r.abc = ruby_abc(&src_bytes, lang, &dirs, max);
-            }
-            if checks.want_used {
-                r.used_once = ruby_used(&src_bytes, lang, &dirs);
-            }
-            if checks.want_never {
-                r.never_used = ruby_never_used(&src_bytes, lang);
-            }
-            r
-        }
-    }
-}
-
-
-struct Checks {
-    want_abc: bool,
-    want_used: bool,
-    want_never: bool,
-}
-
-impl Checks {
-    fn new(only: Option<&str>) -> Self {
-        Self {
-            want_abc: only.is_none_or(|o| o == "abc"),
-            want_used: only.is_none_or(|o| o == "used-once"),
-            want_never: only.is_none_or(|o| o == "never-used"),
-        }
-    }
-}
-
-fn blank_with(path: &std::path::Path) -> FileResult {
-    FileResult {
-        path: path.display().to_string(),
-        abc: Vec::new(),
-        used_once: Vec::new(),
-        never_used: Vec::new(),
-        oversize: None,
-    }
-}
-
-fn reparsed(src_bytes: &[u8], lang: Lang) -> Option<crate::model::FileModel> {
-    let tree = parse_file_lang(src_bytes, lang)?;
-    Some(model::build(src_bytes.to_vec(), tree))
-}
-
-fn ruby_abc(
-    src_bytes: &[u8],
-    lang: Lang,
-    dirs: &directives::Directives,
-    max: f64,
-) -> Vec<AbcOffense> {
-    let Some(fm) = reparsed(src_bytes, lang) else { return Vec::new() };
-    abc::analyze(&fm, max)
-        .into_iter()
-        .filter(|o| !dirs.suppresses_abc(o.line))
-        .collect()
-}
-
-fn ruby_used(
-    src_bytes: &[u8],
-    lang: Lang,
-    dirs: &directives::Directives,
-) -> Vec<UsedOnceOffense> {
-    let Some(fm) = reparsed(src_bytes, lang) else { return Vec::new() };
-    used_once::analyze(&fm)
-        .into_iter()
-        .filter(|o| !dirs.suppresses_all(o.line))
-        .collect()
-}
-
-fn ruby_never_used(src_bytes: &[u8], lang: Lang) -> Vec<NeverUsedOffense> {
-    let Some(fm) = reparsed(src_bytes, lang) else { return Vec::new() };
-    never_used::analyze(&fm)
-}
-
-fn load(path: &std::path::PathBuf) -> Option<(Lang, Vec<u8>, tree_sitter::Tree)> {
-    let file = std::fs::File::open(path).ok()?;
-    let cap = file.metadata().ok()?.len() as usize;
-    let mut src_bytes = Vec::with_capacity(cap);
-    {
-        use std::io::Read;
-        (&file).read_to_end(&mut src_bytes).ok()?;
-    }
-    let lang = lang_for(path);
-    let tree = parse_file_lang(&src_bytes, lang)?;
-    Some((lang, src_bytes, tree))
-}

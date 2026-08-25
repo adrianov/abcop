@@ -355,7 +355,7 @@ impl<'m> Builder<'m> {
                 self.handle_assign(n, scope)
             }
             "match_arm" => self.handle_match_arm(n, scope),
-            _ => self.handle_loop_or_let_binding(n, scope, kind),
+            _ => self.handle_loop_or_let_binding(n, scope),
         }
     }
 
@@ -438,10 +438,9 @@ impl<'m> Builder<'m> {
         }
     }
 
-    fn handle_loop_or_let_binding(&mut self, n: Node, scope: usize, kind: &str) {
-        let pattern_field = if kind == "for_expression" { "pattern" } else { "pattern" };
-        self.bind_pattern(n.child_by_field_name(pattern_field), scope, IntroKind::Binding);
-        let pat = n.child_by_field_name(pattern_field);
+    fn handle_loop_or_let_binding(&mut self, n: Node, scope: usize) {
+        self.bind_pattern(n.child_by_field_name("pattern"), scope, IntroKind::Binding);
+        let pat = n.child_by_field_name("pattern");
         let mut cursor = n.walk();
         for child in n.children(&mut cursor) {
             if pat.map(|p| p.id()) == Some(child.id()) {
@@ -788,25 +787,29 @@ pub fn analyze(fm: &RustFile, max: f64) -> Vec<AbcOffense> {
         .collect()
 }
 
+fn score_unit(fm: &RustFile, unit: Node, name: &str) -> AbcOffense {
+    let mut calc = Calc { fm, a: 0, b: 0, c: 0 };
+    if let Some(body) = unit.child_by_field_name("body") {
+        calc.walk(body);
+    }
+    let raw = ((calc.a * calc.a + calc.b * calc.b + calc.c * calc.c) as f64).sqrt();
+    let pos = unit.start_position();
+    AbcOffense {
+        line: pos.row + 1,
+        end_line: unit.end_position().row + 1,
+        column: pos.column,
+        name: name.to_string(),
+        score: (raw * 100.0).round() / 100.0,
+        vector: crate::abc::fmt_vector(calc.a, calc.b, calc.c),
+    }
+}
+
 pub fn all_scores(fm: &RustFile) -> Vec<AbcOffense> {
     let mut offenses = Vec::new();
     visit_units(fm, fm.tree.root_node(), &mut |unit, name| {
-        let Some(body) = unit.child_by_field_name("body") else {
-            return;
-        };
-        let mut calc = Calc { fm, a: 0, b: 0, c: 0 };
-        calc.walk(body);
-        let raw =
-            ((calc.a * calc.a + calc.b * calc.b + calc.c * calc.c) as f64).sqrt();
-        let score = (raw * 100.0).round() / 100.0;
-        let pos = unit.start_position();
-        offenses.push(AbcOffense {
-            line: pos.row + 1,
-            column: pos.column,
-            name: name.to_string(),
-            score,
-            vector: format!("<{}, {}, {}>", calc.a, calc.b, calc.c),
-        });
+        if unit.child_by_field_name("body").is_some() {
+            offenses.push(score_unit(fm, unit, name));
+        }
     });
     offenses.sort_by_key(|o| (o.line, o.column));
     offenses

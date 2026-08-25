@@ -32,6 +32,7 @@ static ITERATING: &[&str] = &[
 #[derive(Debug)]
 pub struct AbcOffense {
     pub line: usize,
+    pub end_line: usize,
     pub column: usize,
     pub name: String,
     pub score: f64,
@@ -205,10 +206,11 @@ fn score_unit(ctx: &ScoreCtx, fm: &FileModel, unit: Node, name: &str) -> AbcOffe
     let pos = unit.start_position();
     AbcOffense {
         line: pos.row + 1,
+        end_line: unit.end_position().row + 1,
         column: pos.column,
         name: name.to_string(),
         score: (raw * 100.0).round() / 100.0,
-        vector: format!("<{}, {}, {}>", calc.a, calc.b, calc.c),
+        vector: fmt_vector(calc.a, calc.b, calc.c),
     }
 }
 
@@ -227,15 +229,19 @@ fn visit_units(fm: &FileModel, n: Node, f: &mut impl FnMut(Node, &str)) {
     }
 }
 
-pub fn all_scores(fm: &FileModel) -> Vec<AbcOffense> {
-    let ctx = ScoreCtx {
+fn build_ctx(fm: &FileModel) -> ScoreCtx {
+    ScoreCtx {
         csend_recv: fm
             .csend_sites
             .iter()
             .map(|(byte, name, _)| (*byte, name.clone()))
             .collect(),
         vcall: fm.vcall_sites.iter().copied().collect(),
-    };
+    }
+}
+
+pub fn all_scores(fm: &FileModel) -> Vec<AbcOffense> {
+    let ctx = build_ctx(fm);
     let mut offenses = Vec::new();
     visit_units(fm, fm.tree.root_node(), &mut |unit, name| {
         if unit.child_by_field_name("body").is_some() {
@@ -251,6 +257,10 @@ pub fn analyze(fm: &FileModel, max: f64) -> Vec<AbcOffense> {
         .into_iter()
         .filter(|o| o.score > max)
         .collect()
+}
+
+pub(crate) fn fmt_vector(a: u32, b: u32, c: u32) -> String {
+    format!("<{}, {}, {}>", a, b, c)
 }
 
 /// C `%g`-style formatting with 4 significant digits.
