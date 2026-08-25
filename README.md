@@ -82,6 +82,7 @@ cargo build --release
 | `--max-abc N` | `17` | report functions scoring above N |
 | `--only abc\|used-once\|never-used` | all | run a single check |
 | `--changed [--base REF]` | off | scan only git-changed files/functions vs REF (HEAD); hunks widened with `-W`, so a whole touched function counts as changed |
+| `--mr` | off | scan your current MR: since branching from master/main (merge-base), or the last 24 hours when committing directly onto it. Auto-detects origin/main, origin/master, main, master |
 | `--dump-tree FILE` | — | debug: print the syntax tree of one file |
 
 Exit codes: `0` clean, `1` diagnostics reported, `2` usage error.
@@ -110,6 +111,21 @@ JSON diagnostics carry `file`, `line`, `column`, `severity`, `rule`,
 | `UsedOnce` | W | local assigned once, read once, safe to inline |
 | `NeverUsed` | W | local assigned but never read (dead writes) |
 | `ModuleSize` | W | production module ≥ 200 lines |
+
+### Changed-code workflow
+
+Review what you just wrote instead of a decade of legacy:
+
+```sh
+git checkout -b feature/x     # branch off main
+# ... work ...
+abcop --mr --only abc src     # only functions you touched on this branch
+```
+
+Committing straight to main? The same command switches to a 24-hour window
+automatically (`<default-branch>@{24.hours.ago}`). Force an explicit base with
+`--base <ref>`. `--changed` remains available for plain working-tree diffs vs
+any ref.
 
 ### Directives
 

@@ -95,6 +95,60 @@ fn add_untracked(files: &mut BTreeMap<String, Lines>) {
     }
 }
 
+const DEFAULT_BRANCHES: [&str; 4] =
+    ["origin/main", "origin/master", "main", "master"];
+
+fn rev_exists(rev: &str) -> bool {
+    git(&["rev-parse", "--verify", "--quiet", &format!("{rev}^{{commit}}")])
+        .is_ok()
+}
+
+pub fn current_branch() -> Option<String> {
+    let b = git(&["rev-parse", "--abbrev-ref", "HEAD"]).ok()?;
+    let t = b.trim();
+    (!t.is_empty() && t != "HEAD").then(|| t.to_string())
+}
+
+fn detect_default_branch() -> Option<&'static str> {
+    DEFAULT_BRANCHES.iter().copied().find(|c| rev_exists(c))
+}
+
+/// Resolve the diff base for an "MR scope": when on a topic branch, the
+/// merge-base with the default branch; when committing straight onto the
+/// default branch, its tip 24 hours ago.
+pub fn mr_base() -> Result<(String, String), String> {
+    let Some(default_branch) = detect_default_branch() else {
+        return Err("cannot find master/main (tried origin/main,                     origin/master, main, master); pass --base"
+            .to_string());
+    };
+    let branch = current_branch().unwrap_or_else(|| "HEAD".to_string());
+    let bare_default = default_branch.strip_prefix("origin/").unwrap_or(default_branch);
+    let on_default = branch == bare_default || branch == default_branch;
+
+    if on_default || branch == "HEAD" {
+        let aged = format!("{default_branch}@{{24.hours.ago}}");
+        if rev_exists(&aged) {
+            return Ok((aged, format!("last 24 hours on {default_branch}")));
+        }
+        return Err(format!(
+            "no commits in the last 24 hours on {default_branch};              pass --base <ref> or use --changed"
+        ));
+    }
+
+    let mb = git(&["merge-base", "HEAD", default_branch])?
+        .trim()
+        .to_string();
+    if mb.is_empty() {
+        return Err(format!(
+            "git merge-base failed for {branch} vs {default_branch}"
+        ));
+    }
+    Ok((
+        mb,
+        format!("branch {branch}: changes since branching from {default_branch}"),
+    ))
+}
+
 fn normalize(path: &str) -> String {
     path.replace('\\', "/")
 }

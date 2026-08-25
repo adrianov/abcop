@@ -153,6 +153,14 @@ function context, so an entire touched function counts as changed.
 Git ref used by
 .BR \-\-changed .
 .TP
+.B \-\-mr
+Scan your current merge request: changes since branching from master/main
+(merge\-base), or \-\- when committing directly onto the default branch \-\-
+changes of the last 24 hours
+.RB ( default_branch "@{" 24.hours.ago "})."
+The default branch is detected among origin/main, origin/master, main and
+master.
+.TP
 .B \-\-dump\-tree
 Debug aid: print the tree\-sitter syntax tree of a single file and exit.
 .TP

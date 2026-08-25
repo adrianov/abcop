@@ -44,6 +44,10 @@ struct Cli {
     /// Only report on functions whose lines are changed in git
     #[arg(long)]
     changed: bool,
+    /// Scan the last MR: changes since branching from master/main, or the
+    /// last 24 hours when committing directly onto it
+    #[arg(long, conflicts_with = "changed")]
+    mr: bool,
     /// Git base ref for --changed (default HEAD)
     #[arg(long)]
     base: Option<String>,
@@ -102,21 +106,32 @@ fn run_scan(cli: &Cli) -> ExitCode {
         eprintln!("no paths given");
         return ExitCode::from(2);
     }
-    let changeset = if cli.changed {
-        let base = cli.base.as_deref().unwrap_or("HEAD");
-        match git_changes::Changeset::load(base) {
-            Ok(cs) => Some(cs),
-            Err(e) => {
-                eprintln!("--changed: {e}");
-                return ExitCode::from(2);
-            }
+    let changeset = match resolve_scope(cli) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::from(2);
         }
-    } else {
-        None
     };
     let results = scan_paths(&cli.paths, cli.only.as_deref(), cli.max_abc, changeset.as_ref());
     render(&results, &cli.format, cli.max_abc);
     exit_code(&results)
+}
+
+/// Resolve which git-scope (if any) the user selected.
+fn resolve_scope(
+    cli: &Cli,
+) -> Result<Option<git_changes::Changeset>, String> {
+    if cli.mr {
+        let (base, label) = git_changes::mr_base()?;
+        eprintln!("--mr scope: {label} (base {base})");
+        return git_changes::Changeset::load(&base).map(Some);
+    }
+    if cli.changed {
+        let base = cli.base.as_deref().unwrap_or("HEAD");
+        return git_changes::Changeset::load(base).map(Some);
+    }
+    Ok(None)
 }
 
 fn scan_paths(
