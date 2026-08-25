@@ -147,6 +147,24 @@ end
 `rubocop:disable-next …` is editor-style and intentionally ignored, matching
 rubocop itself.
 
+## Caching
+
+Repeated scans of unchanged trees are served from a content-addressed
+cache (`.abcop_cache/` next to your repo root), making editor-loop and
+pre-commit invocations ~5× faster:
+
+```sh
+abcop lib          # cold: full analysis
+abcop lib          # warm: unchanged files load from cache (~5x faster)
+abcop --no-cache   # force full analysis
+```
+
+Cache keys include file contents, tool version, rule revision, threshold,
+selected checks and path — stale results are impossible. The directory is
+auto-pruned to the 2000 most recent entries; disable entirely with
+`--no-cache`, relocate with `ABCOP_CACHE_DIR=/path`. Add `.abcop_cache`
+to your `.gitignore`.
+
 ## Supported languages
 
 | Language | Files | Status |

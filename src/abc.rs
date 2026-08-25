@@ -29,7 +29,7 @@ static ITERATING: &[&str] = &[
     "transform_values!", "uniq", "with_index", "with_object", "zip",
 ];
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct AbcOffense {
     pub line: usize,
     pub end_line: usize,

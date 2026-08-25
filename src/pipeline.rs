@@ -3,6 +3,7 @@
 use std::fs;
 
 use crate::directives;
+use crate::cache;
 use crate::git_changes;
 pub(crate) use crate::paths::Lang;
 use crate::paths::{lang_for, parse_file_lang};
@@ -44,12 +45,29 @@ pub(crate) fn analyze_one(
     only: Option<&str>,
     max: f64,
     changeset: Option<&git_changes::Changeset>,
+    cache: Option<&cache::Cache>,
 ) -> crate::FileResult {
     let mut r = blank_with(path);
     let Ok(src_bytes) = fs_read_exact(path) else { return r };
     r.oversize = std::str::from_utf8(&src_bytes)
         .ok()
         .and_then(|t| crate::modulesize::offense(t, &r.path));
+
+    let key = cache
+        .map(|c| c.file_key(path, &src_bytes, only, max))
+        .unwrap_or_default();
+    if let (Some(cache), false) = (cache, key.is_empty())
+        && let Some((abc, used_once, never_used, oversize)) = cache.get(&key)
+    {
+        return crate::FileResult {
+            path: path.display().to_string(),
+            abc,
+            used_once,
+            never_used,
+            oversize,
+        };
+    }
+
     let Some(tree) = parse_file_lang(&src_bytes, lang_for(path)) else {
         return r;
     };
@@ -67,6 +85,12 @@ pub(crate) fn analyze_one(
             }
             if checks.want_never {
                 r.never_used = crate::rustlang::never_used_offenses(&fm);
+            }
+            if let Some(cache) = cache {
+                cache.store(
+                    &key,
+                    &r.abc, &r.used_once, &r.never_used, r.oversize,
+                );
             }
         }
         Lang::Ruby => {
@@ -86,6 +110,12 @@ pub(crate) fn analyze_one(
             }
             if checks.want_never {
                 r.never_used = crate::never_used::analyze(&fm);
+            }
+            if let Some(cache) = cache {
+                cache.store(
+                    &key,
+                    &r.abc, &r.used_once, &r.never_used, r.oversize,
+                );
             }
         }
     }

@@ -9,6 +9,7 @@ mod modulesize;
 mod output;
 mod pipeline;
 mod dump;
+mod cache;
 mod git_changes;
 mod paths;
 mod rustlang;
@@ -51,6 +52,9 @@ struct Cli {
     /// Git base ref for --changed (default HEAD)
     #[arg(long)]
     base: Option<String>,
+    /// Disable the on-disk result cache
+    #[arg(long)]
+    no_cache: bool,
     /// Debug: dump the syntax tree of a single file
     #[arg(long, hide = true)]
     dump_tree: bool,
@@ -117,7 +121,17 @@ fn run_scan(cli: &Cli) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let results = scan_paths(&cli.paths, cli.only.as_deref(), cli.max_abc, changeset.as_ref());
+    let cache = if cli.no_cache { None } else { crate::cache::Cache::open(false) };
+    if let Some(cache) = cache.as_ref() {
+        cache.prune();
+    }
+    let results = scan_paths(
+        &cli.paths,
+        cli.only.as_deref(),
+        cli.max_abc,
+        changeset.as_ref(),
+        cache.as_ref(),
+    );
     render(&results, &cli.format, cli.max_abc);
     exit_code(&results)
 }
@@ -138,11 +152,13 @@ fn resolve_scope(
     Ok(None)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn scan_paths(
     paths: &[String],
     only: Option<&str>,
     max: f64,
     changeset: Option<&git_changes::Changeset>,
+    cache: Option<&crate::cache::Cache>,
 ) -> Vec<FileResult> {
     let files: Vec<std::path::PathBuf> = match changeset {
         Some(cs) => cs.code_files(),
@@ -151,7 +167,7 @@ fn scan_paths(
     // par_iter keeps the caller's (BFS + extension/name) order intact
     let results: Vec<FileResult> = files
         .par_iter()
-        .map(|p| analyze_one(p, only, max, changeset))
+        .map(|p| analyze_one(p, only, max, changeset, cache))
         .collect();    results
 }
 

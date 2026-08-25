@@ -95,21 +95,23 @@ pub fn collect_files(paths: &[String]) -> Vec<std::path::PathBuf> {
         builder.build_parallel().visit(&mut collector);
     }
 
-    let mut found: Vec<Found> = discovered.into_inner().unwrap_or_default();
+    // Merge explicit file arguments (depth 0) with parallel discovery.
+    let mut all: Vec<Found> = found;
+    all.extend(discovered.into_inner().unwrap_or_default());
 
     // Stable multi-key sort turns the unordered parallel discovery into a
     // deterministic breadth-first listing: shallowest entries first, files
     // grouped per directory, then by extension and file name.
-    found.sort_by(|a, b| {
+    all.sort_by(|a, b| {
         a.depth
             .cmp(&b.depth)
             .then_with(|| a.parent().cmp(&b.parent()))
             .then_with(|| a.ext_key().cmp(&b.ext_key()))
             .then_with(|| a.name_key().cmp(&b.name_key()))
     });
-    found.dedup_by(|a, b| a.path == b.path);
+    all.dedup_by(|a, b| a.path == b.path);
 
-    found.into_iter().map(|f| f.path).collect()
+    all.into_iter().map(|f| f.path).collect()
 }
 
 trait PathKey {

@@ -8,7 +8,7 @@ use tree_sitter::Node;
 
 use crate::model::{FileModel, IntroKind, WriteKind};
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct UsedOnceOffense {
     pub line: usize,
     pub column: usize,
