@@ -95,8 +95,7 @@ pub fn collect_files(paths: &[String]) -> Vec<std::path::PathBuf> {
         builder.build_parallel().visit(&mut collector);
     }
 
-    let mut found = found;
-    found.extend(discovered.into_inner().unwrap_or_default());
+    let mut found: Vec<Found> = discovered.into_inner().unwrap_or_default();
 
     // Stable multi-key sort turns the unordered parallel discovery into a
     // deterministic breadth-first listing: shallowest entries first, files
