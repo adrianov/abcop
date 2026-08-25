@@ -29,7 +29,7 @@ use never_used::NeverUsedOffense;
 use used_once::UsedOnceOffense;
 
 #[derive(ClapParser)]
-#[command(name = "abcop", about = "Fast multi-language ABC-size + used-once-variable linter")]
+#[command(name = "abcop", version, about = "Fast multi-language ABC-size + used-once-variable linter")]
 struct Cli {
     /// Files or directories to analyse
     paths: Vec<String>,

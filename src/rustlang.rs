@@ -65,15 +65,15 @@ struct Scope {
     entries: HashMap<Box<str>, Entry>,
 }
 
-pub struct RustFile {
-    pub src: Vec<u8>,
+pub struct RustFile<'s> {
+    pub src: &'s [u8],
     pub tree: Tree,
     scopes: Vec<Scope>,
 }
 
-impl RustFile {
-    fn text<'s>(&'s self, n: Node<'_>) -> &'s str {
-        n.utf8_text(&self.src).unwrap_or("")
+impl<'s> RustFile<'s> {
+    fn text(&self, n: Node<'_>) -> &str {
+        n.utf8_text(self.src).unwrap_or("")
     }
 
     fn line_col(&self, byte: usize) -> (usize, usize) {
@@ -185,7 +185,7 @@ struct Builder<'m> {
     macro_depth: usize,
 }
 
-pub fn build(src: Vec<u8>, tree: Tree) -> RustFile {
+pub fn build(src: &[u8], tree: Tree) -> RustFile<'_> {
     let mut scopes = vec![Scope {
         parent: None,
         kind: ScopeKind::Root,
@@ -193,7 +193,7 @@ pub fn build(src: Vec<u8>, tree: Tree) -> RustFile {
     }];
     {
         let mut b = Builder {
-            src: &src,
+            src,
             scopes: &mut scopes,
             macro_depth: 0,
         };
@@ -618,7 +618,7 @@ impl<'m> Builder<'m> {
 // ---------------------------------------------------------------- ABC ----
 
 struct Calc<'f> {
-    fm: &'f RustFile,
+    fm: &'f RustFile<'f>,
     a: u32,
     b: u32,
     c: u32,
@@ -626,7 +626,7 @@ struct Calc<'f> {
 
 fn pattern_count(fm: &RustFile, pattern: Node) -> u32 {
     let mut ids = Vec::new();
-    pattern_identifiers(pattern, &fm.src, &mut ids);
+    pattern_identifiers(pattern, fm.src, &mut ids);
     ids.len() as u32
 }
 
@@ -708,7 +708,7 @@ impl<'f> Calc<'f> {
                 self.c += 1;
                 if let Some(p) = n.child_by_field_name("pattern") {
                     let mut binders = Vec::new();
-                    match_binders(p, &self.fm.src, &mut binders);
+                    match_binders(p, self.fm.src, &mut binders);
                     self.a += binders.len() as u32;
                 }
             }
@@ -756,7 +756,7 @@ impl<'f> Calc<'f> {
                 "parameter" => {
                     if let Some(pat) = child.child_by_field_name("pattern") {
                         let mut ids = Vec::new();
-                        pattern_identifiers(pat, &fm.src, &mut ids);
+                        pattern_identifiers(pat, fm.src, &mut ids);
                         for id in ids {
                             out.push(fm.text(id));
                         }
@@ -937,13 +937,13 @@ pub fn used_once_offenses(fm: &RustFile) -> Vec<UsedOnceOffense> {
 mod tests {
     use super::*;
 
-    fn build_str(src: &str) -> RustFile {
+    fn build_str(src: &str) -> RustFile<'_> {
         let mut parser = tree_sitter::Parser::new();
         parser
             .set_language(&tree_sitter_rust::LANGUAGE.into())
             .expect("rust grammar");
         let tree = parser.parse(src, None).expect("syntax tree");
-        build(src.as_bytes().to_vec(), tree)
+        build(src.as_bytes(), tree)
     }
 
     fn scores(src: &str) -> Vec<AbcOffense> {
@@ -1142,7 +1142,7 @@ mod never_used_tests {
             .set_language(&tree_sitter_rust::LANGUAGE.into())
             .expect("rust grammar");
         let tree = parser.parse(src, None).expect("tree");
-        never_used_offenses(&build(src.as_bytes().to_vec(), tree))
+        never_used_offenses(&build(src.as_bytes(), tree))
     }
 
     #[test]

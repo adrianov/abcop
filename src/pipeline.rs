@@ -35,9 +35,9 @@ fn blank_with(path: &std::path::Path) -> crate::FileResult {
     }
 }
 
-fn reparsed(src_bytes: &[u8], lang: Lang) -> Option<crate::model::FileModel> {
+fn reparsed<'a>(src_bytes: &'a [u8], lang: Lang) -> Option<crate::model::FileModel<'a>> {
     let tree = parse_file_lang(src_bytes, lang)?;
-    Some(crate::model::build(src_bytes.to_vec(), tree))
+    Some(crate::model::build(src_bytes, tree))
 }
 
 pub(crate) fn analyze_one(
@@ -48,13 +48,14 @@ pub(crate) fn analyze_one(
     cache: Option<&cache::Cache>,
 ) -> crate::FileResult {
     let mut r = blank_with(path);
-    let Ok(src_bytes) = fs_read_exact(path) else { return r };
-    r.oversize = std::str::from_utf8(&src_bytes)
+    let Ok(src_buf) = load_src(path) else { return r };
+    let src_bytes: &[u8] = &src_buf;
+    r.oversize = std::str::from_utf8(src_bytes)
         .ok()
         .and_then(|t| crate::modulesize::offense(t, &r.path));
 
     let key = cache
-        .map(|c| c.file_key(path, &src_bytes, only, max))
+        .map(|c| c.file_key(path, src_bytes, only, max))
         .unwrap_or_default();
     if let (Some(cache), false) = (cache, key.is_empty())
         && let Some((abc, used_once, never_used, oversize)) = cache.get(&key)
@@ -68,7 +69,7 @@ pub(crate) fn analyze_one(
         };
     }
 
-    let Some(tree) = parse_file_lang(&src_bytes, lang_for(path)) else {
+    let Some(tree) = parse_file_lang(src_bytes, lang_for(path)) else {
         return r;
     };
     let checks = Checks::new(only);
@@ -94,8 +95,8 @@ pub(crate) fn analyze_one(
             }
         }
         Lang::Ruby => {
-            let dirs = directives::parse(&String::from_utf8_lossy(&src_bytes));
-            let Some(fm) = reparsed(&src_bytes, file_lang) else { return r };
+            let dirs = directives::parse(&String::from_utf8_lossy(src_bytes));
+            let Some(fm) = reparsed(src_bytes, file_lang) else { return r };
             if checks.want_abc {
                 r.abc = crate::abc::analyze(&fm, max)
                     .into_iter()
@@ -130,13 +131,38 @@ pub(crate) fn analyze_one(
     r
 }
 
-fn fs_read_exact(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+/// Hybrid file input: memory-map large files (zero-copy from the page
+/// cache), plain pre-sized read for small ones where mmap setup would cost
+/// more than the copy.
+const MMAP_THRESHOLD: u64 = 64 * 1024;
+
+pub(crate) enum SrcBuf {
+    Heap(Vec<u8>),
+    Mapped(memmap2::Mmap),
+}
+
+impl std::ops::Deref for SrcBuf {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        match self {
+            SrcBuf::Heap(b) => b,
+            SrcBuf::Mapped(m) => m,
+        }
+    }
+}
+
+pub(crate) fn load_src(path: &std::path::Path) -> std::io::Result<SrcBuf> {
     let file = fs::File::open(path)?;
-    let cap = file.metadata()?.len() as usize;
-    let mut buf = Vec::with_capacity(cap);
+    let len = file.metadata()?.len();
+    if len >= MMAP_THRESHOLD {
+        // SAFETY: read-only mapping of a regular file opened for reading.
+        let map = unsafe { memmap2::Mmap::map(&file)? };
+        return Ok(SrcBuf::Mapped(map));
+    }
+    let mut buf = Vec::with_capacity(len as usize);
     {
         use std::io::Read;
         (&file).read_to_end(&mut buf)?;
     }
-    Ok(buf)
+    Ok(SrcBuf::Heap(buf))
 }

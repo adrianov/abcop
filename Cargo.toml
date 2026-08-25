@@ -19,6 +19,7 @@ tree-sitter-typescript = "0.23"
 tree-sitter-cpp = "0.23"
 tree-sitter-objc = "3"
 sha2 = "0.10"
+memmap2 = "0.9"
 
 
 [profile.release]

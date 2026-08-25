@@ -141,7 +141,7 @@ pub(crate) fn masgn_target_count(fm: &FileModel, n: Node) -> u32 {
 }
 
 pub(crate) struct Calc<'f> {
-    pub(crate) fm: &'f FileModel,
+    pub(crate) fm: &'f FileModel<'f>,
     pub(crate) csend_recv: &'f HashMap<usize, Box<str>>,
     pub(crate) vcall: &'f HashSet<usize>,
     pub(crate) seen_csend: HashSet<Box<str>>,

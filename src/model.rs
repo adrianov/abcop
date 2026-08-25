@@ -66,8 +66,8 @@ pub struct ScopeData {
     pub entries: HashMap<Box<str>, Entry>,
 }
 
-pub struct FileModel {
-    pub src: Vec<u8>,
+pub struct FileModel<'s> {
+    pub src: &'s [u8],
     pub tree: Tree,
     pub scopes: Vec<ScopeData>,
     /// safe-navigation sites whose receiver resolved to a local var:
@@ -78,10 +78,10 @@ pub struct FileModel {
     pub vcall_sites: Vec<usize>,
 }
 
-impl FileModel {
+impl<'s> FileModel<'s> {
     /// Text accessor whose lifetime is bound to the model, not the node.
-    pub fn text<'s>(&'s self, n: Node<'_>) -> &'s str {
-        n.utf8_text(&self.src).unwrap_or("")
+    pub fn text(&self, n: Node<'_>) -> &str {
+        n.utf8_text(self.src).unwrap_or("")
     }
 
     /// Resolve `name` visible at byte `pos` starting from scope `s`.
@@ -135,7 +135,7 @@ struct Builder<'m> {
     vcall_sites: &'m mut Vec<usize>,
 }
 
-pub fn build(src: Vec<u8>, tree: Tree) -> FileModel {
+pub fn build<'s>(src: &'s [u8], tree: Tree) -> FileModel<'s> {
     let mut scopes = vec![ScopeData {
         parent: None,
         kind: ScopeKind::Root,
@@ -146,7 +146,7 @@ pub fn build(src: Vec<u8>, tree: Tree) -> FileModel {
     let mut vcall_sites = Vec::new();
     {
         let mut b = Builder {
-            src: &src,
+            src,
             scopes: &mut scopes,
             csend_sites: &mut csend_sites,
             vcall_sites: &mut vcall_sites,
@@ -567,13 +567,14 @@ fn body_of(n: Node) -> Option<Node> {
 }
 
 #[cfg(test)]
-pub(crate) fn build_from_str(src: &str) -> FileModel {
+#[cfg(test)]
+pub(crate) fn build_from_str(src: &str) -> FileModel<'_> {
     let mut parser = tree_sitter::Parser::new();
     parser
         .set_language(&tree_sitter_ruby::LANGUAGE.into())
         .expect("ruby grammar");
     let tree = parser.parse(src, None).expect("syntax tree");
-    build(src.as_bytes().to_vec(), tree)
+    build(src.as_bytes(), tree)
 }
 
 #[cfg(test)]
