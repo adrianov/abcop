@@ -46,7 +46,7 @@ struct Cli {
     #[arg(long)]
     changed: bool,
     /// Scan the last MR: changes since branching from master/main, or the
-    /// last 24 hours when committing directly onto it
+    /// last 36 hours when committing directly onto it
     #[arg(long, conflicts_with = "changed")]
     mr: bool,
     /// Git base ref for --changed (default HEAD)

@@ -82,7 +82,7 @@ cargo build --release
 | `--max-abc N` | `17` | report functions scoring above N |
 | `--only abc\|used-once\|never-used` | all | run a single check |
 | `--changed [--base REF]` | off | scan only git-changed files/functions vs REF (HEAD); hunks widened with `-W`, so a whole touched function counts as changed |
-| `--mr` | off | scan your current MR: since branching from master/main (merge-base), or the last 24 hours when committing directly onto it. Auto-detects origin/main, origin/master, main, master |
+| `--mr` | off | scan your current MR: since branching from master/main (merge-base), or the last 36 hours when committing directly onto it. Auto-detects origin/main, origin/master, main, master |
 | `--dump-tree FILE` | — | debug: print the syntax tree of one file |
 
 Exit codes: `0` clean, `1` diagnostics reported, `2` usage error.
@@ -128,8 +128,9 @@ git checkout -b feature/x     # branch off main
 abcop --mr --only abc src     # only functions you touched on this branch
 ```
 
-Committing straight to main? The same command switches to a 24-hour window
-automatically (`<default-branch>@{24.hours.ago}`). Force an explicit base with
+Committing straight to main? The same command switches to a 36-hour window
+automatically (`<default-branch>@{36.hours.ago}`) — enough to cover work
+resumed from the previous morning. Force an explicit base with
 `--base <ref>`. `--changed` remains available for plain working-tree diffs vs
 any ref.
 

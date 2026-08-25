@@ -115,7 +115,7 @@ fn detect_default_branch() -> Option<&'static str> {
 
 /// Resolve the diff base for an "MR scope": when on a topic branch, the
 /// merge-base with the default branch; when committing straight onto the
-/// default branch, its tip 24 hours ago.
+/// default branch, its tip 36 hours ago.
 pub fn mr_base() -> Result<(String, String), String> {
     let Some(default_branch) = detect_default_branch() else {
         return Err("cannot find master/main (tried origin/main,                     origin/master, main, master); pass --base"
@@ -126,12 +126,13 @@ pub fn mr_base() -> Result<(String, String), String> {
     let on_default = branch == bare_default || branch == default_branch;
 
     if on_default || branch == "HEAD" {
-        let aged = format!("{default_branch}@{{24.hours.ago}}");
+        let aged = format!("{default_branch}@{{36.hours.ago}}");
         if rev_exists(&aged) {
-            return Ok((aged, format!("last 24 hours on {default_branch}")));
+            return Ok((aged, format!("last 36 hours on {default_branch}")));
         }
         return Err(format!(
-            "no commits in the last 24 hours on {default_branch};              pass --base <ref> or use --changed"
+            "no commits in the last 36 hours on {default_branch}; \
+             pass --base <ref> or use --changed"
         ));
     }
 

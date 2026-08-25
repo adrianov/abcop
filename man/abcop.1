@@ -156,8 +156,8 @@ Git ref used by
 .B \-\-mr
 Scan your current merge request: changes since branching from master/main
 (merge\-base), or \-\- when committing directly onto the default branch \-\-
-changes of the last 24 hours
-.RB ( default_branch "@{" 24.hours.ago "})."
+.RB "last 36 hours" 
+.RB ( default_branch "@{" 36.hours.ago "})."
 The default branch is detected among origin/main, origin/master, main and
 master.
 .TP
