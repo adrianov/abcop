@@ -87,6 +87,12 @@ cargo build --release
 
 Exit codes: `0` clean, `1` diagnostics reported, `2` usage error.
 
+Files are reported breadth-first (shallowest first) and ordered by
+extension, then name inside each directory — so your quickest-to-review
+top-level files come before deeply nested ones. The parallel walk is
+unordered internally; the deterministic order comes from a multi-key sort
+over recorded depths.
+
 Examples:
 
 ```sh

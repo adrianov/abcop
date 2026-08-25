@@ -6,6 +6,7 @@ authors = ["Peter Adrianov"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+libc = "0.2"
 ignore = "0.4"
 rayon = "1"
 serde = { version = "1", features = ["derive"] }

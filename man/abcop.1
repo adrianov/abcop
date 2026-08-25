@@ -169,6 +169,11 @@ Print help.
 .TP
 .B \-\-version
 Print version.
+.SH FILE ORDER
+Directory trees are walked in parallel but reported breadth\-first:
+shallowest files first, then deeper ones. Within the same depth, files are
+ordered by parent directory, extension, and file name. Explicit file
+arguments always come first.
 .SH EXIT STATUS
 .TP
 .B 0

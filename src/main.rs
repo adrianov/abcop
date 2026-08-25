@@ -79,6 +79,10 @@ pub(crate) struct FileResult {
 }
 
 fn main() -> ExitCode {
+    // die quietly on SIGPIPE instead of panicking when piped into head/less
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let cli = Cli::parse();
 
     if cli.dump_tree {
@@ -144,12 +148,11 @@ fn scan_paths(
         Some(cs) => cs.code_files(),
         None => collect_files(paths),
     };
-    let mut results: Vec<FileResult> = files
+    // par_iter keeps the caller's (BFS + extension/name) order intact
+    let results: Vec<FileResult> = files
         .par_iter()
         .map(|p| analyze_one(p, only, max, changeset))
-        .collect();
-    results.sort_by(|x, y| x.path.cmp(&y.path));
-    results
+        .collect();    results
 }
 
 fn render(results: &[FileResult], format: &str, max: f64) {

@@ -52,13 +52,29 @@ pub fn is_code_path(p: &std::path::Path) -> bool {
 /// CPU (traversal is syscall/IO bound), collecting matching code files.
 /// Single-file arguments bypass the walker. Output is sorted and deduped so
 /// downstream results stay deterministic regardless of discovery order.
+/// A discovered file plus its depth below the walked root.
+#[derive(Debug)]
+struct Found {
+    path: std::path::PathBuf,
+    depth: usize,
+}
+
+/// Walk directory roots breadth-first and return code files ordered by
+/// depth (shallowest first), then by parent directory, extension and file
+/// name. Explicit file arguments come first at depth 0.
+///
+/// The parallel walk itself is unordered; the deterministic order is
+/// produced by the final multi-key sort over the recorded depths.
 pub fn collect_files(paths: &[String]) -> Vec<std::path::PathBuf> {
-    let mut direct = Vec::new();
+    let mut found: Vec<Found> = Vec::new();
     let mut roots = Vec::new();
     for raw in paths {
         let p = std::path::Path::new(raw);
         if p.is_file() {
-            direct.push(p.to_path_buf());
+            found.push(Found {
+                path: p.to_path_buf(),
+                depth: 0,
+            });
         } else if p.exists() {
             roots.push(p.to_path_buf());
         }
@@ -79,16 +95,56 @@ pub fn collect_files(paths: &[String]) -> Vec<std::path::PathBuf> {
         builder.build_parallel().visit(&mut collector);
     }
 
-    let mut files = direct;
-    files.extend(discovered.into_inner().unwrap_or_default());
-    files.sort();
-    files.dedup();
-    files
+    let mut found = found;
+    found.extend(discovered.into_inner().unwrap_or_default());
+
+    // Stable multi-key sort turns the unordered parallel discovery into a
+    // deterministic breadth-first listing: shallowest entries first, files
+    // grouped per directory, then by extension and file name.
+    found.sort_by(|a, b| {
+        a.depth
+            .cmp(&b.depth)
+            .then_with(|| a.parent().cmp(&b.parent()))
+            .then_with(|| a.ext_key().cmp(&b.ext_key()))
+            .then_with(|| a.name_key().cmp(&b.name_key()))
+    });
+    found.dedup_by(|a, b| a.path == b.path);
+
+    found.into_iter().map(|f| f.path).collect()
+}
+
+trait PathKey {
+    fn parent(&self) -> String;
+    fn ext_key(&self) -> String;
+    fn name_key(&self) -> String;
+}
+
+impl PathKey for Found {
+    fn parent(&self) -> String {
+        self.path
+            .parent()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default()
+    }
+    fn ext_key(&self) -> String {
+        self.path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase()
+    }
+    fn name_key(&self) -> String {
+        self.path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase()
+    }
 }
 
 /// Shared-sink parallel visitor: one per worker thread.
 struct CollectorBuilder<'s> {
-    sink: &'s std::sync::Mutex<Vec<std::path::PathBuf>>,
+    sink: &'s std::sync::Mutex<Vec<Found>>,
 }
 
 impl<'s> ignore::ParallelVisitorBuilder<'s> for CollectorBuilder<'s> {
@@ -98,7 +154,7 @@ impl<'s> ignore::ParallelVisitorBuilder<'s> for CollectorBuilder<'s> {
 }
 
 struct Collector<'s> {
-    sink: &'s std::sync::Mutex<Vec<std::path::PathBuf>>,
+    sink: &'s std::sync::Mutex<Vec<Found>>,
 }
 
 impl ignore::ParallelVisitor for Collector<'_> {
@@ -111,7 +167,11 @@ impl ignore::ParallelVisitor for Collector<'_> {
             && is_code_path(entry.path())
             && let Ok(mut sink) = self.sink.lock()
         {
-            sink.push(entry.into_path());
+            let depth = entry.depth() as usize;
+            sink.push(Found {
+                path: entry.into_path(),
+                depth,
+            });
         }
         ignore::WalkState::Continue
     }
