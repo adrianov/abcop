@@ -9,7 +9,7 @@ use tree_sitter::Node;
 
 use crate::model::FileModel;
 
-const COMPARISON_OPS: &[&str] = &["==", "===", "!=", "<=", ">=", "<", ">"];
+pub(crate) const COMPARISON_OPS: &[&str] = &["==", "===", "!=", "<=", ">=", "<", ">"];
 
 // Mirrors RuboCop Metrics::Utils::IteratingBlock::KNOWN_ITERATING_METHODS
 static ITERATING: &[&str] = &[
@@ -38,55 +38,72 @@ pub struct AbcOffense {
     pub vector: String,
 }
 
-struct Calc<'f> {
-    fm: &'f FileModel,
-    csend_recv: &'f HashMap<usize, Box<str>>,
-    vcall: &'f HashSet<usize>,
-    seen_csend: HashSet<Box<str>>,
-    a: u32,
-    b: u32,
-    c: u32,
-}
-
-fn iterating_call(fm: &FileModel, call: Node) -> bool {
+pub(crate) fn iterating_call(fm: &FileModel, call: Node) -> bool {
     let Some(m) = call.child_by_field_name("method") else {
         return false;
     };
-    let name = fm.text(m);
-    ITERATING.binary_search(&name).is_ok()
+    {
+        let name = fm.text(m);
+        ITERATING.binary_search(&name).is_ok()
+    }
 }
 
-fn param_names<'f>(fm: &'f FileModel, container: Node) -> Vec<&'f str> {
+/// `super` never counts; a `::`-qualified uppercase path is a constant hop.
+pub(crate) fn is_non_send_callee(fm: &FileModel, call: Node, op: &str) -> bool {
+    match call.child_by_field_name("method") {
+        None => true,
+        Some(m) => {
+            let name = fm.text(m);
+            name == "super"
+                || (op == "::" && name.chars().next().is_some_and(|c| c.is_uppercase()))
+        }
+    }
+}
+
+fn param_target_name<'f>(fm: &'f FileModel, child: Node) -> Option<&'f str> {
+    let target = child
+        .child_by_field_name("name")
+        .or_else(|| child.children(&mut child.walk()).find(|c| c.kind() == "identifier"))?;
+    Some(fm.text(target))
+}
+
+pub(crate) fn param_names<'f>(fm: &'f FileModel, container: Node) -> Vec<&'f str> {
     let mut out = Vec::new();
     let mut cursor = container.walk();
     for child in container.children(&mut cursor) {
         match child.kind() {
             "identifier" => out.push(fm.text(child)),
-            "optional_parameter" | "keyword_parameter" | "block_parameter"
+            "optional_parameter"
+            | "keyword_parameter"
+            | "block_parameter"
             | "splat_parameter" => {
-                let target = child
-                    .child_by_field_name("name")
-                    .or_else(|| {
-                        child
-                            .children(&mut child.walk())
-                            .find(|c| c.kind() == "identifier")
-                    });
-                if let Some(t) = target {
-                    out.push(fm.text(t));
+                if let Some(name) = param_target_name(fm, child) {
+                    out.push(name);
                 }
             }
             "destructured_parameter" => {
-                let mut sub = child.walk();
-                for inner in child.children(&mut sub) {
-                    if inner.kind() == "identifier" {
-                        out.push(fm.text(inner));
-                    }
-                }
+                out.extend(destructured_names(fm, child));
             }
             _ => {}
         }
     }
     out
+}
+
+fn destructured_names<'f>(fm: &'f FileModel, wrapper: Node) -> Vec<&'f str> {
+    let mut sub = wrapper.walk();
+    wrapper
+        .children(&mut sub)
+        .filter(|c| c.kind() == "identifier")
+        .map(|c| fm.text(c))
+        .collect()
+}
+
+fn define_method_argument(fm: &FileModel, call: Node) -> Option<String> {
+    let args = call.child_by_field_name("arguments")?;
+    let raw = fm.text(args.child(0)?);
+    let name = raw.trim_start_matches(':').trim_matches(|c| c == '\'' || c == '"');
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 fn define_method_block_name(fm: &FileModel, block: Node) -> Option<String> {
@@ -98,24 +115,17 @@ fn define_method_block_name(fm: &FileModel, block: Node) -> Option<String> {
     if fm.text(m) != "define_method" || call.child_by_field_name("receiver").is_some() {
         return None;
     }
-    let args = call.child_by_field_name("arguments")?;
-    let first = args.child(0)?;
-    let raw = fm.text(first);
-    let name = raw.trim_start_matches(':').trim_matches(|c| c == '\'' || c == '"');
-    (!name.is_empty()).then(|| name.to_string())
+    define_method_argument(fm, call)
 }
 
 /// Count assignment targets under a multiple-assignment left side.
-fn masgn_target_count(fm: &FileModel, n: Node) -> u32 {
+pub(crate) fn masgn_target_count(fm: &FileModel, n: Node) -> u32 {
     let mut total = 0;
     let mut cursor = n.walk();
     for child in n.children(&mut cursor) {
         match child.kind() {
             "identifier" => {
-                let name = fm.text(child);
-                if !name.starts_with('_') {
-                    total += 1;
-                }
+                total += u32::from(!fm.text(child).starts_with('_'));
             }
             "instance_variable" | "class_variable" | "global_variable" | "constant" => {
                 total += 1
@@ -129,7 +139,25 @@ fn masgn_target_count(fm: &FileModel, n: Node) -> u32 {
     total
 }
 
+pub(crate) struct Calc<'f> {
+    pub(crate) fm: &'f FileModel,
+    pub(crate) csend_recv: &'f HashMap<usize, Box<str>>,
+    pub(crate) vcall: &'f HashSet<usize>,
+    pub(crate) seen_csend: HashSet<Box<str>>,
+    pub(crate) a: u32,
+    pub(crate) b: u32,
+    pub(crate) c: u32,
+}
+
 impl<'f> Calc<'f> {
+    pub(crate) const IS_ASSIGNMENT: [&'static str; 3] =
+        ["assignment", "operator_assignment", "for"];
+    pub(crate) const IS_FLOW: [&'static str; 14] = [
+        "if", "unless", "elsif", "if_modifier", "unless_modifier", "conditional",
+        "while", "until", "while_modifier", "until_modifier", "rescue",
+        "rescue_modifier", "when", "in_clause",
+    ];
+
     fn walk(&mut self, n: Node) {
         let children: Vec<_> = {
             let mut cursor = n.walk();
@@ -141,244 +169,57 @@ impl<'f> Calc<'f> {
         self.count(n);
     }
 
-    fn asgn_child_score(&self, ch: Node, is_lhs: bool) -> u32 {
+    pub(crate) fn asgn_child_score(&self, ch: Node, is_lhs: bool) -> u32 {
         let k = ch.kind();
         let dispatch = (k == "call") || (k == "element_reference");
-        let ident = k == "identifier";
         let target = (k == "instance_variable")
             || (k == "class_variable")
             || (k == "global_variable")
             || (k == "constant");
-        let counted =
-            dispatch || (ident && (is_lhs || self.vcall.contains(&ch.start_byte()))) ||
-                (target && is_lhs);
+        let counted = dispatch
+            || (k == "identifier" && (is_lhs || self.vcall.contains(&ch.start_byte())))
+            || (target && is_lhs);
         u32::from(counted)
     }
-    fn count(&mut self, n: Node) {
-        // anonymous keyword tokens (`if`, `unless`, `when`, …) share kind
-        // names with their clause nodes — only named nodes count
-        if !n.is_named() {
-            return;
-        }
-        let kind = n.kind();
-        match kind {
-            "assignment" => {
-                let left = n.child_by_field_name("left");
-                match left {
-                    Some(l)
-                        if l.kind() == "left_assignment_list"
-                            || l.kind() == "right_assignment_list" =>
-                    {
-                        self.a += masgn_target_count(self.fm, l);
-                    }
-                    Some(l) if l.kind() == "identifier" => {
-                        // lvasgn: resets the repeated-csend discount regardless
-                        // of an underscore name (mirrors RuboCop ordering)
-                        let name = self.fm.text(l);
-                        self.seen_csend.remove(name);
-                        if !name.starts_with('_') {
-                            self.a += 1;
-                        }
-                    }
-                    // setter forms (`obj.x =`, `h[k] =`): the child call /
-                    // element_reference node contributes the parser :send
-                    // branch when its own arm fires — assignment adds only A
-                    _ => self.a += 1, // ivar/global/const targets
-                }
-            }
-            "operator_assignment" => {
-                // Mirrors compound_assignment: every DIRECT child that maps
-                // to a parser dispatch/equals-assignment node and is not a
-                // dotted setter contributes one assignment. `h[:k] += v`
-                // counts (bracket setters have no operator loc), `o.a += v`
-                // counts via its read-form lhs, and a call RHS counts too.
-                let mut extra = 0;
-                if let Some(l) = n.child_by_field_name("left") {
-                    extra += self.asgn_child_score(l, true);
-                }
-                if let Some(r) = n.child_by_field_name("right") {
-                    extra += self.asgn_child_score(r, false);
-                }
-                self.a += extra;
-                let op = n
-                    .child_by_field_name("operator")
-                    .map(|o| self.fm.text(o))
-                    .unwrap_or("");
-                if op == "||=" || op == "&&=" {
-                    self.c += 1;
-                }
-            }
-            "for" => {
-                self.a += 1;
-                self.c += 1;
-            }
-            "if" | "unless" | "elsif" => {
-                self.c += 1;
-                let has_else_keyword = {
-                    let mut cur = n.walk();
-                    n.children(&mut cur).any(|ch| ch.kind() == "else")
-                };
-                if has_else_keyword {
-                    self.c += 1;
-                }
-            }
-            "if_modifier" | "unless_modifier" | "conditional" => self.c += 1,
-            "while" | "until" | "while_modifier" | "until_modifier" => self.c += 1,
-            "rescue" | "rescue_modifier" => {
-                // a multi-clause rescue group is ONE :rescue node in the
-                // parser AST; TS emits sibling clauses — count only the first
-                let first_clause = n
-                    .prev_named_sibling()
-                    .map(|p| p.kind() != "rescue")
-                    .unwrap_or(true);
-                if kind == "rescue_modifier" || first_clause {
-                    self.c += 1;
-                }
-                // `rescue => e` binds via lvasgn in parser AST → assignment
-                if let Some(var) = n.child_by_field_name("variable") {
-                    let named = var.children(&mut var.walk()).any(|c| {
-                        c.kind() == "identifier" && !self.fm.text(c).starts_with('_')
-                    });
-                    if named {
-                        self.a += 1;
-                    }
-                }
-            }
-            "when" | "in_clause" => self.c += 1,
-            "binary" => {
-                let op = n
-                    .child_by_field_name("operator")
-                    .map(|o| self.fm.text(o))
-                    .unwrap_or("");
-                if COMPARISON_OPS.contains(&op)
-                    || matches!(op, "&&" | "||" | "and" | "or")
-                {
-                    self.c += 1;
-                } else {
-                    self.b += 1;
-                }
-            }
-            // `element_reference` is parser-gem's `:send` aref → branch
-            "element_reference" => self.b += 1,
-            // `defined?` is a dedicated parser node type — neither branch
-            // nor condition; its operand still walks normally below
-            "unary" if n
-                .child_by_field_name("operator")
-                .map(|o| self.fm.text(o) == "defined?")
-                .unwrap_or(false)
-            => {}
-            // `-1` / `+1.5` are folded into the integer literal by the parser
-            "unary"
-                if n
-                    .child_by_field_name("operator")
-                    .map(|o| matches!(self.fm.text(o), "-" | "+"))
-                    .unwrap_or(false)
-                    && n
-                        .child_by_field_name("operand")
-                        .map(|o| matches!(o.kind(), "integer" | "float"))
-                        .unwrap_or(false)
-                => {}
-            "unary" => self.b += 1,
-            "yield" => self.b += 1,
-            // unresolved bare identifier == zero-arity method call → branch
-            "identifier" => {
-                if self.vcall.contains(&n.start_byte()) {
-                    self.b += 1;
-                }
-            }
-            "call" => {
-                let op = n
-                    .child_by_field_name("operator")
-                    .map(|o| self.fm.text(o))
-                    .unwrap_or("")
-                    .to_string();
-                if n.child_by_field_name("method")
-                    .map(|m| {
-                        let name = self.fm.text(m);
-                        // `super` is never a send; `Rack::Utils` inside a
-                        // call chain is a constant hop, not a send either
-                        name == "super"
-                            || (op == "::"
-                                && name.chars().next().is_some_and(|c| c.is_uppercase()))
-                    })
-                    .unwrap_or(false)
-                {
-                    return;
-                }
-                match op.as_str() {
-                    "" | "." => self.b += 1,
-                    "&." => {
-                        self.b += 1;
-                        let discounted = n
-                            .child_by_field_name("receiver")
-                            .and_then(|r| self.csend_recv.get(&r.start_byte()))
-                            .map(|name| !self.seen_csend.insert(name.clone()))
-                            .unwrap_or(false);
-                        if !discounted {
-                            self.c += 1;
-                        }
-                    }
-                    _ => self.b += 1,
-                }
-            }
-            "block_argument" => {
-                // `&:sym` / `&blk`: condition when the wrapping call iterates
-                let arg_list = n.parent();
-                let call = arg_list.and_then(|al| al.parent());
-                if let Some(call) = call {
-                    if call.kind() == "call" && iterating_call(self.fm, call) {
-                        self.c += 1;
-                    }
-                }
-            }
-            "block" | "do_block" => {
-                if let Some(p) = n.parent() {
-                    if p.kind() == "call" && iterating_call(self.fm, p) {
-                        self.c += 1;
-                    }
-                }
-                if let Some(params) = n.child_by_field_name("parameters") {
-                    self.a += param_names(self.fm, params)
-                        .iter()
-                        .filter(|nm| !nm.starts_with('_'))
-                        .count() as u32;
-                }
-            }
-            "lambda" => {
-                if let Some(params) = n.child_by_field_name("parameters") {
-                    self.a += param_names(self.fm, params)
-                        .iter()
-                        .filter(|nm| !nm.starts_with('_'))
-                        .count() as u32;
-                }
-            }
-            "method" | "singleton_method" => {
-                // nested def params contribute to the enclosing unit
-                if let Some(params) = n.child_by_field_name("parameters") {
-                    self.a += param_names(self.fm, params)
-                        .iter()
-                        .filter(|nm| !nm.starts_with('_'))
-                        .count() as u32;
-                }
-            }
-            _ => {}
-        }
+}
+
+struct ScoreCtx {
+    csend_recv: HashMap<usize, Box<str>>,
+    vcall: HashSet<usize>,
+}
+
+fn score_unit(ctx: &ScoreCtx, fm: &FileModel, unit: Node, name: &str) -> AbcOffense {
+    let mut calc = Calc {
+        fm,
+        csend_recv: &ctx.csend_recv,
+        vcall: &ctx.vcall,
+        seen_csend: HashSet::new(),
+        a: 0,
+        b: 0,
+        c: 0,
+    };
+    if let Some(body) = unit.child_by_field_name("body") {
+        calc.walk(body);
+    }
+    let raw = ((calc.a * calc.a + calc.b * calc.b + calc.c * calc.c) as f64).sqrt();
+    let pos = unit.start_position();
+    AbcOffense {
+        line: pos.row + 1,
+        column: pos.column,
+        name: name.to_string(),
+        score: (raw * 100.0).round() / 100.0,
+        vector: format!("<{}, {}, {}>", calc.a, calc.b, calc.c),
     }
 }
 
 fn visit_units(fm: &FileModel, n: Node, f: &mut impl FnMut(Node, &str)) {
-    match n.kind() {
-        "method" | "singleton_method" => {
-            if let Some(name_node) = n.child_by_field_name("name") {
-                f(n, fm.text(name_node));
-            }
-        }
-        "block" | "do_block" => {
-            if let Some(name) = define_method_block_name(fm, n) {
-                f(n, &name);
-            }
-        }
-        _ => {}
+    let is_fn = n.kind() == "method" || n.kind() == "singleton_method";
+    if is_fn && let Some(name_node) = n.child_by_field_name("name") {
+        f(n, fm.text(name_node));
+    }
+    let is_block = n.kind() == "block" || n.kind() == "do_block";
+    if is_block && let Some(name) = define_method_block_name(fm, n) {
+        f(n, &name);
     }
     let mut cursor = n.walk();
     for child in n.children(&mut cursor) {
@@ -387,39 +228,19 @@ fn visit_units(fm: &FileModel, n: Node, f: &mut impl FnMut(Node, &str)) {
 }
 
 pub fn all_scores(fm: &FileModel) -> Vec<AbcOffense> {
-    let csend_recv: HashMap<usize, Box<str>> = fm
-        .csend_sites
-        .iter()
-        .map(|(byte, name, _)| (*byte, name.clone()))
-        .collect();
-    let vcall: HashSet<usize> = fm.vcall_sites.iter().copied().collect();
-
+    let ctx = ScoreCtx {
+        csend_recv: fm
+            .csend_sites
+            .iter()
+            .map(|(byte, name, _)| (*byte, name.clone()))
+            .collect(),
+        vcall: fm.vcall_sites.iter().copied().collect(),
+    };
     let mut offenses = Vec::new();
     visit_units(fm, fm.tree.root_node(), &mut |unit, name| {
-        let Some(body) = body_of_unit(unit) else {
-            return;
-        };
-        let mut calc = Calc {
-            fm,
-            csend_recv: &csend_recv,
-            vcall: &vcall,
-            seen_csend: HashSet::new(),
-            a: 0,
-            b: 0,
-            c: 0,
-        };
-        calc.walk(body);
-        let raw =
-            ((calc.a * calc.a + calc.b * calc.b + calc.c * calc.c) as f64).sqrt();
-        let score = (raw * 100.0).round() / 100.0;
-        let pos = unit.start_position();
-        offenses.push(AbcOffense {
-            line: pos.row + 1,
-            column: pos.column,
-            name: name.to_string(),
-            score,
-            vector: format!("<{}, {}, {}>", calc.a, calc.b, calc.c),
-        });
+        if unit.child_by_field_name("body").is_some() {
+            offenses.push(score_unit(&ctx, fm, unit, name));
+        }
     });
     offenses.sort_by_key(|o| (o.line, o.column));
     offenses
@@ -432,25 +253,16 @@ pub fn analyze(fm: &FileModel, max: f64) -> Vec<AbcOffense> {
         .collect()
 }
 
-fn body_of_unit(unit: Node) -> Option<Node> {
-    unit.child_by_field_name("body").or_else(|| {
-        let mut cursor = unit.walk();
-        unit.children(&mut cursor)
-            .find(|c| c.kind() == "body_statement" || c.kind() == "block_body")
-    })
-}
-
-/// C `%g`-style formatting with 4 significant digits, matching RuboCop output.
+/// C `%g`-style formatting with 4 significant digits.
 pub fn g4(v: f64) -> String {
     if v == 0.0 {
         return "0".to_string();
     }
     let exp = v.abs().log10().floor() as i32;
     if !(-4..4).contains(&exp) {
-        let s = format!("{v:.3e}");
-        return s.replace("e0", "e+0");
+        return format!("{v:.3e}");
     }
-    let prec = (3 - exp).max(0) as usize;
+    let prec = (3 - exp).clamp(0, 3) as usize;
     let s = format!("{v:.prec$}");
     if s.contains('.') {
         s.trim_end_matches('0').trim_end_matches('.').to_string()
@@ -489,8 +301,9 @@ mod tests {
 
     #[test]
     fn repeated_csend_on_same_local_discounted_until_reassigned() {
-        let src = "def g(x)\n  y = x&.to_s\n  z = x&.length\n  q = x&.size\n  y2 = x&.chars\nend\n";
-        let s = scores(src);
+        let s = scores(
+            "def g(x)\n  y = x&.to_s\n  z = x&.length\n  q = x&.size\n  y2 = x&.chars\nend\n",
+        );
         assert_eq!(s[0].vector, "<4, 4, 1>"); // only first &. counts as condition
     }
 

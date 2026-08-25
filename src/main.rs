@@ -1,5 +1,13 @@
+//! abcop — fast multi-language ABC-size and used-once-variable linter.
+
 mod abc;
+mod abc_count;
+mod directives;
 mod model;
+mod modulesize;
+mod output;
+mod dump;
+mod paths;
 mod rustlang;
 mod used_once;
 
@@ -9,14 +17,14 @@ use std::process::ExitCode;
 use clap::Parser as ClapParser;
 use rayon::prelude::*;
 use serde::Serialize;
-use tree_sitter::Parser;
 
 use crate::abc::AbcOffense;
-use crate::model::build;
-use crate::used_once::UsedOnceOffense;
+pub use crate::model::build;
+use paths::{collect_files, lang_for, parse_file_lang, Lang};
+use used_once::UsedOnceOffense;
 
 #[derive(ClapParser)]
-#[command(name = "abcop", about = "Fast Ruby ABC-size + used-once-variable linter (tree-sitter based)")]
+#[command(name = "abcop", about = "Fast multi-language ABC-size + used-once-variable linter")]
 struct Cli {
     /// Files or directories to analyse
     paths: Vec<String>,
@@ -48,391 +56,172 @@ struct Diagnostic {
     vector: Option<String>,
 }
 
-struct FileResult {
-    path: String,
-    abc: Vec<AbcOffense>,
-    used_once: Vec<UsedOnceOffense>,
-}
-
-const RUBY_EXTS: [&str; 5] = ["rb", "rake", "ru", "gemspec", "rs"];
-const RUBY_NAMES: [&str; 6] = [
-    "Gemfile",
-    "Rakefile",
-    "Capfile",
-    "Brewfile",
-    "Podfile",
-    "Fastfile",
-];
-
-fn is_ruby_path(p: &std::path::Path) -> bool {
-    match p.extension().and_then(|e| e.to_str()) {
-        Some(ext) => RUBY_EXTS.contains(&ext),
-        None => p
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(|n| RUBY_NAMES.contains(&n))
-            .unwrap_or(false),
-    }
-}
-
-fn collect_files(paths: &[String]) -> Vec<std::path::PathBuf> {
-    let mut files = Vec::new();
-    for raw in paths {
-        let p = std::path::Path::new(raw);
-        if p.is_file() {
-            files.push(p.to_path_buf());
-        } else {
-            let walker = ignore::WalkBuilder::new(p).build();
-            for entry in walker.flatten() {
-                if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
-                    && is_ruby_path(entry.path())
-                {
-                    files.push(entry.into_path());
-                }
-            }
-        }
-    }
-    files.sort();
-    files.dedup();
-    files
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Lang {
-    Ruby,
-    Rust,
-}
-
-fn lang_for(path: &std::path::Path) -> Lang {
-    if path.extension().and_then(|e| e.to_str()) == Some("rs") {
-        Lang::Rust
-    } else {
-        Lang::Ruby
-    }
-}
-
-fn parse_file_lang(src: &[u8], lang: Lang) -> Option<tree_sitter::Tree> {
-    let mut parser = Parser::new();
-    match lang {
-        Lang::Ruby => parser
-            .set_language(&tree_sitter_ruby::LANGUAGE.into())
-            .ok()?,
-        Lang::Rust => parser
-            .set_language(&tree_sitter_rust::LANGUAGE.into())
-            .ok()?,
-    }
-    parser.parse(src, None)
-}
-
-fn dump_tree(path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let src = fs::read(path)?;
-    let lang = lang_for(std::path::Path::new(path));
-    let tree = parse_file_lang(&src, lang).ok_or("parse failed")?;
-    fn esc(s: &str) -> String {
-        s.replace('\n', "\\n")
-    }
-    fn rec(cursor: &mut tree_sitter::TreeCursor, src: &[u8], depth: usize) {
-        loop {
-            let n = cursor.node();
-            let field = cursor.field_name().unwrap_or("");
-            let text = n.utf8_text(src).unwrap_or("");
-            let text = if text.len() <= 60 { esc(text) } else { format!("{}…", esc(&text[..60])) };
-            let prefix = if field.is_empty() { String::new() } else { format!("@{field}: ") };
-            println!(
-                "{ind}{prefix}{kind} [{row}:{col}] {text}",
-                ind = "  ".repeat(depth),
-                kind = n.kind(),
-                row = n.start_position().row + 1,
-                col = n.start_position().column
-            );
-            if cursor.goto_first_child() {
-                rec(cursor, src, depth + 1);
-                cursor.goto_parent();
-            }
-            if !cursor.goto_next_sibling() {
-                break;
-            }
-        }
-    }
-    let mut cursor = tree.walk();
-    rec(&mut cursor, &src, 0);
-    Ok(())
+pub(crate) struct FileResult {
+    pub path: String,
+    pub abc: Vec<AbcOffense>,
+    pub used_once: Vec<UsedOnceOffense>,
+    pub oversize: Option<usize>,
 }
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
     if cli.dump_tree {
-        let Some(path) = cli.paths.first() else {
-            eprintln!("--dump-tree requires a file path");
-            return ExitCode::from(2);
-        };
-        return match dump_tree(path) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(e) => {
-                eprintln!("{e}");
-                ExitCode::from(2)
-            }
-        };
+        return run_dump_tree(&cli.paths);
     }
+    run_scan(&cli)
+}
 
+fn run_dump_tree(paths: &[String]) -> ExitCode {
+    let Some(path) = paths.first() else {
+        eprintln!("--dump-tree requires a file path");
+        return ExitCode::from(2);
+    };
+    match dump::dump_tree(path) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+fn run_scan(cli: &Cli) -> ExitCode {
     if cli.paths.is_empty() {
         eprintln!("no paths given");
         return ExitCode::from(2);
     }
+    let results = scan_paths(&cli.paths, cli.only.as_deref(), cli.max_abc);
+    render(&results, &cli.format, cli.max_abc);
+    exit_code(&results)
+}
 
-    // max threshold is threaded through via closure capture of parsed CLI
-    let only = cli.only.clone();
-    let files = collect_files(&cli.paths);
+fn scan_paths(paths: &[String], only: Option<&str>, max: f64) -> Vec<FileResult> {
+    let files = collect_files(paths);
     let mut results: Vec<FileResult> = files
         .par_iter()
-        .map(|p| analyze_one_with_max(p, only.as_deref(), cli.max_abc))
+        .map(|p| analyze_one(p, only, max))
         .collect();
     results.sort_by(|x, y| x.path.cmp(&y.path));
+    results
+}
 
-    let total_abc: usize = results.iter().map(|r| r.abc.len()).sum();
-    let total_used: usize = results.iter().map(|r| r.used_once.len()).sum();
-
-    match cli.format.as_str() {
-        "json" => print_json(&files.len(), &results),
-        _ => print_text(&results, cli.max_abc),
+fn render(results: &[FileResult], format: &str, max: f64) {
+    match format {
+        "json" => output::print_json(&results.len(), results),
+        _ => output::print_text(results, max),
     }
+}
 
-    if total_abc + total_used > 0 {
-        ExitCode::FAILURE
-    } else {
+fn exit_code(results: &[FileResult]) -> ExitCode {
+    let clean = results
+        .iter()
+        .all(|r| r.abc.is_empty() && r.used_once.is_empty() && r.oversize.is_none());
+    if clean {
         ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
     }
 }
 
-/// Parsed `rubocop:disable` / `rubocop:enable` directives of one file.
-struct Directives {
-    /// lines carrying a trailing disable naming Metrics/AbcSize (or all cops)
-    abc_lines: std::collections::HashSet<usize>,
-    /// line ranges (inclusive) where Metrics/AbcSize is disabled
-    abc_ranges: Vec<(usize, usize)>,
-    /// same two, for disables with no cop list (suppress everything)
-    all_lines: std::collections::HashSet<usize>,
-    all_ranges: Vec<(usize, usize)>,
-}
-
-fn cop_names(after: &str) -> Vec<String> {
-    after
-        .split(',')
-        .map(|s| s.trim().trim_start_matches(':').to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
-
-fn parse_directives(src: &str) -> Directives {
-    let mut d = Directives {
-        abc_lines: std::collections::HashSet::new(),
-        abc_ranges: Vec::new(),
-        all_lines: std::collections::HashSet::new(),
-        all_ranges: Vec::new(),
-    };
-    let mut pending: Vec<(usize, bool)> = Vec::new();
-    for (i, raw) in src.lines().enumerate() {
-        let line_no = i + 1;
-        let Some(hash) = raw.find('#') else {
-            continue;
-        };
-        let mut comment = raw[hash..].trim_start_matches('#').trim().to_string();
-        // `rubocop:todo` is honored exactly like `rubocop:disable`
-        if let Some(rest) = comment.strip_prefix("rubocop:todo") {
-            comment = format!("rubocop:disable{}", rest);
-        }
-        let comment = comment.as_str();
-        let enable = comment.strip_prefix("rubocop:enable");
-        let disable = comment.strip_prefix("rubocop:disable");
-        if enable.is_some() {
-            for (_, targets_abc) in pending.drain(..) {
-                let ranges = if targets_abc {
-                    &mut d.abc_ranges
-                } else {
-                    &mut d.all_ranges
-                };
-                for r in ranges.iter_mut() {
-                    if r.1 == usize::MAX {
-                        r.1 = line_no.saturating_sub(1);
-                    }
-                }
-            }
-            continue;
-        }
-        let Some(after) = disable else {
-            continue;
-        };
-        // `rubocop:disable-next` is not a RuboCop directive — ignore it
-        if after.starts_with('-') {
-            continue;
-        }
-        let names = cop_names(after.trim());
-        // Empty cop list = all cops; a bare `Metrics` namespace disable
-        // also covers AbcSize.
-        let mentions_abc =
-            names.iter().any(|n| n == "Metrics/AbcSize" || n == "Metrics");
-        let relevant = names.is_empty() || mentions_abc;
-        let trailing = !raw[..hash].trim().is_empty();
-        if trailing {
-            if names.is_empty() {
-                d.all_lines.insert(line_no);
-            } else if mentions_abc {
-                d.abc_lines.insert(line_no);
-            }
-        } else if names.is_empty() {
-            pending.push((line_no, false));
-            d.all_ranges.push((line_no + 1, usize::MAX));
-        } else if relevant {
-            pending.push((line_no, true));
-            d.abc_ranges.push((line_no + 1, usize::MAX));
-        }
-    }
-    d
-}
-fn analyze_one_with_max(path: &std::path::PathBuf, only: Option<&str>, max: f64) -> FileResult {
-    let empty = FileResult {
+fn analyze_one(path: &std::path::PathBuf, only: Option<&str>, max: f64) -> FileResult {
+    let blank = FileResult {
         path: path.display().to_string(),
         abc: Vec::new(),
         used_once: Vec::new(),
+        oversize: None,
     };
-    let Ok(src_bytes) = fs::read(path) else {
-        return empty;
+    let Some((lang, src_bytes, tree)) = load(path) else {
+        return blank;
     };
-    let lang = lang_for(path);
-    let Some(tree) = parse_file_lang(&src_bytes, lang) else {
-        return empty;
-    };
-    if lang == Lang::Rust {
-        let fm = rustlang::build(src_bytes, tree);
-        let do_abc = only.is_none_or(|o| o == "abc");
-        let do_used = only.is_none_or(|o| o == "used-once");
-        return FileResult {
-            path: empty.path,
-            abc: if do_abc {
-                rustlang::analyze(&fm, max)
-            } else {
-                Vec::new()
-            },
-            used_once: if do_used {
-                rustlang::used_once_offenses(&fm)
-            } else {
-                Vec::new()
-            },
-        };
+    let checks = Checks::new(only);
+    let oversize =
+        std::str::from_utf8(&src_bytes).ok().and_then(|t| modulesize::offense(t, &path.display().to_string()));
+    match lang {
+        Lang::Rust => {
+            let fm = rustlang::build(src_bytes, tree);
+            FileResult {
+                path: blank.path,
+                abc: checks.want_abc.then(|| rustlang::analyze(&fm, max)).unwrap_or_default(),
+                used_once: checks
+                    .want_used
+                    .then(|| rustlang::used_once_offenses(&fm))
+                    .unwrap_or_default(),
+                oversize,
+            }
+        }
+        Lang::Ruby => {
+            let text = String::from_utf8_lossy(&src_bytes).into_owned();
+            let dirs = directives::parse(&text);
+            let mut r = blank_with(path);
+            if checks.want_abc {
+                r.abc = ruby_abc(&src_bytes, lang, &dirs, max);
+            }
+            if checks.want_used {
+                r.used_once = ruby_used(&src_bytes, lang, &dirs);
+            }
+            r
+        }
     }
-    let fm = build(src_bytes, tree);
-    let do_abc = only.is_none_or(|o| o == "abc");
-    let do_used = only.is_none_or(|o| o == "used-once");
-    let text = String::from_utf8_lossy(fm.src.as_slice());
-    let dirs = parse_directives(&text);
-    let abc_suppressed = |line: usize| {
-        dirs.abc_lines.contains(&line)
-            || dirs.all_lines.contains(&line)
-            || dirs
-                .abc_ranges
-                .iter()
-                .chain(dirs.all_ranges.iter())
-                .any(|r| r.0 <= line && line <= r.1)
-    };
-    let used_suppressed = |line: usize| dirs.all_lines.contains(&line)
-        || dirs.all_ranges.iter().any(|r| r.0 <= line && line <= r.1);
+}
+
+
+struct Checks {
+    want_abc: bool,
+    want_used: bool,
+}
+
+impl Checks {
+    fn new(only: Option<&str>) -> Self {
+        Self {
+            want_abc: only.is_none_or(|o| o == "abc"),
+            want_used: only.is_none_or(|o| o == "used-once"),
+        }
+    }
+}
+
+fn blank_with(path: &std::path::Path) -> FileResult {
     FileResult {
-        path: empty.path,
-        abc: if do_abc {
-            abc::analyze(&fm, max)
-                .into_iter()
-                .filter(|o| !abc_suppressed(o.line))
-                .collect()
-        } else {
-            Vec::new()
-        },
-        used_once: if do_used {
-            used_once::analyze(&fm)
-                .into_iter()
-                .filter(|o| !used_suppressed(o.line))
-                .collect()
-        } else {
-            Vec::new()
-        },
+        path: path.display().to_string(),
+        abc: Vec::new(),
+        used_once: Vec::new(),
+        oversize: None,
     }
 }
 
-fn print_text(results: &[FileResult], max: f64) {
-    for r in results {
-        for o in &r.abc {
-            println!(
-                "{}:{}:{}: C: Metrics/AbcSize: Assignment Branch Condition size for `{}` is too high. [{} {}/{}]",
-                r.path,
-                o.line,
-                o.column,
-                o.name,
-                o.vector,
-                abc::g4(o.score),
-                abc::g4(max)
-            );
-        }
-        for o in &r.used_once {
-            println!(
-                "{}:{}:{}: W: UsedOnce: variable `{}` is assigned once and read once — consider inlining",
-                r.path, o.line, o.column, o.name
-            );
-        }
-    }
-    println!(
-        "{} files, {} abc offenses, {} used-once offenses",
-        results.len(),
-        results.iter().map(|r| r.abc.len()).sum::<usize>(),
-        results.iter().map(|r| r.used_once.len()).sum::<usize>()
-    );
+fn reparsed(src_bytes: &[u8], lang: Lang) -> Option<crate::model::FileModel> {
+    let tree = parse_file_lang(src_bytes, lang)?;
+    Some(model::build(src_bytes.to_vec(), tree))
 }
 
-fn print_json(file_count: &usize, results: &[FileResult]) {
-    #[derive(Serialize)]
-    struct Out<'a> {
-        files: usize,
-        diagnostics: Vec<Diagnostic>,
-        phantom: std::marker::PhantomData<&'a ()>,
-    }
-    let mut diags = Vec::new();
-    for r in results {
-        for o in &r.abc {
-            diags.push(Diagnostic {
-                file: r.path.clone(),
-                line: o.line,
-                column: o.column,
-                severity: "C",
-                rule: "Metrics/AbcSize",
-                message: format!(
-                    "Assignment Branch Condition size for `{}` is too high. [{} {}]",
-                    o.name,
-                    o.vector,
-                    abc::g4(o.score)
-                ),
-                score: Some(o.score),
-                vector: Some(o.vector.clone()),
-            });
-        }
-        for o in &r.used_once {
-            diags.push(Diagnostic {
-                file: r.path.clone(),
-                line: o.line,
-                column: o.column,
-                severity: "W",
-                rule: "UsedOnce",
-                message: format!(
-                    "variable `{}` is assigned once and read once — consider inlining",
-                    o.name
-                ),
-                score: None,
-                vector: None,
-            });
-        }
-    }
-    let out = Out {
-        files: *file_count,
-        diagnostics: diags,
-        phantom: std::marker::PhantomData,
-    };
-    println!("{}", serde_json::to_string(&out).unwrap());
+fn ruby_abc(
+    src_bytes: &[u8],
+    lang: Lang,
+    dirs: &directives::Directives,
+    max: f64,
+) -> Vec<AbcOffense> {
+    let Some(fm) = reparsed(src_bytes, lang) else { return Vec::new() };
+    abc::analyze(&fm, max)
+        .into_iter()
+        .filter(|o| !dirs.suppresses_abc(o.line))
+        .collect()
+}
+
+fn ruby_used(
+    src_bytes: &[u8],
+    lang: Lang,
+    dirs: &directives::Directives,
+) -> Vec<UsedOnceOffense> {
+    let Some(fm) = reparsed(src_bytes, lang) else { return Vec::new() };
+    used_once::analyze(&fm)
+        .into_iter()
+        .filter(|o| !dirs.suppresses_all(o.line))
+        .collect()
+}
+
+fn load(path: &std::path::PathBuf) -> Option<(Lang, Vec<u8>, tree_sitter::Tree)> {
+    let src_bytes = fs::read(path).ok()?;
+    let lang = lang_for(path);
+    let tree = parse_file_lang(&src_bytes, lang)?;
+    Some((lang, src_bytes, tree))
 }

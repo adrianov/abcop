@@ -90,10 +90,10 @@ impl RustFile {
     fn lookup(&self, mut s: usize, pos: usize, name: &str) -> Option<usize> {
         loop {
             let scope = &self.scopes[s];
-            if let Some(e) = scope.entries.get(name) {
-                if e.intro_byte <= pos {
-                    return Some(s);
-                }
+            if let Some(e) = scope.entries.get(name)
+                && e.intro_byte <= pos
+            {
+                return Some(s);
             }
             // Rust scoping is purely lexical; function scopes are opaque
             match scope.kind {
@@ -217,10 +217,10 @@ impl<'m> Builder<'m> {
         let mut s = scope;
         loop {
             let data = &self.scopes[s];
-            if let Some(e) = data.entries.get(name) {
-                if e.intro_byte <= pos {
-                    return Some(s);
-                }
+            if let Some(e) = data.entries.get(name)
+                && e.intro_byte <= pos
+            {
+                return Some(s);
             }
             match data.kind {
                 ScopeKind::Block => s = data.parent?,
@@ -289,6 +289,18 @@ impl<'m> Builder<'m> {
         }
     }
 
+    const SCOPED: [&'static str; 3] =
+        ["function_item", "closure_expression", "block"];
+    const BINDERS: [&'static str; 7] = [
+        "let_declaration",
+        "assignment_expression",
+        "compound_assignment_expr",
+        "for_expression",
+        "if_let_expression",
+        "while_let_expression",
+        "match_arm",
+    ];
+
     fn walk(&mut self, n: Node, scope: usize) {
         let kind = n.kind();
 
@@ -296,147 +308,169 @@ impl<'m> Builder<'m> {
             return;
         }
 
-        match kind {
-            "function_item" => {
-                let s = self.open_scope(ScopeKind::Function, None);
-                if let Some(p) = n.child_by_field_name("parameters") {
-                    self.declare_params(p, s);
-                }
-                if let Some(body) = n.child_by_field_name("body") {
-                    self.walk_children(body, s);
-                }
-                return;
-            }
-            "closure_expression" => {
-                let s = self.open_scope(ScopeKind::Block, Some(scope));
-                if let Some(p) = n.child_by_field_name("parameters") {
-                    self.declare_params(p, s);
-                }
-                if let Some(body) = n.child_by_field_name("body") {
-                    self.walk(body, s);
-                }
-                return;
-            }
-            "block" => {
-                let s = self.open_scope(ScopeKind::Block, Some(scope));
-                self.walk_children(n, s);
-                return;
-            }
-            "let_declaration" => {
-                let pattern = n.child_by_field_name("pattern");
-                let value = n.child_by_field_name("value");
-                if let Some(p) = pattern {
-                    let mut ids = Vec::new();
-                    pattern_identifiers(p, self.src, &mut ids);
-                    for id in ids {
-                        let name = self.text(id).to_string();
-                        self.record_write(
-                            scope,
-                            &name,
-                            Write {
-                                byte: id.start_byte(),
-                                node_id: id.id(),
-                                plain: true,
-                                rhs: value.map(|v| (v.id(), v.start_byte())),
-                            },
-                            IntroKind::Assign,
-                        );
-                    }
-                }
-                if let Some(v) = value {
-                    self.walk(v, scope);
-                }
-                return;
-            }
-            "assignment_expression" | "compound_assignment_expr" => {
-                let left = n.child_by_field_name("left");
-                let right = n.child_by_field_name("right");
-                if let Some(l) = left {
-                    if l.kind() == "identifier" {
-                        self.record_write(
-                            scope,
-                            &self.text(l).to_string(),
-                            Write {
-                                byte: l.start_byte(),
-                                node_id: l.id(),
-                                plain: false,
-                                rhs: None,
-                            },
-                            IntroKind::Binding,
-                        );
-                    } else {
-                        self.walk(l, scope);
-                    }
-                }
-                if let Some(r) = right {
-                    self.walk(r, scope);
-                }
-                return;
-            }
-            "for_expression" | "if_let_expression" | "while_let_expression" => {
-                self.bind_pattern(n.child_by_field_name("pattern"), scope, IntroKind::Binding);
-                let pat = n.child_by_field_name("pattern");
-                let mut cursor = n.walk();
-                for child in n.children(&mut cursor) {
-                    if pat.map(|p| p.id()) == Some(child.id()) {
-                        continue;
-                    }
-                    self.walk(child, scope);
-                }
-                return;
-            }
-            "match_arm" => {
-                let pattern = n.child_by_field_name("pattern");
-                if let Some(p) = pattern {
-                    let mut binders = Vec::new();
-                    match_binders(p, self.src, &mut binders);
-                    for id in &binders {
-                        self.record_write(
-                            scope,
-                            &self.text(*id).to_string(),
-                            Write {
-                                byte: id.start_byte(),
-                                node_id: id.id(),
-                                plain: false,
-                                rhs: None,
-                            },
-                            IntroKind::Binding,
-                        );
-                    }
-                    let skip: HashSet<usize> = binders.iter().map(|b| b.id()).collect();
-                    self.walk_skip_ids(p, scope, &skip);
-                }
-                if let Some(v) = n.child_by_field_name("value") {
-                    self.walk(v, scope);
-                }
-                return;
-            }
-            _ => {}
+        if Self::SCOPED.contains(&kind) {
+            return self.walk_scoped(n, scope, kind);
         }
+        if Self::BINDERS.contains(&kind) {
+            return self.walk_binder(n, scope, kind);
+        }
+        self.walk_other(n, scope, kind);
+    }
+
+    fn walk_scoped(&mut self, n: Node, scope: usize, kind: &str) {
+        let block_scoped = kind != "function_item";
+        let s = self.open_scope(
+            if block_scoped { ScopeKind::Block } else { ScopeKind::Function },
+            if block_scoped { Some(scope) } else { None },
+        );
+        if let Some(p) = n.child_by_field_name("parameters") {
+            self.declare_params(p, s);
+        }
+        if block_scoped && kind == "closure_expression" {
+            if let Some(body) = n.child_by_field_name("body") {
+                self.walk(body, s);
+            }
+            return;
+        }
+        if kind == "block" {
+            self.walk_children(n, s);
+            return;
+        }
+        if let Some(body) = n.child_by_field_name("body") {
+            self.walk_children(body, s);
+        }
+    }
+
+    fn walk_binder(&mut self, n: Node, scope: usize, kind: &str) {
+        match kind {
+            "let_declaration" => self.handle_let(n, scope),
+            "assignment_expression" | "compound_assignment_expr" => {
+                self.handle_assign(n, scope)
+            }
+            "match_arm" => self.handle_match_arm(n, scope),
+            _ => self.handle_loop_or_let_binding(n, scope, kind),
+        }
+    }
+
+    fn handle_let(&mut self, n: Node, scope: usize) {
+        let pattern = n.child_by_field_name("pattern");
+        let value = n.child_by_field_name("value");
+        if let Some(p) = pattern {
+            let mut ids = Vec::new();
+            pattern_identifiers(p, self.src, &mut ids);
+            for id in ids {
+                let name = self.text(id).to_string();
+                self.record_write(
+                    scope,
+                    &name,
+                    Write {
+                        byte: id.start_byte(),
+                        node_id: id.id(),
+                        plain: true,
+                        rhs: value.map(|v| (v.id(), v.start_byte())),
+                    },
+                    IntroKind::Assign,
+                );
+            }
+        }
+        if let Some(v) = value {
+            self.walk(v, scope);
+        }
+    }
+
+    fn handle_assign(&mut self, n: Node, scope: usize) {
+        let left = n.child_by_field_name("left");
+        let right = n.child_by_field_name("right");
+        if let Some(l) = left {
+            if l.kind() == "identifier" {
+                let name = self.text(l).to_string();
+                self.record_write(
+                    scope,
+                    &name,
+                    Write {
+                        byte: l.start_byte(),
+                        node_id: l.id(),
+                        plain: false,
+                        rhs: None,
+                    },
+                    IntroKind::Binding,
+                );
+            } else {
+                self.walk(l, scope);
+            }
+        }
+        if let Some(r) = right {
+            self.walk(r, scope);
+        }
+    }
+
+    fn handle_match_arm(&mut self, n: Node, scope: usize) {
+        let pattern = n.child_by_field_name("pattern");
+        if let Some(p) = pattern {
+            let mut binders = Vec::new();
+            match_binders(p, self.src, &mut binders);
+            for id in &binders {
+                let name = self.text(*id).to_string();
+                self.record_write(
+                    scope,
+                    &name,
+                    Write {
+                        byte: id.start_byte(),
+                        node_id: id.id(),
+                        plain: false,
+                        rhs: None,
+                    },
+                    IntroKind::Binding,
+                );
+            }
+            let skip: HashSet<usize> = binders.iter().map(|b| b.id()).collect();
+            self.walk_skip_ids(p, scope, &skip);
+        }
+        if let Some(v) = n.child_by_field_name("value") {
+            self.walk(v, scope);
+        }
+    }
+
+    fn handle_loop_or_let_binding(&mut self, n: Node, scope: usize, kind: &str) {
+        let pattern_field = if kind == "for_expression" { "pattern" } else { "pattern" };
+        self.bind_pattern(n.child_by_field_name(pattern_field), scope, IntroKind::Binding);
+        let pat = n.child_by_field_name(pattern_field);
+        let mut cursor = n.walk();
+        for child in n.children(&mut cursor) {
+            if pat.map(|p| p.id()) == Some(child.id()) {
+                continue;
+            }
+            self.walk(child, scope);
+        }
+    }
+
+    #[allow(dead_code)]
+    fn old_walk_removed(&mut self) {}
+    fn walk_other(&mut self, n: Node, scope: usize, kind: &str) {
         if kind == "token_tree" {
-            // macro input: identifiers still resolve as reads, but they are
-            // flagged so they never qualify a variable for inlining
             self.macro_depth += 1;
             self.walk_children(n, scope);
             self.macro_depth -= 1;
             return;
         }
         if kind == "identifier" {
-            let name = self.text(n).to_string();
-            if !name.starts_with('_')
-                && self.lookup(scope, n.start_byte(), &name).is_some()
-            {
-                self.record_read(scope, &name, n.start_byte());
-            }
+            self.walk_ident_node(n, scope);
             return;
         }
-
         if kind == "scoped_identifier" {
-            // path segments (std::mem::f32) are not variables
             return;
         }
-
         self.walk_children(n, scope);
+    }
+
+    fn walk_ident_node(&mut self, n: Node, scope: usize) {
+        let name = self.text(n).to_string();
+        if name.starts_with('_') {
+            return;
+        }
+        if self.lookup(scope, n.start_byte(), &name).is_some() {
+            self.record_read(scope, &name, n.start_byte());
+        }
     }
 
     fn walk_children(&mut self, n: Node, scope: usize) {
@@ -545,6 +579,36 @@ impl<'f> Calc<'f> {
         if !n.is_named() || skip_subtree(n.kind()) {
             return;
         }
+        let kind = n.kind();
+        if Self::DECL.contains(&kind) {
+            return self.count_decl(n);
+        }
+        if Self::FLOW.contains(&kind) {
+            return self.count_flow(n, kind);
+        }
+        if Self::OPS.contains(&kind) {
+            return self.count_ops(n);
+        }
+    }
+
+    const DECL: [&'static str; 5] = [
+        "let_declaration",
+        "assignment_expression",
+        "compound_assignment_expr",
+        "closure_parameters",
+        "parameters",
+    ];
+
+    const FLOW: [&'static str; 6] = [
+        "for_expression", "if_let_expression", "while_let_expression",
+        "match_arm", "if_expression", "while_expression",
+    ];
+    const OPS: [&'static str; 5] = [
+        "binary_expression", "unary_expression", "call_expression",
+        "macro_invocation", "try_expression",
+    ];
+
+    fn count_decl(&mut self, n: Node) {
         match n.kind() {
             "let_declaration" => {
                 if let Some(p) = n.child_by_field_name("pattern") {
@@ -558,15 +622,18 @@ impl<'f> Calc<'f> {
                     .filter(|nm| !nm.starts_with('_'))
                     .count() as u32;
             }
-            "for_expression" => {
+            _ => {}
+        }
+    }
+
+    fn count_flow(&mut self, n: Node, kind: &str) {
+        match kind {
+            "for_expression" | "if_let_expression" | "while_let_expression"
+            | "if_expression" | "while_expression" => {
                 self.c += 1;
-                if let Some(p) = n.child_by_field_name("pattern") {
-                    self.a += pattern_count(self.fm, p);
-                }
-            }
-            "if_let_expression" | "while_let_expression" => {
-                self.c += 1;
-                if let Some(p) = n.child_by_field_name("pattern") {
+                if matches!(kind, "for_expression" | "if_let_expression")
+                    && let Some(p) = n.child_by_field_name("pattern")
+                {
                     self.a += pattern_count(self.fm, p);
                 }
             }
@@ -578,7 +645,12 @@ impl<'f> Calc<'f> {
                     self.a += binders.len() as u32;
                 }
             }
-            "if_expression" | "while_expression" => self.c += 1,
+            _ => {}
+        }
+    }
+
+    fn count_ops(&mut self, n: Node) {
+        match n.kind() {
             "binary_expression" => {
                 let op = n
                     .child_by_field_name("operator")
@@ -597,9 +669,7 @@ impl<'f> Calc<'f> {
                     .map(|o| matches!(self.fm.text(o), "-" | "+"))
                     .unwrap_or(false)
                     && n.child_by_field_name("operand")
-                        .map(|o| {
-                            matches!(o.kind(), "integer_literal" | "float_literal")
-                        })
+                        .map(|o| matches!(o.kind(), "integer_literal" | "float_literal"))
                         .unwrap_or(false);
                 if !numeric_fold {
                     self.b += 1;
@@ -633,10 +703,9 @@ impl<'f> Calc<'f> {
 }
 
 fn visit_units(fm: &RustFile, n: Node, f: &mut impl FnMut(Node, &str)) {
-    if n.kind() == "function_item" {
-        if let Some(name_node) = n.child_by_field_name("name") {
-            f(n, fm.text(name_node));
-        }
+    let is_fn = n.kind() == "function_item";
+    if is_fn && let Some(name_node) = n.child_by_field_name("name") {
+        f(n, fm.text(name_node));
     }
     let mut cursor = n.walk();
     for child in n.children(&mut cursor) {
@@ -730,21 +799,9 @@ fn pure(fm: &RustFile, n: Node) -> bool {
         | "false"
         | "unit_type" => true,
         "scoped_identifier" => true, // constants; enforced immutable by rustc
-        "reference_expression" | "unary_expression" => {
-            let mut c = n.walk();
-            n.children(&mut c)
-                .filter(|ch| ch.is_named())
-                .all(|ch| pure(fm, ch))
-        }
-        "binary_expression"
-        | "tuple_expression"
-        | "array_expression"
-        | "range_expression" => {
-            let mut c = n.walk();
-            n.children(&mut c)
-                .filter(|ch| ch.is_named())
-                .all(|ch| pure(fm, ch))
-        }
+        "reference_expression" | "unary_expression" => children_pure(fm, n),
+        "binary_expression" | "tuple_expression" | "array_expression"
+        | "range_expression" => children_pure(fm, n),
         "type_cast_expression" => n
             .child_by_field_name("value")
             .map(|v| pure(fm, v))
@@ -755,6 +812,13 @@ fn pure(fm: &RustFile, n: Node) -> bool {
             .unwrap_or(false),
         _ => false,
     }
+}
+
+fn children_pure<'t>(fm: &RustFile, n: Node<'t>) -> bool {
+    let mut c = n.walk();
+    n.children(&mut c)
+        .filter(|ch| ch.is_named())
+        .all(|ch| pure(fm, ch))
 }
 
 pub fn used_once_offenses(fm: &RustFile) -> Vec<UsedOnceOffense> {

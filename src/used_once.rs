@@ -30,39 +30,23 @@ fn index_nodes<'t>(root: Node<'t>) -> HashMap<usize, Node<'t>> {
 
 /// Straight-line execution check: no conditional/loop/rescue ancestor between
 /// the write and its owning scope boundary.
+const VETO_ANCESTORS: [&str; 14] = [
+    "if", "unless", "if_modifier", "unless_modifier", "conditional", "while",
+    "until", "while_modifier", "until_modifier", "for", "rescue",
+    "rescue_modifier", "in_clause", "when",
+];
+const SCOPE_OWNERS: [&str; 8] = [
+    "method", "singleton_method", "class", "module", "singleton_class",
+    "block", "do_block", "lambda",
+];
+
 fn unconditionally_executed(write_node: Node) -> bool {
-    let veto = [
-        "if",
-        "unless",
-        "if_modifier",
-        "unless_modifier",
-        "conditional",
-        "while",
-        "until",
-        "while_modifier",
-        "until_modifier",
-        "for",
-        "rescue",
-        "rescue_modifier",
-        "in_clause",
-        "when",
-    ];
-    let owners = [
-        "method",
-        "singleton_method",
-        "class",
-        "module",
-        "singleton_class",
-        "block",
-        "do_block",
-        "lambda",
-    ];
     let mut cur = Some(write_node);
     while let Some(n) = cur {
-        if veto.contains(&n.kind()) {
+        if VETO_ANCESTORS.contains(&n.kind()) {
             return false;
         }
-        if owners.contains(&n.kind()) {
+        if SCOPE_OWNERS.contains(&n.kind()) {
             return true;
         }
         cur = n.parent();
