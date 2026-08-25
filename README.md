@@ -81,6 +81,7 @@ cargo build --release
 | `--format text\|json` | `text` | human-readable or machine-readable output |
 | `--max-abc N` | `17` | report functions scoring above N |
 | `--only abc\|used-once\|never-used` | all | run a single check |
+| `--changed [--base REF]` | off | scan only git-changed files/functions vs REF (HEAD); hunks widened with `-W`, so a whole touched function counts as changed |
 | `--dump-tree FILE` | — | debug: print the syntax tree of one file |
 
 Exit codes: `0` clean, `1` diagnostics reported, `2` usage error.

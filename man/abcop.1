@@ -143,6 +143,16 @@ Run only one of
 or
 .BR used-once .
 .TP
+.B \-\-changed
+Only report on functions whose lines are changed in git versus
+.BR \-\-base " (default HEAD). Hunks are widened with git's"
+.B \-W
+function context, so an entire touched function counts as changed.
+.TP
+.BI \-\-base " REF"
+Git ref used by
+.BR \-\-changed .
+.TP
 .B \-\-dump\-tree
 Debug aid: print the tree\-sitter syntax tree of a single file and exit.
 .TP
