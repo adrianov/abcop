@@ -2,6 +2,8 @@
 name = "abcop"
 version = "0.1.0"
 edition = "2024"
+authors = ["Peter Adrianov"]
+copyright = "Copyright (c) 2026 Peter Adrianov"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
