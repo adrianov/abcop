@@ -75,49 +75,60 @@ pub(crate) fn analyze_one(
     let checks = Checks::new(only);
 
     let file_lang = lang_for(path);
-    match file_lang {
-        Lang::Rust => {
-            let fm = crate::rustlang::build(src_bytes, tree);
-            if checks.want_abc {
-                r.abc = crate::rustlang::analyze(&fm, max);
-            }
-            if checks.want_used {
-                r.used_once = crate::rustlang::used_once_offenses(&fm);
-            }
-            if checks.want_never {
-                r.never_used = crate::rustlang::never_used_offenses(&fm);
-            }
-            if let Some(cache) = cache {
-                cache.store(
-                    &key,
-                    &r.abc, &r.used_once, &r.never_used, r.oversize,
-                );
-            }
+    if file_lang.is_clike() {
+        let dirs = directives::parse(&String::from_utf8_lossy(src_bytes));
+        if checks.want_abc {
+            r.abc = crate::clike::analyze(src_bytes, &tree, file_lang, max)
+                .into_iter()
+                .filter(|o| !dirs.suppresses_abc(o.line))
+                .collect();
         }
-        Lang::Ruby => {
-            let dirs = directives::parse(&String::from_utf8_lossy(src_bytes));
-            let Some(fm) = reparsed(src_bytes, file_lang) else { return r };
-            if checks.want_abc {
-                r.abc = crate::abc::analyze(&fm, max)
-                    .into_iter()
-                    .filter(|o| !dirs.suppresses_abc(o.line))
-                    .collect();
+        if let Some(cache) = cache {
+            cache.store(&key, &r.abc, &r.used_once, &r.never_used, r.oversize);
+        }
+    } else {
+        match file_lang {
+            Lang::Rust => {
+                let fm = crate::rustlang::build(src_bytes, tree);
+                if checks.want_abc {
+                    r.abc = crate::rustlang::analyze(&fm, max);
+                }
+                if checks.want_used {
+                    r.used_once = crate::rustlang::used_once_offenses(&fm);
+                }
+                if checks.want_never {
+                    r.never_used = crate::rustlang::never_used_offenses(&fm);
+                }
             }
-            if checks.want_used {
-                r.used_once = crate::used_once::analyze(&fm)
-                    .into_iter()
-                    .filter(|o| !dirs.suppresses_all(o.line))
-                    .collect();
+            Lang::Ruby => {
+                let dirs =
+                    directives::parse(&String::from_utf8_lossy(src_bytes));
+                let Some(fm) = reparsed(src_bytes, file_lang) else {
+                    return r;
+                };
+                if checks.want_abc {
+                    r.abc = crate::abc::analyze(&fm, max)
+                        .into_iter()
+                        .filter(|o| !dirs.suppresses_abc(o.line))
+                        .collect();
+                }
+                if checks.want_used {
+                    r.used_once = crate::used_once::analyze(&fm)
+                        .into_iter()
+                        .filter(|o| !dirs.suppresses_all(o.line))
+                        .collect();
+                }
+                if checks.want_never {
+                    r.never_used = crate::never_used::analyze(&fm);
+                }
             }
-            if checks.want_never {
-                r.never_used = crate::never_used::analyze(&fm);
-            }
-            if let Some(cache) = cache {
-                cache.store(
-                    &key,
-                    &r.abc, &r.used_once, &r.never_used, r.oversize,
-                );
-            }
+            _ => unreachable!("non-clike languages are Ruby and Rust only"),
+        }
+        if let Some(cache) = cache {
+            cache.store(
+                &key,
+                &r.abc, &r.used_once, &r.never_used, r.oversize,
+            );
         }
     }
 

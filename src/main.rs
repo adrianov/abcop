@@ -8,6 +8,7 @@ mod never_used;
 mod modulesize;
 mod output;
 mod pipeline;
+mod clike;
 mod dump;
 mod cache;
 mod git_changes;

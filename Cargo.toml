@@ -1,6 +1,6 @@
 [package]
 name = "abcop"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["Peter Adrianov"]
 license = "GPL-3.0-or-later"
@@ -24,6 +24,8 @@ tree-sitter-cpp = "0.23"
 tree-sitter-objc = "3"
 sha2 = "0.10"
 memmap2 = "0.9"
+tree-sitter-c = "0.23"
+tree-sitter-swift = "0.7.3"
 
 
 [profile.release]

@@ -74,12 +74,30 @@ enum Directive {
 }
 
 fn apply_line(d: &mut Directives, pending: &mut Vec<bool>, line_no: usize, raw: &str) {
-    let Some(hash) = raw.find('#') else { return };
-    let comment = raw[hash..].trim_start_matches('#').trim();
-    match classify(comment) {
-        Directive::None => {}
-        Directive::Enable(_) => close_pending(d, pending, line_no),
-        Directive::Disable(after) => apply_disable(d, pending, line_no, raw, hash, &after),
+    // Ruby-style `#` comments and C-family `//` comments; the first
+    // marker whose content actually parses as a directive wins.
+    let markers = [(raw.find('#'), '#'), (raw.find("//"), '/')];
+    for (at, marker) in markers {
+        let Some(hash) = at else { continue };
+        let comment = match marker {
+            '#' => raw[hash..].trim_start_matches('#').trim(),
+            _ => {
+                let content = &raw[hash + 2..];
+                let trimmed = content.trim_start_matches('/').trim();
+                if trimmed.is_empty() && !content.contains("rubocop:") {
+                    continue;
+                }
+                trimmed
+            }
+        };
+        match classify(comment) {
+            Directive::None => continue,
+            Directive::Enable(_) => close_pending(d, pending, line_no),
+            Directive::Disable(after) => {
+                apply_disable(d, pending, line_no, raw, hash, &after);
+            }
+        }
+        return;
     }
 }
 
