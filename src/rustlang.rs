@@ -587,7 +587,7 @@ impl<'f> Calc<'f> {
             return self.count_flow(n, kind);
         }
         if Self::OPS.contains(&kind) {
-            return self.count_ops(n);
+            self.count_ops(n)
         }
     }
 

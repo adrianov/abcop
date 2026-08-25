@@ -11,7 +11,6 @@ mod paths;
 mod rustlang;
 mod used_once;
 
-use std::fs;
 use std::process::ExitCode;
 
 use clap::Parser as ClapParser;
@@ -142,11 +141,16 @@ fn analyze_one(path: &std::path::PathBuf, only: Option<&str>, max: f64) -> FileR
             let fm = rustlang::build(src_bytes, tree);
             FileResult {
                 path: blank.path,
-                abc: checks.want_abc.then(|| rustlang::analyze(&fm, max)).unwrap_or_default(),
-                used_once: checks
-                    .want_used
-                    .then(|| rustlang::used_once_offenses(&fm))
-                    .unwrap_or_default(),
+                abc: if checks.want_abc {
+                    rustlang::analyze(&fm, max)
+                } else {
+                    Vec::new()
+                },
+                used_once: if checks.want_used {
+                    rustlang::used_once_offenses(&fm)
+                } else {
+                    Vec::new()
+                },
                 oversize,
             }
         }
@@ -220,7 +224,13 @@ fn ruby_used(
 }
 
 fn load(path: &std::path::PathBuf) -> Option<(Lang, Vec<u8>, tree_sitter::Tree)> {
-    let src_bytes = fs::read(path).ok()?;
+    let file = std::fs::File::open(path).ok()?;
+    let cap = file.metadata().ok()?.len() as usize;
+    let mut src_bytes = Vec::with_capacity(cap);
+    {
+        use std::io::Read;
+        (&file).read_to_end(&mut src_bytes).ok()?;
+    }
     let lang = lang_for(path);
     let tree = parse_file_lang(&src_bytes, lang)?;
     Some((lang, src_bytes, tree))

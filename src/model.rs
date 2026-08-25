@@ -111,11 +111,10 @@ pub fn lookup_scope(
     let mut effective_pos = pos;
     loop {
         let scope = &scopes[s];
-        if let Some(e) = scope.entries.get(name) {
-            if e.intro_byte <= effective_pos {
+        if let Some(e) = scope.entries.get(name)
+            && e.intro_byte <= effective_pos {
                 return Some(s);
             }
-        }
         let parent = scope.parent?;
         // Climbing out of a nested block: only bindings introduced before the
         // boundary are shared with the outer scope.
@@ -333,8 +332,8 @@ impl<'m> Builder<'m> {
             }
             "for" => {
                 let pattern = n.child_by_field_name("pattern");
-                if let Some(pat) = pattern {
-                    if pat.kind() == "identifier" {
+                if let Some(pat) = pattern
+                    && pat.kind() == "identifier" {
                         let name = self.text(pat).to_string();
                         let w = Write {
                             byte: pat.start_byte(),
@@ -344,7 +343,6 @@ impl<'m> Builder<'m> {
                         };
                         self.record_write(scope, &name, w, IntroKind::Binding);
                     }
-                }
                 let mut cursor = n.walk();
                 for child in n.children(&mut cursor) {
                     if pattern.map(|p| p.id()) == Some(child.id()) {
@@ -357,8 +355,8 @@ impl<'m> Builder<'m> {
             "rescue" => {
                 // bind the exception variable FIRST: the handler body reads it
                 let var = n.child_by_field_name("variable");
-                if let Some(v) = var {
-                    if let Some(ident) =
+                if let Some(v) = var
+                    && let Some(ident) =
                         v.children(&mut v.walk()).find(|c| c.kind() == "identifier")
                     {
                         let name = self.text(ident).to_string();
@@ -370,7 +368,6 @@ impl<'m> Builder<'m> {
                         };
                         self.record_write(scope, &name, w, IntroKind::Binding);
                     }
-                }
                 let mut cursor = n.walk();
                 for child in n.children(&mut cursor) {
                     if var.map(|v| v.id()) == Some(child.id()) {
@@ -415,16 +412,14 @@ impl<'m> Builder<'m> {
                 .map(|o| self.text(o))
                 .unwrap_or("")
                 .to_string();
-            if op == "&." {
-                if let Some(recv) = n.child_by_field_name("receiver") {
-                    if recv.kind() == "identifier" {
+            if op == "&."
+                && let Some(recv) = n.child_by_field_name("receiver")
+                    && recv.kind() == "identifier" {
                         let name = self.text(recv);
                         if self.lookup(scope, recv.start_byte(), name).is_some() {
                             self.csend_sites.push((recv.start_byte(), name.into(), scope));
                         }
                     }
-                }
-            }
             let mut cursor = n.walk();
             for child in n.children(&mut cursor) {
                 if method_slot.map(|m| m.id()) == Some(child.id()) {
@@ -484,8 +479,8 @@ impl<'m> Builder<'m> {
                     if let Some(v) = child.child_by_field_name("value") {
                         self.walk(v, scope, false);
                     }
-                    if let Some(name) = declared_name(child, self.src) {
-                        if !name.starts_with('_') {
+                    if let Some(name) = declared_name(child, self.src)
+                        && !name.starts_with('_') {
                             let pos = child.start_byte();
                             self.scopes[scope]
                                 .entries
@@ -497,7 +492,6 @@ impl<'m> Builder<'m> {
                                     reads: Vec::new(),
                                 });
                         }
-                    }
                 }
                 _ => {
                     // splat wrappers, forwarding args, shadow params etc.

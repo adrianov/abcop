@@ -48,28 +48,71 @@ pub fn is_code_path(p: &std::path::Path) -> bool {
     }
 }
 
+/// Walk all directory roots in parallel, one worker thread per available
+/// CPU (traversal is syscall/IO bound), collecting matching code files.
+/// Single-file arguments bypass the walker. Output is sorted and deduped so
+/// downstream results stay deterministic regardless of discovery order.
 pub fn collect_files(paths: &[String]) -> Vec<std::path::PathBuf> {
-    let mut files = Vec::new();
+    let mut direct = Vec::new();
+    let mut roots = Vec::new();
     for raw in paths {
-        collect_one(raw, &mut files);
+        let p = std::path::Path::new(raw);
+        if p.is_file() {
+            direct.push(p.to_path_buf());
+        } else if p.exists() {
+            roots.push(p.to_path_buf());
+        }
     }
+
+    let threads =
+        std::thread::available_parallelism().map_or(1, |n| n.get());
+
+    let discovered = std::sync::Mutex::new(Vec::new());
+    if !roots.is_empty() {
+        let mut builder = ignore::WalkBuilder::new(&roots[0]);
+        for r in &roots[1..] {
+            builder.add(r);
+        }
+        builder.threads(threads);
+        let sink = &discovered;
+        let mut collector = CollectorBuilder { sink };
+        builder.build_parallel().visit(&mut collector);
+    }
+
+    let mut files = direct;
+    files.extend(discovered.into_inner().unwrap_or_default());
     files.sort();
     files.dedup();
     files
 }
 
-fn collect_one(raw: &str, files: &mut Vec<std::path::PathBuf>) {
-    let p = std::path::Path::new(raw);
-    if p.is_file() {
-        files.push(p.to_path_buf());
-        return;
+/// Shared-sink parallel visitor: one per worker thread.
+struct CollectorBuilder<'s> {
+    sink: &'s std::sync::Mutex<Vec<std::path::PathBuf>>,
+}
+
+impl<'s> ignore::ParallelVisitorBuilder<'s> for CollectorBuilder<'s> {
+    fn build(&mut self) -> Box<dyn ignore::ParallelVisitor + 's> {
+        Box::new(Collector { sink: self.sink })
     }
-    let walker = ignore::WalkBuilder::new(p).build();
-    for entry in walker.flatten() {
-        if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+}
+
+struct Collector<'s> {
+    sink: &'s std::sync::Mutex<Vec<std::path::PathBuf>>,
+}
+
+impl ignore::ParallelVisitor for Collector<'_> {
+    fn visit(
+        &mut self,
+        entry: Result<ignore::DirEntry, ignore::Error>,
+    ) -> ignore::WalkState {
+        if let Ok(entry) = entry
+            && entry.file_type().map(|t| t.is_file()).unwrap_or(false)
             && is_code_path(entry.path())
+            && let Ok(mut sink) = self.sink.lock()
         {
-            files.push(entry.into_path());
+            sink.push(entry.into_path());
         }
+        ignore::WalkState::Continue
     }
 }
