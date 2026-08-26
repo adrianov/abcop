@@ -330,4 +330,64 @@ new file mode 100644
             }
         }
     }
+
+    #[test]
+    fn scope_includes_unstaged_staged_and_untracked_files() {
+        let dir = std::env::temp_dir().join(format!(
+            "abcop_scope_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let run = |args: &[&str]| {
+            let out = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "git {:?}: {}",
+                args,
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+
+        run(&["init", "-q"]);
+        run(&["config", "user.email", "t@t"]);
+        run(&["config", "user.name", "t"]);
+        std::fs::write(dir.join("a.rb"), "def base\nend\n").unwrap();
+        run(&["add", "-A"]);
+        run(&["commit", "-qm", "base"]);
+
+        // unstaged modification of a tracked file
+        std::fs::write(dir.join("a.rb"), "def base\n  x = 1\nend\n").unwrap();
+        // staged brand-new file
+        std::fs::write(dir.join("b.rb"), "def staged_new\nend\n").unwrap();
+        run(&["add", "b.rb"]);
+        // fully untracked file
+        std::fs::write(dir.join("c.rb"), "def untracked_new\nend\n").unwrap();
+
+        let old = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        let result = std::panic::catch_unwind(|| Changeset::load("HEAD"));
+        std::env::set_current_dir(old).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let cs = result.unwrap().expect("changeset loads");
+        assert!(
+            matches!(cs.files.get("a.rb"), Some(Lines::Ranges(s)) if !s.is_empty()),
+            "unstaged edit selected as ranges"
+        );
+        // arrives via the diff as ranges covering its added lines
+        assert!(
+            matches!(cs.files.get("b.rb"), Some(Lines::Ranges(_))),
+            "staged new file selected"
+        );
+        assert!(
+            matches!(cs.files.get("c.rb"), Some(Lines::All)),
+            "untracked file counts fully"
+        );
+    }
 }
