@@ -18,7 +18,7 @@ use redb::ReadableTableMetadata;
 
 /// Bump whenever counting rules or output shape change so stale entries are
 /// never served.
-pub const RULES_REV: u32 = 9;
+pub const RULES_REV: u32 = 10;
 const MAX_ENTRIES: usize = 20_000;
 const DB_FILE: &str = "cache.redb";
 
@@ -134,29 +134,33 @@ impl Cache {
 
     /// Keep the newest MAX_ENTRIES entries; drop the rest.
     pub fn prune(&self) {
-        let Ok(rtx) = self.db.begin_read() else {
+        let Some(by_age) = self.entries_by_age() else {
             return;
         };
-        let Ok(table) = rtx.open_table(ENTRIES) else {
-            return;
-        };
-        let mut by_age: Vec<(u64, String)> = table
-            .iter()
-            .map(|rows| {
-                rows.flatten()
-                    .filter_map(|(k, v)| {
-                        let f: CachedFile = serde_json::from_slice(v.value()).ok()?;
-                        Some((f.ts, k.value().to_string()))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        drop(table);
-        drop(rtx);
         if by_age.len() <= MAX_ENTRIES {
             return;
         }
-        by_age.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
+        let mut newest_first = by_age;
+        newest_first.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
+        let stale: Vec<String> =
+            newest_first.iter().skip(MAX_ENTRIES).map(|(_, k)| k.clone()).collect();
+        self.remove_keys(&stale);
+    }
+
+    /// `(timestamp, key)` for every parseable entry, in storage order.
+    /// Corrupt rows are skipped so one bad entry cannot break pruning.
+    fn entries_by_age(&self) -> Option<Vec<(u64, String)>> {
+        let rtx = self.db.begin_read().ok()?;
+        let table = rtx.open_table(ENTRIES).ok()?;
+        let iter = table.iter().ok()?;
+        Some(
+            iter.flatten()
+                .filter_map(|(k, v)| parse_age(k.value(), v.value()))
+                .collect(),
+        )
+    }
+
+    fn remove_keys(&self, keys: &[String]) {
         let Ok(mut tx) = self.db.begin_write() else {
             return;
         };
@@ -166,12 +170,19 @@ impl Cache {
         let Ok(mut table) = tx.open_table(ENTRIES) else {
             return;
         };
-        for (_, key) in by_age.iter().skip(MAX_ENTRIES) {
+        for key in keys {
             let _ = table.remove(key.as_str());
         }
         drop(table);
         drop(tx.commit());
     }
+}
+
+/// Parse one stored row into `(timestamp, key)`; corrupt rows are skipped
+/// by the caller so one bad entry cannot break pruning.
+fn parse_age(key: &str, payload: &[u8]) -> Option<(u64, String)> {
+    let f: CachedFile = serde_json::from_slice(payload).ok()?;
+    Some((f.ts, key.to_string()))
 }
 
 fn now_ms() -> u64 {
@@ -233,6 +244,27 @@ mod tests {
         dir
     }
 
+    /// Write one raw JSON payload directly through the table.
+    fn seed_raw(cache: &Cache, key: &str, payload: &[u8]) {
+        let mut tx = cache.db.begin_write().unwrap();
+        tx.set_durability(Durability::None).unwrap();
+        let mut table = tx.open_table(ENTRIES).unwrap();
+        table.insert(key, payload).unwrap();
+        drop(table);
+        tx.commit().unwrap();
+    }
+
+    /// Insert `count` well-formed but empty entries with distinct
+    /// ascending timestamps (`0000…` .. count-1).
+    fn seed_entries(cache: &Cache, count: u64) {
+        for i in 0..count {
+            let payload = format!(
+                r#"{{"ts":{i},"abc":[],"used_once":[],"never_used":[],"oversize":null}}"#
+            );
+            seed_raw(cache, &format!("{i:064}"), payload.as_bytes());
+        }
+    }
+
     fn sample(oversize: Option<usize>) -> (Vec<crate::abc::AbcOffense>, CachedDiags) {
         let mk = || vec![crate::abc::AbcOffense {
             line: 7,
@@ -264,44 +296,65 @@ mod tests {
     fn roundtrip_returns_stored_diagnostics() {
         let dir = temp_cache_dir("roundtrip");
         let cache = Cache::open_at(&dir).expect("cache opens");
-        let (abc, diags) = sample(Some(210));
+        let (_, diags) = sample(Some(210));
         let key = "a".repeat(64);
         cache.store(&key, &diags.0, &diags.1, &diags.2, diags.3);
-        assert_eq!(abc.len(), 1);
+
         let hit = cache.get(&key).expect("cache hit");
         assert_eq!(hit.0[0].name, "Foo#bar");
         assert_eq!(hit.0[0].score, 22.5);
         assert_eq!(hit.1[0].name, "x");
         assert_eq!(hit.2[0].name, "dead");
         assert_eq!(hit.3, Some(210));
-        assert!(cache.get(&"b".repeat(64)).is_none(), "miss on other key");
+    }
+
+    #[test]
+    fn miss_on_other_key_is_none() {
+        let dir = temp_cache_dir("miss");
+        let cache = Cache::open_at(&dir).expect("cache opens");
+        let (_, diags) = sample(Some(210));
+        cache.store(
+            &"a".repeat(64),
+            &diags.0,
+            &diags.1,
+            &diags.2,
+            diags.3,
+        );
+        // note: store signature is (&[u8] key, &abc, &used, &never, oversize)
+        assert!(cache.get(&"b".repeat(64)).is_none(), "unrelated key misses");
     }
 
     #[test]
     fn prune_keeps_newest_max_entries() {
         let dir = temp_cache_dir("prune");
         let cache = Cache::open_at(&dir).expect("cache opens");
-        // Insert MAX_ENTRIES + 10 rows in a few transactions, oldest first,
-        // by writing directly through the handle.
-        let mut tx = cache.db.begin_write().unwrap();
-        tx.set_durability(Durability::None).unwrap();
-        let mut table = tx.open_table(ENTRIES).unwrap();
-        for i in 0..(MAX_ENTRIES + 10) {
-            let payload = format!(r#"{{"ts":{},"abc":[],"used_once":[],"never_used":[],"oversize":null}}"#, i);
-            table.insert(format!("{i:064}").as_str(), payload.as_bytes()).unwrap();
-        }
-        drop(table);
-        tx.commit().unwrap();
-
+        seed_entries(&cache, MAX_ENTRIES as u64 + 10);
         cache.prune();
 
+        assert_eq!(count_rows(&cache), MAX_ENTRIES);
+        // oldest ten dropped, newest kept
+        assert!((0..=9).all(|i| entry_absent(&cache, i)), "oldest ten pruned");
+        assert!(entry_present(&cache, MAX_ENTRIES as u64 + 9));
+    }
+
+    fn row_exists(cache: &Cache, i: u64) -> bool {
         let rtx = cache.db.begin_read().unwrap();
         let table = rtx.open_table(ENTRIES).unwrap();
-        assert_eq!(table.len().unwrap() as usize, MAX_ENTRIES);
-        // oldest ten dropped, newest kept
-        assert!(table.get(format!("{:064}", 0).as_str()).unwrap().is_none());
-        assert!(table.get(format!("{:064}", 9).as_str()).unwrap().is_none());
-        assert!(table.get(format!("{:064}", MAX_ENTRIES + 9).as_str()).unwrap().is_some());
+        table.get(format!("{i:064}").as_str()).unwrap().is_some()
+    }
+
+    fn entry_absent(cache: &Cache, i: u64) -> bool {
+        !row_exists(cache, i)
+    }
+
+    fn entry_present(cache: &Cache, i: u64) -> bool {
+        row_exists(cache, i)
+    }
+
+    fn count_rows(cache: &Cache) -> usize {
+        let rtx = cache.db.begin_read().unwrap();
+        let table = rtx.open_table(ENTRIES).unwrap();
+        table.len().unwrap() as usize
     }
 
     #[test]
@@ -309,14 +362,7 @@ mod tests {
         let dir = temp_cache_dir("corrupt");
         let cache = Cache::open_at(&dir).expect("cache opens");
         let key = "c".repeat(64);
-        {
-            let mut tx = cache.db.begin_write().unwrap();
-            tx.set_durability(Durability::None).unwrap();
-            let mut table = tx.open_table(ENTRIES).unwrap();
-            table.insert(key.as_str(), &b"{not json"[..]).unwrap();
-            drop(table);
-            tx.commit().unwrap();
-        }
+        seed_raw(&cache, &key, b"{not json");
         assert!(cache.get(&key).is_none());
     }
 
