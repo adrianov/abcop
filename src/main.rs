@@ -19,6 +19,7 @@ mod golang;
 mod pipeline;
 mod srcbuf;
 mod run;
+mod scope_model;
 mod rustlang;
 mod skip;
 mod used_once;
