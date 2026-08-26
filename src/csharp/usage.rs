@@ -25,6 +25,7 @@ static CSHARP_SEMANTICS: scope_model::Semantics = scope_model::Semantics {
     pure: pure,
     veto: VETO_KINDS,
     owners: OWNER_KINDS,
+    include_root_scope: false,
 };
 
 pub fn used_once_offenses(fm: &CSharpFile) -> Vec<crate::used_once::UsedOnceOffense> {
@@ -37,7 +38,7 @@ pub fn used_once_offenses(fm: &CSharpFile) -> Vec<crate::used_once::UsedOnceOffe
 }
 
 pub fn never_used_offenses(fm: &CSharpFile) -> Vec<crate::never_used::NeverUsedOffense> {
-    scope_model::never_used_offenses(&|byte| fm.line_col(byte), &fm.scopes)
+    scope_model::never_used_offenses(&|byte| fm.line_col(byte), &fm.scopes, &CSHARP_SEMANTICS)
 }
 
 /// Conservative RHS purity: literals, arrays of literals, and operator

@@ -27,6 +27,7 @@ static SOLIDITY_SEMANTICS: scope_model::Semantics = scope_model::Semantics {
     pure,
     veto: VETO_KINDS,
     owners: OWNER_KINDS,
+    include_root_scope: true,
 };
 
 pub fn used_once_offenses(fm: &SolFile) -> Vec<crate::used_once::UsedOnceOffense> {
@@ -39,7 +40,7 @@ pub fn used_once_offenses(fm: &SolFile) -> Vec<crate::used_once::UsedOnceOffense
 }
 
 pub fn never_used_offenses(fm: &SolFile) -> Vec<crate::never_used::NeverUsedOffense> {
-    scope_model::never_used_offenses(&|byte| fm.line_col(byte), &fm.scopes)
+    scope_model::never_used_offenses(&|byte| fm.line_col(byte), &fm.scopes, &SOLIDITY_SEMANTICS)
 }
 
 /// Conservative RHS purity: literals, arrays/tuples of literals, and
