@@ -268,12 +268,11 @@ fn fork_point_in(dir: Option<&std::path::Path>) -> Result<Option<(String, String
         .cloned();
 
     Ok(best.map(|b| {
-        let short = b[..b.len().min(7)].to_string();
         let parent = names_by_sha.get(&b).map(String::as_str).unwrap_or("");
         let label = if parent.is_empty() {
-            format!("changes since fork point {short}")
+            "changes since fork point".to_string()
         } else {
-            format!("changes since fork point {short} (parent {parent})")
+            format!("changes since fork point (parent {parent})")
         };
         (b, label)
     }))
