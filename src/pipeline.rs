@@ -194,8 +194,27 @@ fn non_clike_arm(
             }
             true
         }
+        Lang::Php => {
+            let dirs = directives::parse(&String::from_utf8_lossy(src));
+            let fm = crate::phplang::build(src, tree);
+            if checks.want_abc {
+                r.abc = suppressed(crate::phplang::analyze(&fm, max), |o| {
+                    dirs.suppresses_abc(o.line)
+                });
+            }
+            if checks.want_used {
+                r.used_once =
+                    suppressed(crate::phplang::used_once_offenses(&fm), |o| {
+                        dirs.suppresses_all(o.line)
+                    });
+            }
+            if checks.want_never {
+                r.never_used = crate::phplang::never_used_offenses(&fm);
+            }
+            true
+        }
         Lang::Ruby => ruby_arm(r, src, checks, max),
-        _ => unreachable!("non-clike languages are Ruby, Rust, Python and Go"),
+        _ => unreachable!("non-clike languages are Ruby, Rust, Python, Go and PHP"),
     }
 }
 

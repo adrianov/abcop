@@ -1,7 +1,7 @@
 # abcop
 
 **One self-contained binary that lints every language in your stack** —
-Ruby, Rust, Python, Go, JavaScript, TypeScript, C, C++, Objective-C and
+Ruby, Rust, Python, Go, PHP, JavaScript, TypeScript, C, C++, Objective-C and
 Swift — with no runtimes, no plugins, no per-language installs. Written in
 Rust with speed as a design constraint: one parse per file, one walk per
 metric, file-level parallelism, all grammars compiled in. Whole trees in
@@ -249,6 +249,7 @@ four rules run everywhere, with one output format and one CI gate.
 | Rust | `.rs` | all four rules |
 | Python | `.py .pyi .pyw` | all four rules |
 | Go | `.go` | all four rules |
+| PHP | `.php` | all four rules |
 | JavaScript | `.js .mjs .cjs .jsx` | AbcSize + ModuleSize |
 | TypeScript | `.ts .tsx .mts .cts` | AbcSize + ModuleSize |
 | C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | AbcSize + ModuleSize |
