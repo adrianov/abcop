@@ -32,6 +32,7 @@ tree-sitter-go = "0.25"
 tree-sitter-php = "0.24.2"
 tree-sitter-java = "0.23"
 tree-sitter-c-sharp = "0.23.5"
+tree-sitter-solidity = "1.2.13"
 
 
 [profile.release]

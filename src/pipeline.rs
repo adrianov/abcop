@@ -251,8 +251,27 @@ fn non_clike_arm(
             }
             true
         }
+        Lang::Solidity => {
+            let dirs = directives::parse(&String::from_utf8_lossy(src));
+            let fm = crate::sollang::build(src, tree);
+            if checks.want_abc {
+                r.abc = suppressed(crate::sollang::analyze(&fm, max), |o| {
+                    dirs.suppresses_abc(o.line)
+                });
+            }
+            if checks.want_used {
+                r.used_once =
+                    suppressed(crate::sollang::used_once_offenses(&fm), |o| {
+                        dirs.suppresses_all(o.line)
+                    });
+            }
+            if checks.want_never {
+                r.never_used = crate::sollang::never_used_offenses(&fm);
+            }
+            true
+        }
         Lang::Ruby => ruby_arm(r, src, checks, max),
-        _ => unreachable!("non-clike languages are Ruby, Rust, Python, Go, PHP, Java and C#"),
+        _ => unreachable!("unsupported non-clike language"),
     }
 }
 

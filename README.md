@@ -116,10 +116,9 @@ cargo build --release
 
 | Option | Default | Meaning |
 |---|---|---|
-| `[PATH]...` | current MR | files or directories to analyse; **omitted, abcop scans your current merge request** (see `--mr`), falling back to the full tree outside a repository. Given: exactly those targets. All walking modes prune test/fixture trees (`spec/`, `tests/`, `fixtures/`, `testdata/`, …), vendored/build trees (`vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …), Rails `db/migrate/`, framework route tables (`config/routes.rb`, `config/routes/*.rb`) and generated files (`*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`) — name such a path explicitly to scan it; `--mr`/`--changed` scopes also drop framework route tables. Bare `abcop` covers the union of uncommitted work vs HEAD and the branch's changes vs its base |
+| `[PATH]...` | current MR | files or directories to analyse; **omitted, abcop scans your current merge request** (see `--mr`), falling back to the full tree outside a repository. Given: exactly those targets. All walking modes prune test/fixture trees (`spec/`, `tests/`, `fixtures/`, `testdata/`, …), vendored/build trees (`vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …), Rails `db/migrate/`, framework route tables (`config/routes.rb`, `config/routes/*.rb`) and generated files (`*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`) — name such a path explicitly to scan it; scoped runs (bare or `--mr`) also drop framework route tables. Bare `abcop` covers the union of uncommitted work vs HEAD and the branch's changes vs its base |
 | `--max-abc N` | `17` | report functions scoring above N |
 | `--only abc\|used-once\|never-used` | all | run a single check |
-| `--changed [--base REF]` | off | scan only git-changed files/functions vs REF (HEAD); hunks widened with `-W`, so a whole touched function counts as changed |
 | `--full` | off | scan the whole production tree instead of the current MR (default skips stay active); bare `--full` targets the current directory |
 | `--everything` | off | scan literally everything below the target: no gitignore, no hidden-file skipping, no vendored/generated/test pruning |
 | `--dump-tree FILE` | — | debug: print the syntax tree of one file |
@@ -167,11 +166,10 @@ git checkout -b feature/x     # branch off main
 abcop --mr --only abc src     # only functions you touched on this branch
 ```
 
-Committing straight to main? The same command switches to a 36-hour window
+Committing straight to main? The same scope switches to a 36-hour window
 automatically (`<default-branch>@{36.hours.ago}`) — enough to cover work
-resumed from the previous morning. Force an explicit base with
-`--base <ref>`. `--changed` remains available for plain working-tree diffs vs
-any ref.
+resumed from the previous morning. Uncommitted edits are always part of
+the scan; there is no separate working-tree-diff flag to remember.
 
 ### Scope rules and why they exist
 
@@ -188,7 +186,7 @@ is an endpoint someone asked for, so AbcSize/ModuleSize findings there
 are noise with no action. Name one explicitly (`abcop config/routes.rb`)
 to analyse it anyway.
 
-**In `--mr`/`--changed` scopes, ModuleSize fires only when your diff
+**In scoped runs (bare `abcop` or explicit `--mr`), ModuleSize fires only when your diff
 touched ≥100 lines of that module** (untracked files count as fully
 changed) — and this applies to **any** module, spec/test files included:
 a hundred changed lines in a spec means the extraction conversation is

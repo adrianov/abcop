@@ -16,11 +16,9 @@ pub(crate) struct ScanRun<'a> {
     only: Option<&'a str>,
     max_abc: f64,
     format: &'a str,
-    changed: bool,
     mr: bool,
     full: bool,
     everything: bool,
-    base: Option<&'a str>,
     no_cache: bool,
 }
 
@@ -31,11 +29,9 @@ impl<'a> From<&'a super::Cli> for ScanRun<'a> {
             only: cli.only.as_deref(),
             max_abc: cli.max_abc,
             format: &cli.format,
-            changed: cli.changed,
             mr: cli.mr,
             full: cli.full,
             everything: cli.everything,
-            base: cli.base.as_deref(),
             no_cache: cli.no_cache,
         }
     }
@@ -127,17 +123,10 @@ impl ScanRun<'_> {
         &self,
         explicit_paths: bool,
     ) -> Result<Option<git_changes::Changeset>, String> {
-        if self.changed {
-            let base = self.base.unwrap_or("HEAD");
-            return git_changes::Changeset::load(base).map(Some);
-        }
-        if self.mr {
-            return load_mr_scope().map(Some);
-        }
-        if !explicit_paths && !self.full && !self.everything {
-            // Default mode: review the working state -- uncommitted work
-            // against HEAD plus everything the branch already changed vs
-            // its base -- the union CI would gate on.
+        if self.mr || (!explicit_paths && !self.full && !self.everything) {
+            // MR mode (explicit or default): review the working state --
+            // uncommitted work against HEAD plus everything the branch
+            // already changed vs its base -- the union CI would gate on.
             let head = git_changes::Changeset::load("HEAD");
             return match load_mr_scope() {
                 Ok(mr) => Ok(Some(match head {

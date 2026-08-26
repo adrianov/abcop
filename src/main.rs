@@ -15,6 +15,7 @@ mod paths;
 mod csharp;
 mod javalang;
 mod phplang;
+mod sollang;
 mod pylang;
 mod golang;
 mod pipeline;
@@ -45,24 +46,19 @@ pub(crate) struct Cli {
     /// Run only one of the checks
     #[arg(long, value_parser = ["abc", "used-once", "never-used"])]
     pub(crate) only: Option<String>,
-    /// Only report on functions whose lines are changed in git
+    /// Scan the last MR explicitly: changes since branching from
+    /// master/main plus uncommitted work (this is the default when no
+    /// path is given)
     #[arg(long)]
-    pub(crate) changed: bool,
-    /// Scan the last MR: changes since branching from master/main, or the
-    /// last 36 hours when committing directly onto it
-    #[arg(long, conflicts_with = "changed")]
     pub(crate) mr: bool,
     /// Scan the whole production tree instead of the current MR (default
     /// skips for vendored/generated/test trees stay active)
-    #[arg(long, conflicts_with_all = ["changed", "mr", "everything"])]
+    #[arg(long, conflicts_with_all = ["mr", "everything"])]
     pub(crate) full: bool,
     /// Scan literally everything below the target: no gitignore, no hidden
     /// skipping, no vendored/generated/test pruning
-    #[arg(long, conflicts_with_all = ["changed", "mr", "full", "base"])]
+    #[arg(long, conflicts_with_all = ["mr", "full"])]
     pub(crate) everything: bool,
-    /// Git base ref for --changed (default HEAD)
-    #[arg(long, requires = "changed")]
-    pub(crate) base: Option<String>,
     /// Disable the on-disk result cache
     #[arg(long)]
     pub(crate) no_cache: bool,

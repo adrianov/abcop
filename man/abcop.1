@@ -32,7 +32,7 @@ sequence, framework route tables
 .IR config/routes/*.rb ),
 and minified bundles
 .RB ( *.min.js, " *.bundle.js ).
-MR and changed scopes also drop framework route tables,
+MR scopes also drop framework route tables,
 and a bare invocation covers the union of uncommitted work against
 HEAD plus the branch's changes against its base.
 A path named explicitly on the command line is walked in full regardless.
@@ -178,21 +178,14 @@ Run only one of
 or
 .BR used-once .
 .TP
-.B \-\-changed
-Only report on functions whose lines are changed in git versus
-.BR \-\-base " (default HEAD). Hunks are widened with git's"
-.B \-W
-function context, so an entire touched function counts as changed.
-.TP
-.BI \-\-base " REF"
-Git ref used by
-.BR \-\-changed .
-.TP
 .B \-\-mr
-Scan your current merge request: changes since branching from master/main
-(merge\-base), or \-\- when committing directly onto the default branch \-\-
-.RB "last 36 hours" 
-.RB ( default_branch "@{" 36.hours.ago "})."
+Scan your current merge request explicitly: changes since branching from
+master/main (merge\-base), or \-\- when committing directly onto the default
+branch \-\-
+.RB "last 36 hours"
+.RB ( default_branch "@{" 36.hours.ago "}),
+unioned with uncommitted working\-tree edits. This is also the default
+when no path is given.
 The default branch is detected among origin/main, origin/master, main and
 master. Bare
 .B abcop

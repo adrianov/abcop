@@ -13,6 +13,7 @@ pub enum Lang {
     Java,
     Php,
     CSharp,
+    Solidity,
     Js,
     Ts,
     Tsx,
@@ -47,6 +48,7 @@ pub fn lang_for(path: &std::path::Path) -> Lang {
         Some("php") => Lang::Php,
         Some("java") => Lang::Java,
         Some("cs") => Lang::CSharp,
+        Some("sol") => Lang::Solidity,
         // Gemfile-style names and anything else text-shaped stay Ruby,
         // whose scorer is a no-op for non-Ruby content.
         _ => Lang::Ruby,
@@ -68,6 +70,7 @@ pub fn parse_file_lang(src: &[u8], lang: Lang) -> Option<tree_sitter::Tree> {
         Lang::Php => tree_sitter_php::LANGUAGE_PHP_ONLY.into(),
         Lang::Java => tree_sitter_java::LANGUAGE.into(),
         Lang::CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
+        Lang::Solidity => tree_sitter_solidity::LANGUAGE.into(),
         Lang::ObjC => tree_sitter_objc::LANGUAGE.into(),
         Lang::Swift => tree_sitter_swift::LANGUAGE.into(),
     };
@@ -75,7 +78,7 @@ pub fn parse_file_lang(src: &[u8], lang: Lang) -> Option<tree_sitter::Tree> {
     parser.parse(src, None)
 }
 
-const CODE_EXTS: [&str; 31] = [
+const CODE_EXTS: [&str; 32] = [
     "rb", "rake", "ru", "gemspec", "rs", //
     "js", "mjs", "cjs", "jsx", "ts", "tsx", "mts", "cts", //
     "c", "h", "cc", "cpp", "cxx", "hpp", "hxx", "hh", //
@@ -85,6 +88,7 @@ const CODE_EXTS: [&str; 31] = [
     "php",
     "java",
     "cs",
+    "sol",
 ];
 
 const CODE_NAMES: [&str; 6] = [
