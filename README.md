@@ -117,12 +117,15 @@ cargo build --release
 
 | Option | Default | Meaning |
 |---|---|---|
-| `[PATH]...` | current MR | files or directories to analyse; **omitted, abcop scans your current merge request** (see `--mr`), falling back to the full tree outside a repository. Given: exactly those targets. All walking modes prune test/fixture trees (`spec/`, `tests/`, `fixtures/`, `testdata/`, …), vendored/build trees (`vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …), Rails `db/migrate/`, framework route tables (`config/routes.rb`, `config/routes/*.rb`) and generated files (`*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`) — name such a path explicitly to scan it; scoped runs (bare or `--mr`) also drop framework route tables and third-party material: a diff that merely touches `vendor/` (or other vendored/generated paths) does not pull them into review surface. Bare `abcop` covers the union of uncommitted work vs `HEAD` and the branch's committed changes vs its base — commit-as-you-go onto the default branch and staged feature branches are both covered with no extra flags. `--changed` alone narrows to uncommitted work only; `--mr` alone adds the branch's committed changes vs its base.
+| `[PATH]...` | current MR | files or directories to analyse; **omitted, abcop scans your current merge request** (see `--mr`), falling back to the full tree outside a repository. Given: exactly those targets. All walking modes prune test/fixture trees (`spec/`, `tests/`, `fixtures/`, `testdata/`, …), vendored/build trees (`vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …), Rails `db/migrate/`, framework route tables (`config/routes.rb`, `config/routes/*.rb`) and generated files (`*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`) — name such a path explicitly to scan it; this union scope is the same one `--mr` selects explicitly, and third-party/vendored material in a diff is never pulled into review surface no matter which path opts it in. Bare `abcop` covers the union of uncommitted work vs `HEAD` and the branch's committed changes vs its base — commit-as-you-go onto the default branch and staged feature branches are both covered with no extra flags.
 | `--max-abc N` | `17` | report functions scoring above N |
 | `--only abc\|used-once\|never-used` | all | run a single check |
 | `--full` | off | scan the whole production tree instead of the current MR (default skips stay active); bare `--full` targets the current directory |
 | `--everything` | off | scan literally everything below the target: no gitignore, no hidden-file skipping, no vendored/generated/test pruning |
-| `--dump-tree FILE` | — | debug: print the syntax tree of one file |
+| `--format text\|json` | `text` | machine-readable JSON for CI dashboards |
+| `--mr` | off | select the current-MR scope explicitly (uncommitted plus branch commits vs base); same as the bare default |
+| `--no-cache` | off | skip the on-disk result cache for this run |
+| `--dump-tree FILE` | — | debug: print the syntax tree of a single file
 
 Exit codes: `0` clean, `1` diagnostics reported, `2` usage error.
 

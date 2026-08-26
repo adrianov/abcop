@@ -184,8 +184,9 @@ Maximum ABC score before reporting (default 17, matching RuboCop).
 Run only one of
 .B abc
 or
-.BR used-once .
-.TP
+.BR used-once
+or
+.BR never-used
 .B \-\-mr
 Scan your current merge request explicitly: changes since branching from
 master/main (merge\-base), or \-\- when committing directly onto the default
@@ -210,7 +211,10 @@ Scan literally everything below the target: gitignore files are not
 honoured, hidden directories are entered, and vendored/generated/test
 pruning is disabled. The escape hatch for auditing what the defaults hide.
 .TP
-.B \-\-dump\-tree
+.B \-\-no\-cache
+Skip the on\-disk result cache for this run, forcing a full reanalysis.
+.TP
+.B \-\-dump\-tree " FILE"
 Debug aid: print the tree\-sitter syntax tree of a single file and exit.
 .TP
 .B \-\-help
