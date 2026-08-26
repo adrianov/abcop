@@ -26,39 +26,51 @@ pub(super) fn unit_name<'t>(unit: Node<'t>, src: &'t [u8]) -> String {
     let mut names = Vec::new();
     let mut cursor = unit.walk();
     for child in unit.children(&mut cursor) {
-        if !NAME_SIG_KINDS.contains(&child.kind()) {
-            continue;
+        if NAME_SIG_KINDS.contains(&child.kind()) {
+            collect_sig_names(child, &mut names);
         }
-        collect_sig_names(child, &mut names);
     }
     if let Some(n) = names.into_iter().next_back() {
         return n.utf8_text(src).unwrap_or("").to_string();
     }
-    // operator members (`operator ==`) declare no name field; the
-    // signature label is the stable short name
+    operator_label(unit, src)
+}
+
+/// Operator members (`operator ==`) declare no name field; the
+/// signature label is the stable short name.
+fn operator_label<'t>(unit: Node<'t>, src: &'t [u8]) -> String {
     match desc_of_kind(unit, "operator_signature") {
         Some(sig) => sig.utf8_text(src).unwrap_or("<operator>").to_string(),
-        None => "<operator>".to_string(),
+        None => "<operator>".into(),
     }
 }
 
+/// Slot kinds whose descent terminates: parameters, type parameters and
+/// initializer lists never carry the unit's own label.
+fn is_nameless_slot(kind: &str) -> bool {
+    matches!(
+        kind,
+        "formal_parameter_list" | "type_parameters" | "initializers"
+    )
+}
+
 fn collect_sig_names<'t>(n: Node<'t>, out: &mut Vec<Node<'t>>) {
-    if n.kind() == "formal_parameter_list"
-        || n.kind() == "type_parameters"
-        || n.kind() == "initializers"
-    {
+    if is_nameless_slot(n.kind()) {
         return;
     }
-    if n.kind() == "identifier"
-        && n.parent()
-            .is_some_and(|p| p.field_name_for_child(index_in_parent(p, n)) == Some("name"))
-    {
+    if n.kind() == "identifier" && has_name_slot(n) {
         out.push(n);
     }
     let mut c = n.walk();
     for ch in n.children(&mut c) {
         collect_sig_names(ch, out);
     }
+}
+
+/// Is this node the value of its parent's `name` field?
+fn has_name_slot(n: Node<'_>) -> bool {
+    n.parent()
+        .is_some_and(|p| p.field_name_for_child(index_in_parent(p, n)) == Some("name"))
 }
 
 fn index_in_parent(parent: Node<'_>, child: Node<'_>) -> u32 {

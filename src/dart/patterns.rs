@@ -13,7 +13,7 @@ use crate::scope_model::walk::{Backend, dispatch};
 
 use crate::scope_model::{IntroKind, Write};
 
-use super::scope::{Collector, bare_target};
+use super::scope::Collector;
 
 impl Collector<'_> {
     /// Names declared by a pattern before its `=`: every pattern-side
@@ -102,6 +102,20 @@ fn walk_post_eq(b: &mut Collector<'_>, n: Node, scope: usize) {
             continue;
         }
         dispatch(b, child, scope);
+    }
+}
+
+/// The bare identifier behind an `assignable_expression`, if the target
+/// is a plain variable rather than an index/member form.
+pub(super) fn bare_target(left: Node<'_>) -> Option<Node<'_>> {
+    let mut cursor = left.walk();
+    let named: Vec<_> = left
+        .children(&mut cursor)
+        .filter(|c| c.is_named())
+        .collect();
+    match named[..] {
+        [only] if only.kind() == "identifier" => Some(only),
+        _ => None,
     }
 }
 

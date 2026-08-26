@@ -1,12 +1,10 @@
-//! Collector walk for Dart: the language-specific arms. Generic
-//! dispatch (skip subtrees, member-slot exclusions, Block scopes,
-//! plain identifier reads) lives in [`crate::scope_model::walk`].
+//! Collector walk for Dart: the language-specific arms. Generic dispatch
+//! (skip subtrees, member-slot exclusions, Block scopes, identifier
+//! reads) lives in [`crate::scope_model::walk`].
 //!
-//! Dart notes: Dart has no undeclared locals, so an assignment whose
-//! target is not a visible local writes a field/outer symbol -- the
-//! operands contribute reads only. Field and top-level declarations bind
-//! state that never participates in local tracking: their initializers
-//! still produce reads. Parameters, for-in heads and catch bindings are
+//! Dart has no undeclared locals, so assignments to non-locals write
+//! fields/outer state -- operand reads only. Field/top-level initializers
+//! still produce reads; parameters, for-in heads and catch bindings are
 //! protocol. Pattern binding lives in [`super::patterns`].
 
 use tree_sitter::Node;
@@ -16,13 +14,13 @@ use crate::scope_model::{IntroKind, Model, ScopeKind, Write, child_of_kind};
 
 static SPEC: Spec = Spec {
     skip_kinds: &[
+        // comments; named-argument and goto-style statement labels are
+        // pure names in both roles; `this.x`/`super.x` forwarding are
+        // fields, not locals; string escape internals
         "comment",
         "block_comment",
         "documentation_block_comment",
-        // named-argument labels and goto-style statement labels are pure
-        // names in both roles
         "label",
-        // `this.x` / `super.x` forwarding: fields, not locals
         "constructor_param",
         "super_formal_parameter",
         "escape_sequence",
@@ -108,12 +106,10 @@ impl Backend for Collector<'_> {
             "assignment_expression" => self.walk_assignment(n, scope),
             // default-value expressions must keep producing their reads
             "formal_parameter" => self.bind_parameter(n, scope),
-            // class/file state: the name slot binds nothing local -- but
-            // initializer expressions are real expression contexts
+            // class/file state slots bind nothing local; only their
+            // initializer values are real expression contexts
             "initialized_identifier" | "static_final_declaration" | "field_initializer" => {
-                if let Some(v) = n.child_by_field_name("value") {
-                    dispatch(self, v, scope);
-                }
+                self.walk_state_initializer(n, scope)
             }
             // irrefutable `final [p, q] = list;`
             "pattern_variable_declaration" => self.walk_pattern_declaration(n, scope),
@@ -124,7 +120,7 @@ impl Backend for Collector<'_> {
             "try_statement" => self.walk_try(n, scope),
             // bodyless constructor headers need their own scope so their
             // parameters never leak into the enclosing context
-            "declaration" if CTOR_SIG_KINDS.iter().any(|k| child_of_kind(n, k).is_some()) => {
+            "declaration" if is_ctor_header(n) => {
                 let s = self.model.open_scope(ScopeKind::Block, scope);
                 self.walk_children(n, s);
             }
@@ -145,22 +141,17 @@ impl Collector<'_> {
         self.walk_children_excluding_field(n, scope, "name");
     }
 
+    /// Field/top-level state initializer: the name slot binds nothing,
+    /// the value expression still produces its reads.
+    fn walk_state_initializer(&mut self, n: Node, scope: usize) {
+        if let Some(v) = n.child_by_field_name("value") {
+            dispatch(self, v, scope);
+        }
+    }
+
     fn walk_try(&mut self, n: Node, scope: usize) {
         let s = self.model.open_scope(ScopeKind::Block, scope);
-        let mut caught = Vec::new();
-        let mut cursor = n.walk();
-        for clause in n
-            .children(&mut cursor)
-            .filter(|c| c.kind() == "catch_clause")
-        {
-            for field in ["exception", "stack_trace"] {
-                if let Some(id) = clause.child_by_field_name(field) {
-                    let w = Write::rewrite(id.start_byte(), id.id());
-                    self.bind_var(id, s, w, IntroKind::Binding);
-                    caught.push(id.id());
-                }
-            }
-        }
+        let caught = self.bind_catch_names(n, s);
         let mut cursor = n.walk();
         for child in n.children(&mut cursor) {
             if caught.contains(&child.id()) {
@@ -169,18 +160,31 @@ impl Collector<'_> {
             dispatch(self, child, s);
         }
     }
+
+    /// Bind catch exception/stack-trace names into the shared try scope;
+    /// returns their ids so the sibling walk skips re-processing them.
+    fn bind_catch_names(&mut self, try_node: Node<'_>, scope: usize) -> Vec<usize> {
+        let mut caught = Vec::new();
+        for field in ["exception", "stack_trace"] {
+            let mut cursor = try_node.walk();
+            for clause in try_node
+                .children(&mut cursor)
+                .filter(|c| c.kind() == "catch_clause")
+            {
+                if let Some(id) = clause.child_by_field_name(field) {
+                    let w = Write::rewrite(id.start_byte(), id.id());
+                    self.bind_var(id, scope, w, IntroKind::Binding);
+                    caught.push(id.id());
+                }
+            }
+        }
+        caught
+    }
 }
 
-/// The bare identifier behind an `assignable_expression`, if the target
-/// is a plain variable rather than an index/member form.
-pub(super) fn bare_target(left: Node<'_>) -> Option<Node<'_>> {
-    let mut cursor = left.walk();
-    let named: Vec<_> = left
-        .children(&mut cursor)
-        .filter(|c| c.is_named())
-        .collect();
-    match named[..] {
-        [only] if only.kind() == "identifier" => Some(only),
-        _ => None,
-    }
+/// Wraps a signature-only constructor header?
+fn is_ctor_header(declaration: Node<'_>) -> bool {
+    CTOR_SIG_KINDS
+        .iter()
+        .any(|k| child_of_kind(declaration, k).is_some())
 }

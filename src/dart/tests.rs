@@ -1,5 +1,4 @@
 //! End-to-end assertions over the Dart backend: AbcSize vectors,
-//! UsedOnce candidacy and NeverUsed reporting.
 
 use super::{build, never_used_offenses, used_once_offenses};
 use crate::paths::{Lang, parse_file_lang};
@@ -13,16 +12,21 @@ fn scores(src: &'static str) -> Vec<(String, u32, u32, u32)> {
     super::abc::all_scores(&parse(src))
         .into_iter()
         .map(|o| {
-            let nums = o.vector.trim_matches(|c| c == '<' || c == '>');
-            let mut it = nums.split(", ");
-            (
-                o.name,
-                it.next().unwrap().parse().unwrap(),
-                it.next().unwrap().parse().unwrap(),
-                it.next().unwrap().parse().unwrap(),
-            )
+            let (a, b, c) = vector_nums(&o.vector);
+            (o.name, a, b, c)
         })
         .collect()
+}
+
+/// Parse the `"<A, B, C>"` vector field back into numbers.
+fn vector_nums(vector: &str) -> (u32, u32, u32) {
+    let nums = vector.trim_matches(|c| c == '<' || c == '>');
+    let mut it = nums.split(", ");
+    (
+        it.next().unwrap().parse().unwrap(),
+        it.next().unwrap().parse().unwrap(),
+        it.next().unwrap().parse().unwrap(),
+    )
 }
 
 fn used(src: &'static str) -> Vec<String> {
@@ -33,7 +37,6 @@ fn used(src: &'static str) -> Vec<String> {
     v.sort();
     v
 }
-
 fn dead(src: &'static str) -> Vec<String> {
     let mut v: Vec<_> = never_used_offenses(&parse(src))
         .into_iter()
@@ -56,16 +59,17 @@ fn abc_top_level_function_vector() {
 fn abc_class_members_named_and_scored() {
     // value getter: B only (binary); add: two calls (member call +
     // print); plain field write inside add() stays uncounted
-    let src = r#"class Cart {
+    assert_eq!(
+        scores(
+            r#"class Cart {
   int items = 0;
   int get value => items * 2;
   void add() {
     items.add(this);
     print('n');
   }
-}"#;
-    assert_eq!(
-        scores(src),
+}"#
+        ),
         vec![("value".to_string(), 0, 1, 0), ("add".to_string(), 0, 2, 0)]
     );
 }
@@ -75,27 +79,26 @@ fn abc_constructors_take_signature_names() {
     // Foo ctor: B only (print); the bodyless `.named` header scores
     // nothing; factory arrow body holds the single Foo(0) call. The
     // initializer list must never hijack the name slot.
-    let src = r#"class Foo {
+    assert_eq!(
+        scores(
+            r#"class Foo {
   int x;
   Foo(this.x) : x = 3 {
     print(x);
   }
   Foo.named(this.x);
   factory Foo.other() => Foo(0);
-}"#;
-    assert_eq!(
-        scores(src),
+}"#
+        ),
         vec![("Foo".to_string(), 0, 1, 0), ("other".to_string(), 0, 1, 0),]
     );
 }
 
 #[test]
 fn abc_branch_and_guard_family_counts_c() {
-    // A(6): declarator x, *= compound, for-in head i, += compound,
-    //       plain x = risky(...), pick declarator.
-    // B(3): risky, print(err), print(pick).
-    // C(8): if, &&, >, for-in, case, default, catch, ternary.
-    let src = r#"int complicated(bool flag) {
+    // expected: <6, 3, 8> -- see the add_special/add_table docs.
+    let got = scores(
+        r#"int complicated(bool flag) {
   int x = 0;
   if (x > 10 && flag) {
     x *= 2;
@@ -117,8 +120,8 @@ fn abc_branch_and_guard_family_counts_c() {
   var pick = flag ? 'y' : 'n';
   print(pick);
   return x;
-}"#;
-    let got = scores(src);
+}"#,
+    );
     assert_eq!(got.len(), 1);
     assert_eq!(got[0].1, 6, "assignments");
     assert_eq!(got[0].2, 3, "calls");

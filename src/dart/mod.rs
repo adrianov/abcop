@@ -30,6 +30,7 @@ mod abc;
 mod names;
 mod patterns;
 mod scope;
+mod tally;
 
 #[cfg(test)]
 mod tests;

@@ -59,14 +59,39 @@ pub fn lang_for(path: &std::path::Path) -> Lang {
 
 pub fn parse_file_lang(src: &[u8], lang: Lang) -> Option<tree_sitter::Tree> {
     let mut parser = Parser::new();
+    parser.set_language(&grammar_of(lang)?).ok()?;
+    parser.parse(src, None)
+}
+
+/// Grammar of a language. The split mirrors the dispatch architecture:
+/// the `clike` scanner family versus the standalone per-language
+/// backends -- each side stays a short, flat table.
+fn grammar_of(lang: Lang) -> Option<tree_sitter::Language> {
+    if lang.is_clike() {
+        clike_grammar(lang)
+    } else {
+        standalone_grammar(lang)
+    }
+}
+
+fn clike_grammar(lang: Lang) -> Option<tree_sitter::Language> {
     let ts_lang = match lang {
-        Lang::Ruby => tree_sitter_ruby::LANGUAGE.into(),
-        Lang::Rust => tree_sitter_rust::LANGUAGE.into(),
         Lang::Js => tree_sitter_javascript::LANGUAGE.into(),
         Lang::Ts => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
         Lang::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
         Lang::C => tree_sitter_c::LANGUAGE.into(),
         Lang::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+        Lang::ObjC => tree_sitter_objc::LANGUAGE.into(),
+        Lang::Swift => tree_sitter_swift::LANGUAGE.into(),
+        _ => return None,
+    };
+    Some(ts_lang)
+}
+
+fn standalone_grammar(lang: Lang) -> Option<tree_sitter::Language> {
+    let ts_lang = match lang {
+        Lang::Ruby => tree_sitter_ruby::LANGUAGE.into(),
+        Lang::Rust => tree_sitter_rust::LANGUAGE.into(),
         Lang::Py => tree_sitter_python::LANGUAGE.into(),
         Lang::Go => tree_sitter_go::LANGUAGE.into(),
         Lang::Php => tree_sitter_php::LANGUAGE_PHP_ONLY.into(),
@@ -74,11 +99,9 @@ pub fn parse_file_lang(src: &[u8], lang: Lang) -> Option<tree_sitter::Tree> {
         Lang::CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
         Lang::Solidity => tree_sitter_solidity::LANGUAGE.into(),
         Lang::Dart => tree_sitter_dart::LANGUAGE.into(),
-        Lang::ObjC => tree_sitter_objc::LANGUAGE.into(),
-        Lang::Swift => tree_sitter_swift::LANGUAGE.into(),
+        _ => return None,
     };
-    parser.set_language(&ts_lang).ok()?;
-    parser.parse(src, None)
+    Some(ts_lang)
 }
 
 const CODE_EXTS: [&str; 33] = [
