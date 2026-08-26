@@ -19,6 +19,11 @@ pub struct Semantics {
     pub veto: &'static [&'static str],
     /// Ancestors that end the straight-line check (unit boundaries).
     pub owners: &'static [&'static str],
+    /// Analyze bindings living directly in the Root scope? Module-level
+    /// constants may be consumed by other files, which single-file
+    /// analysis cannot see -- backends for such languages set this to
+    /// `false` to keep the rules free of cross-file false positives.
+    pub include_root_scope: bool,
 }
 
 /// Inline candidates: one plain introduction, one later resolved read,
@@ -32,13 +37,11 @@ pub fn used_once_offenses(
     let nodes = index_nodes(root);
     let mut out = Vec::new();
     for scope in scopes {
+        if !sem.include_root_scope && scope.kind == super::ScopeKind::Root {
+            continue;
+        }
         for (name, e) in &scope.entries {
             let Some(w) = candidate(e) else {
-                if std::env::var("ABCOP_DBG").is_ok() {
-                    eprintln!("[dbg] reject {name} w={} r={} kind={:?} plain={:?} rhs={:?}",
-                        e.writes.len(), e.reads.len(), e.intro_kind,
-                        e.writes.first().map(|w| w.plain), e.writes.first().and_then(|w| w.rhs));
-                }
                 continue;
             };
             let Some(rhs_id) = w.rhs else { continue };
@@ -87,9 +90,13 @@ fn straight_line(write_node: Node, sem: &Semantics) -> bool {
 pub fn never_used_offenses(
     line_col: &dyn Fn(usize) -> (usize, usize),
     scopes: &[Scope],
+    sem: &Semantics,
 ) -> Vec<NeverUsedOffense> {
     let mut out = Vec::new();
     for scope in scopes {
+        if !sem.include_root_scope && scope.kind == super::ScopeKind::Root {
+            continue;
+        }
         for (name, e) in &scope.entries {
             if !e.reads.is_empty() || e.writes.is_empty() {
                 continue;
