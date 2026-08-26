@@ -91,3 +91,20 @@ Feature: Java language support
   Scenario: Members and qualified names are never variable reads
     Given field accesses, method names and package-qualified types
     Then only genuine local identifiers are tracked for the variable rules
+
+Feature: C# language support
+  The same four rules run on C# (.cs) sources.
+
+  Scenario: Methods and constructors are units
+    When abcop analyses C# sources
+    Then method and constructor declarations produce AbcSize candidates
+    And lambdas roll into the enclosing unit
+
+  Scenario: Assignments to undeclared names are field writes
+    Given a bare identifier assigned that no visible local introduced
+    Then the assignment contributes operand reads only
+    And no false NeverUsed is reported for the class field
+
+  Scenario: Protocol and member rules match the other backends
+    Then foreach heads and catch declarations never become candidates
+    And member name slots are not variable reads
