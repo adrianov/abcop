@@ -16,9 +16,7 @@
 //! asked for. Any other root (`.`, `src`, an absolute path) keeps the
 //! defaults active below it.
 
-use crate::modulesize::{
-    GENERATED_DIR_PAIRS, GENERATED_DIRS, NON_PROD_DIRS, is_generated_name,
-};
+use crate::modulesize::{GENERATED_DIR_PAIRS, GENERATED_DIRS, NON_PROD_DIRS, is_generated_name};
 
 /// Drop a leading `./` so root matching works against the walker's entry
 /// spellings (`Path` normalizes `./` away internally, raw prefixes don't).
@@ -43,13 +41,9 @@ fn normalize_root(p: &std::path::Path) -> std::path::PathBuf {
 ///
 /// The matched root itself is exempt from the check when its own final
 /// segment names a skipped tree: the user targeted that material directly.
-pub(crate) fn skipped_by_default(
-    path: &std::path::Path,
-    roots: &[std::path::PathBuf],
-) -> bool {
+pub(crate) fn skipped_by_default(path: &std::path::Path, roots: &[std::path::PathBuf]) -> bool {
     let path = normalize_root(path);
-    let Some(root) = roots.iter().map(|r| normalize_root(r)).find_best(&path)
-    else {
+    let Some(root) = roots.iter().map(|r| normalize_root(r)).find_best(&path) else {
         return false;
     };
     if any_component_matches(&root) {
@@ -135,7 +129,10 @@ mod tests {
             &r
         ));
         assert!(!skipped_by_default(Path::new("./db/seeds.rb"), &r));
-        assert!(!skipped_by_default(Path::new("./app/db/migrate_like.rb"), &r));
+        assert!(!skipped_by_default(
+            Path::new("./app/db/migrate_like.rb"),
+            &r
+        ));
     }
 
     #[test]
@@ -186,9 +183,12 @@ mod tests {
             Path::new("./third_party/lib/foo.rb"),
             &r
         ));
+        assert!(skipped_by_default(
+            Path::new("./third-party/lib/foo.rb"),
+            &r
+        ));
         assert!(skipped_by_default(Path::new("./.terraform/main.tf.rb"), &r));
         assert!(skipped_by_default(Path::new("./app/models/user_pb.rb"), &r));
         assert!(!skipped_by_default(Path::new("./app/models/user.rb"), &r));
     }
 }
-

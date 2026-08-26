@@ -5,27 +5,56 @@
 pub const MAX_LINES: usize = 200;
 
 pub(crate) const NON_PROD_DIRS: [&str; 9] = [
-    "spec/", "specs/", "test/", "tests/", "__tests__/", "__mocks__/",
-    "testdata/", "testing/", "fixtures/",
+    "spec/",
+    "specs/",
+    "test/",
+    "tests/",
+    "__tests__/",
+    "__mocks__/",
+    "testdata/",
+    "testing/",
+    "fixtures/",
 ];
 
 /// Vendored dependencies, package caches and build outputs: third-party or
 /// machine-generated trees are never the review target of a default scan.
 /// Walker-side only (see `skip::skipped_by_default`); ModuleSize's own
 /// classification above stays unchanged.
-pub(crate) const GENERATED_DIRS: [&str; 28] = [
-    "vendor/", ".bundle/", "node_modules/", "bower_components/", "Pods/",
-    "Carthage/", "target/", "dist/", "build/", "out/", ".next/", ".nuxt/",
-    "_build/", "deps/", "coverage/", "venv/", ".venv/", "site-packages/",
-    "__pycache__/", "third_party/", "3rdparty/", "external/",
-    "DerivedData/", ".build/", ".gradle/", ".terraform/", "elm-stuff/",
+pub(crate) const GENERATED_DIRS: [&str; 29] = [
+    "vendor/",
+    ".bundle/",
+    "node_modules/",
+    "bower_components/",
+    "Pods/",
+    "Carthage/",
+    "target/",
+    "dist/",
+    "build/",
+    "out/",
+    ".next/",
+    ".nuxt/",
+    "_build/",
+    "deps/",
+    "coverage/",
+    "venv/",
+    ".venv/",
+    "site-packages/",
+    "__pycache__/",
+    "third_party/",
+    "third-party/",
+    "3rdparty/",
+    "external/",
+    "DerivedData/",
+    ".build/",
+    ".gradle/",
+    ".terraform/",
+    "elm-stuff/",
     ".stack-work/",
 ];
 
 /// Codegen file-name suffixes across ecosystems (protobuf et al). Matched
 /// against the lowercased full file name.
-pub(crate) const GENERATED_FILE_SUFFIXES: [&str; 3] =
-    ["_pb.rb", "_pb2.py", ".pb.go"];
+pub(crate) const GENERATED_FILE_SUFFIXES: [&str; 3] = ["_pb.rb", "_pb2.py", ".pb.go"];
 
 /// Multi-component generated trees, matched as an exact directory sequence
 /// below the walked root. Rails migrations are history, not review surface.
@@ -80,9 +109,7 @@ pub fn effective_lines(src: &str, path: &str) -> usize {
 
 pub fn is_production(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
-    let technical = p.ends_with("schema.rb")
-        || p.ends_with(".lock")
-        || p.contains("schema.rb");
+    let technical = p.ends_with("schema.rb") || p.ends_with(".lock") || p.contains("schema.rb");
     !is_test_path(path) && !technical
 }
 /// Returns Some(lines) when the module exceeds the budget.
