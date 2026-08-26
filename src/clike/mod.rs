@@ -3,19 +3,21 @@
 //!
 //! Submodules: [`spec`] (per-language grammar tables), [`scan`] (unit
 //! discovery and naming), [`tally`] (the ABC counter), [`scope`] (the
-//! UsedOnce/NeverUsed collector for JS/TS), [`tests`] (end-to-end
-//! vector assertions per language).
-//!
-//! - A unit's score walks its whole body but never descends into another
-//!   unit root -- those carry their own offense, so nothing double-counts.
+//! JavaScript/TypeScript scope collector), [`swift`] (the Swift scope
+//! collector), [`purity`] (shared RHS-purity predicates), [`tests`]
+//! (end-to-end vector assertions per language).
 
 mod scan;
 mod scope;
 mod spec;
 mod tally;
+mod purity;
+mod swift;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_abc;
 
 use std::collections::HashSet;
 
@@ -26,21 +28,27 @@ use crate::never_used::NeverUsedOffense;
 use crate::paths::Lang;
 use crate::used_once::UsedOnceOffense;
 
-/// Collected variable model for the JS/TS family.
+/// Collected variable model for the JS/TS/Swift family.
 pub(crate) struct JsScopes<'t> {
     pub scopes: Vec<crate::scope_model::Scope>,
     pub root: tree_sitter::Node<'t>,
 }
 
-pub(crate) fn collect_scopes<'t>(src: &[u8], tree: &'t Tree) -> JsScopes<'t> {
-    JsScopes {
-        scopes: scope::collect(tree.root_node(), src),
-        root: tree.root_node(),
-    }
+pub(crate) fn collect_scopes<'t>(
+    src: &[u8],
+    tree: &'t Tree,
+    lang: crate::paths::Lang,
+) -> JsScopes<'t> {
+    let scopes = match lang {
+        Lang::Js | Lang::Ts | Lang::Tsx => scope::collect(tree.root_node(), src),
+        Lang::Swift => swift::swift_collect(tree.root_node(), src),
+        other => unreachable!("clike scope backend for lang: {other:?}"),
+    };
+    JsScopes { scopes, root: tree.root_node() }
 }
 
 static JS_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semantics {
-    pure: scope::js_pure,
+    pure: purity::js_pure,
     veto: &[
         "if_statement",
         "for_statement",
@@ -52,21 +60,46 @@ static JS_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semanti
         "try_statement",
         "catch_clause",
     ],
-    owners: &[
-        "function_declaration",
-        "generator_function_declaration",
-        "method_definition",
-    ],
+    owners: &["function_declaration", "generator_function_declaration", "method_definition"],
     include_root_scope: false,
 };
 
-pub(crate) fn used_once_offenses(sc: &JsScopes) -> Vec<UsedOnceOffense> {
-    crate::scope_model::used_once_offenses(sc.root, &|b| line_col(sc.root, b), &sc.scopes, &JS_SEMANTICS)
+static SWIFT_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semantics {
+    pure: purity::swift_pure,
+    veto: &[
+        "if_statement",
+        "guard_statement",
+        "for_statement",
+        "while_statement",
+        "repeat_while_statement",
+        "switch_statement",
+        "do_catch_statement",
+    ],
+    owners: &["function_declaration", "init_declaration", "closure_expression"],
+    include_root_scope: false,
+};
+
+fn semantics_for(lang: crate::paths::Lang) -> &'static crate::scope_model::Semantics {
+    match lang {
+        Lang::Js | Lang::Ts | Lang::Tsx => &JS_SEMANTICS,
+        Lang::Swift => &SWIFT_SEMANTICS,
+        other => unreachable!("no semantics for non-clike lang: {other:?}"),
+    }
 }
 
-pub(crate) fn never_used_offenses(sc: &JsScopes) -> Vec<NeverUsedOffense> {
-    crate::scope_model::never_used_offenses(&|b| line_col(sc.root, b), &sc.scopes, &JS_SEMANTICS)
-}
+pub(crate) fn used_once_offenses(
+    sc: &JsScopes,
+    lang: crate::paths::Lang,
+) -> Vec<UsedOnceOffense> {
+    crate::scope_model::used_once_offenses(sc.root, &|b| line_col(sc.root, b), &sc.scopes, semantics_for(lang))
+ }
+ 
+pub(crate) fn never_used_offenses(
+    sc: &JsScopes,
+    lang: crate::paths::Lang,
+) -> Vec<NeverUsedOffense> {
+    crate::scope_model::never_used_offenses(&|b| line_col(sc.root, b), &sc.scopes, semantics_for(lang))
+ }
 
 fn line_col(root: tree_sitter::Node, byte: usize) -> (usize, usize) {
     let point = root

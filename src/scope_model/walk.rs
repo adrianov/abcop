@@ -7,7 +7,9 @@
 
 use tree_sitter::Node;
 
-use super::{Model, ScopeKind};
+pub use super::backend::Backend;
+use super::ScopeKind;
+
 
 /// Static description of a backend's generic walk behavior.
 pub struct Spec {
@@ -17,59 +19,14 @@ pub struct Spec {
     pub block_scoped: &'static [&'static str],
     /// Kinds that open a [`ScopeKind::Function`] boundary.
     pub function_kinds: &'static [&'static str],
+    /// Named-reference kinds (per grammar) that record a variable read:
+    /// JS/TS use `identifier`, Swift uses `simple_identifier`, etc.
+    pub read_kinds: &'static [&'static str],
     /// Expressions whose named fields are member references, not
     /// variables: walking skips exactly those slots.
     pub exclude_fields: &'static [(&'static str, &'static str)],
 }
 
-/// A backend collector driving the shared [`Model`].
-pub trait Backend {
-    fn spec(&self) -> &'static Spec;
-    fn model(&mut self) -> &mut Model;
-    fn text_of(&self, n: Node) -> &str;
-    /// Language-specific arms. Everything the [`Spec`] covers has been
-    /// consumed before this runs; fall back to walking children for the
-    /// remainder.
-    fn custom(&mut self, n: Node, scope: usize);
-
-    /// Bind `name_node` (text used verbatim, underscore-filtered by the
-    /// model) with the given write.
-    fn bind_var(&mut self, name_node: Node, scope: usize, w: super::Write, intro: super::IntroKind) {
-        let name = self.text_of(name_node).to_string();
-        self.model().bind(scope, &name, w, intro);
-    }
-
-    /// Bind a `variable_declarator`'s `@name`, linking its initializer
-    /// as the inlinable RHS when the grammar exposes one.
-    fn bind_declarator_with_rhs_field(&mut self, n: Node, scope: usize) {
-        if let Some(name) = n.child_by_field_name("name")
-            && name.kind() == "identifier"
-        {
-            // grammars differ on exposing an initializer field; when
-            // absent, it is the first named child after the `=` token
-            let rhs = match n.child_by_field_name("value") {
-                Some(v) => Some(v.id()),
-                None => {
-                    let mut c = n.walk();
-                    let mut after_eq = false;
-                    n.children(&mut c)
-                        .find(|ch| {
-                            if !ch.is_named() && self.text_of(*ch) == "=" {
-                                after_eq = true;
-                                false
-                            } else {
-                                after_eq && ch.is_named()
-                            }
-                        })
-                        .map(|v| v.id())
-                }
-            };
-            let w = super::Write::assign(name.start_byte(), name.id(), rhs);
-            self.bind_var(name, scope, w, super::IntroKind::Assign);
-        }
-    }
-
-}
 
 /// Consume everything the [`Spec`] covers. Returns `true` when handled;
 /// otherwise runs the backend's custom arms itself.
@@ -79,43 +36,75 @@ pub fn dispatch(b: &mut impl Backend, n: Node, scope: usize) -> bool {
     if spec.skip_kinds.contains(&kind) {
         return true;
     }
-    if let Some((_, field)) = spec.exclude_fields.iter().find(|(k, _)| *k == kind)
-        && let Some(excluded) = n.child_by_field_name(field).map(|c| c.id())
-    {
-        let mut cursor = n.walk();
-        let children: Vec<_> = n.children(&mut cursor).collect();
-        for child in children {
-            if child.id() != excluded {
-                b.custom(child, scope);
-            }
-        }
+    if spec.read_kinds.contains(&kind) {
+        record_read(b, n, scope);
         return true;
     }
-    if spec.block_scoped.contains(&kind) {
-        let s = b.model().open_scope(ScopeKind::Block, scope);
-        let mut cursor = n.walk();
-        let children: Vec<_> = n.children(&mut cursor).collect();
-        for child in children {
-            b.custom(child, s);
-        }
+    if walk_excluding_field_slot(b, n, scope, kind, spec) {
         return true;
     }
-    if spec.function_kinds.contains(&kind) {
-        let s = b.model().open_scope(ScopeKind::Function, scope);
-        let mut cursor = n.walk();
-        let children: Vec<_> = n.children(&mut cursor).collect();
-        for child in children {
-            b.custom(child, s);
+    match boundary_kind(spec, &kind) {
+        Some(boundary) => {
+            let s = b.model().open_scope(boundary, scope);
+            custom_children(b, n, s);
         }
-        return true;
+        None => b.custom(n, scope),
     }
-    if kind == "identifier" {
-        let name = b.text_of(n).to_string();
-        if !name.starts_with('_') {
-            b.model().record_read(scope, &name, n.start_byte());
-        }
-        return true;
-    }
-    b.custom(n, scope);
     true
+}
+
+/// Record `n`'s text as a read of that name at its start byte, skipping
+/// Rust-style throwaway `_`-prefixed names.
+fn record_read(b: &mut impl Backend, n: Node, scope: usize) {
+    let name = b.text_of(n).to_string();
+    if !name.starts_with('_') {
+        b.model().record_read(scope, &name, n.start_byte());
+    }
+}
+
+/// Walk children while skipping the named-child slot this kind uses for
+/// member/property names (`member_expression.name` et al) -- those name
+/// rather than read. Returns false when the kind has no exclude entry or
+/// the named slot is absent, letting the caller try later cases.
+fn walk_excluding_field_slot(
+    b: &mut impl Backend,
+    n: Node,
+    scope: usize,
+    kind: &str,
+    spec: &Spec,
+) -> bool {
+    let Some((_, field)) = spec.exclude_fields.iter().find(|(k, _)| *k == kind) else {
+        return false;
+    };
+    let Some(excluded) = n.child_by_field_name(field).map(|c| c.id()) else {
+        return false;
+    };
+    let mut cursor = n.walk();
+    for child in n.children(&mut cursor) {
+        if child.id() != excluded {
+            b.custom(child, scope);
+        }
+    }
+    true
+}
+
+/// The child-scope boundary this node opens, if any.
+fn boundary_kind(spec: &Spec, kind: &str) -> Option<ScopeKind> {
+    if spec.block_scoped.contains(&kind) {
+        Some(ScopeKind::Block)
+    } else if spec.function_kinds.contains(&kind) {
+        Some(ScopeKind::Function)
+    } else {
+        None
+    }
+}
+
+/// Route every child of `n` through the backend's custom arms -- the
+/// shared traversal for scope boundaries whose opening/closing tokens
+/// carry no semantics of their own.
+fn custom_children(b: &mut impl Backend, n: Node, scope: usize) {
+    let mut cursor = n.walk();
+    for child in n.children(&mut cursor) {
+        b.custom(child, scope);
+    }
 }

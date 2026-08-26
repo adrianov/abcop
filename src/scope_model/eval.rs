@@ -41,26 +41,39 @@ pub fn used_once_offenses(
             continue;
         }
         for (name, e) in &scope.entries {
-            let Some(w) = candidate(e) else {
-                continue;
-            };
-            let Some(rhs_id) = w.rhs else { continue };
-            let (Some(rhs), Some(write_node)) = (nodes.get(&rhs_id), nodes.get(&w.node_id))
-            else {
-                continue;
-            };
-            if !(sem.pure)(*rhs) || !straight_line(*write_node, sem) {
-                continue;
+            if let Some(offense) = candidate_offense(name, e, &nodes, sem, line_col) {
+                out.push(offense);
             }
-            let (line, column) = line_col(w.byte);
-            out.push(UsedOnceOffense {
-                line,
-                column,
-                name: name.to_string(),
-            });
         }
     }
     finish(out)
+}
+
+/// The UsedOnce offense for one scope entry, or None when the entry's
+/// single write has no inlineable pure RHS or is not on a straight-line
+/// path.
+fn candidate_offense(
+    name: &str,
+    e: &super::Entry,
+    nodes: &HashMap<usize, Node>,
+    sem: &Semantics,
+    line_col: &dyn Fn(usize) -> (usize, usize),
+) -> Option<UsedOnceOffense> {
+    let w = candidate(e)?;
+    let rhs_id = w.rhs?;
+    let (rhs, write_node) = match (nodes.get(&rhs_id), nodes.get(&w.node_id)) {
+        (Some(r), Some(w)) => (*r, *w),
+        _ => return None,
+    };
+    if !(sem.pure)(rhs) || !straight_line(write_node, sem) {
+        return None;
+    }
+    let (line, column) = line_col(w.byte);
+    Some(UsedOnceOffense {
+        line,
+        column,
+        name: name.to_string(),
+    })
 }
 
 fn candidate(e: &Entry) -> Option<&Write> {

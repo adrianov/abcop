@@ -8,9 +8,10 @@
 
 use tree_sitter::Node;
 
-use crate::scope_model::walk::{dispatch, Backend};
-use crate::scope_model::walk::Spec;
+use crate::scope_model::walk::{dispatch, Backend, Spec};
 use crate::scope_model::{child_of_kind, IntroKind, Model, Scope, Write};
+
+use super::decl;
 
 /// Static description of the Solidity walk.
 static SPEC: Spec = Spec {
@@ -32,6 +33,7 @@ static SPEC: Spec = Spec {
         "modifier_definition",
     ],
     exclude_fields: &[("member_expression", "property")],
+    read_kinds: &["identifier"],
 };
 
 pub(super) fn collect(root: Node, src: &[u8]) -> Vec<Scope> {
@@ -39,7 +41,7 @@ pub(super) fn collect(root: Node, src: &[u8]) -> Vec<Scope> {
         src,
         model: Model::rooted(),
     };
-    c.walk(root, 0);
+    dispatch(&mut c, root, 0);
     c.model.scopes
 }
 
@@ -65,111 +67,49 @@ impl Backend for Collector<'_> {
         match n.kind() {
             // `uint256 x = expr;` and tuple heads `(bool ok, ) = ...`
             "variable_declaration_statement" => {
-                let mut cursor = n.walk();
-                let children: Vec<_> = n.children(&mut cursor).collect();
-                let mut decls: Vec<_> = Vec::new();
-                let mut value: Option<Node> = None;
-                for child in children {
-                    let k = child.kind();
-                    match k {
-                        "variable_declaration" | "variable_declaration_tuple" => {
-                            collect_decls(child, &mut decls);
-                        }
-                        ";" | "=" => {}
-                        _ if child.is_named() => value = Some(child),
-                        _ => {}
-                    }
-                }
-                let single_pair = decls.len() == 1 && value.is_some();
-                for d in &decls {
-                    if let Some(name) = d.child_by_field_name("name") {
-                        let rhs = if single_pair { value.map(|v| v.id()) } else { None };
-                        let w = Write::assign(name.start_byte(), name.id(), rhs);
-                        self.bind_var(name, scope, w, IntroKind::Assign);
-                    }
-                }
-                if let Some(v) = value {
-                    dispatch(self, v, scope);
-                }
+                decl::bind_declaration_statement(self, n, scope);
             }
             "assignment_expression" => self.walk_assignment(n, scope),
-            "augmented_assignment_expression" => {
-                if let Some(target) = plain_identifier_target(n) {
-                    let w = Write::rewrite(target.start_byte(), target.id());
-                    self.bind_var(target, scope, w, IntroKind::Binding);
-                    self.read_at(scope, target, target.end_byte());
-                } else {
-                    let mut cursor = n.walk();
-                    let children: Vec<_> = n.children(&mut cursor).collect();
-                    for child in children {
-                        dispatch(self, child, scope);
-                    }
+            // augmented assignment reads-and-rewrites a visible local;
+            // member/index/state operands fall through to generic walking
+            "augmented_assignment_expression" => match decl::plain_identifier_target(n) {
+                Some(target) => {
+                    self.rebind_local(target, scope, false, None);
                 }
-            }
+                None => self.walk_children(n, scope),
+            },
+            // i++ / --i read and rewrite
             "update_expression" => {
-                // i++ / --i read and rewrite
                 if let Some(operand) = child_of_kind(n, "identifier") {
-                    let w = Write::rewrite(operand.start_byte(), operand.id());
-                    self.bind_var(operand, scope, w, IntroKind::Binding);
-                    self.read_at(scope, operand, operand.end_byte());
+                    self.rebind_local(operand, scope, false, None);
                 }
             }
-            _ => {
-                let mut cursor = n.walk();
-                let children: Vec<_> = n.children(&mut cursor).collect();
-                for child in children {
-                    dispatch(self, child, scope);
-                }
-            }
+            _ => self.walk_children(n, scope),
         }
     }
 }
 
 impl Collector<'_> {
-    fn walk(&mut self, n: Node, scope: usize) {
-        dispatch(self, n, scope);
-    }
-
-    /// Plain `=` rebinds a visible local (one candidate write);
-    /// compound operators rewrite-and-read. Assignments to names no
-    /// visible binding introduced target state variables -- Solidity
-    /// has no undeclared locals -- so their operands are reads only.
+    /// Plain `=` rebinds every visible local named by the head (tuple
+    /// heads expand per declared name; only single-target assignments
+    /// link an inlineable RHS). Compound operators rewrite-and-read.
+    /// Assignments to names no visible binding introduced target state
+    /// variables -- Solidity has no undeclared locals -- so their
+    /// operands are reads only.
     fn walk_assignment(&mut self, n: Node, scope: usize) {
         let left = n.child_by_field_name("left");
         let right = n.child_by_field_name("right");
-        let mut cursor = n.walk();
-        let op = n
-            .children(&mut cursor)
-            .find(|ch| !ch.is_named())
-            .map(|ch| ch.utf8_text(self.src).unwrap_or("").to_string())
-            .unwrap_or_default();
-        let plain = op == "=";
+        let plain = decl::top_level_op(n, self.src) == "=";
         let Some(left) = left else { return };
 
         let mut targets: Vec<Node> = Vec::new();
-        plain_identifier_targets(left, &mut targets);
+        decl::plain_identifier_targets(left, &mut targets);
 
         if targets.is_empty() {
             // state mapping / member write: operands are reads only
-            let mut lc = left.walk();
-            let operands: Vec<_> = left.children(&mut lc).collect();
-            for operand in operands {
-                dispatch(self, operand, scope);
-            }
+            self.walk_children(left, scope);
         } else {
-            let single_pair = targets.len() == 1;
-            for t in &targets {
-                let rhs = if plain && single_pair {
-                    right.map(|r| r.id())
-                } else {
-                    None
-                };
-                let w = Write::assign(t.start_byte(), t.id(), rhs);
-                self.bind_var(*t, scope, w, IntroKind::Assign);
-                if !plain {
-                    self.read_at(scope, *t, t.end_byte());
-                }
-            }
+            self.rebind_tuple(&targets, plain, right, scope);
         }
 
         if let Some(right) = right {
@@ -177,49 +117,20 @@ impl Collector<'_> {
         }
     }
 
+    fn rebind_tuple(&mut self, targets: &[Node], plain: bool, right: Option<Node>, scope: usize) {
+        let single_pair = targets.len() == 1;
+        for t in targets {
+            let rhs = if plain && single_pair { right.map(|r| r.id()) } else { None };
+            let w = Write::assign(t.start_byte(), t.id(), rhs);
+            self.bind_var(*t, scope, w, IntroKind::Assign);
+            if !plain {
+                self.read_at(scope, *t, t.end_byte());
+            }
+        }
+    }
+
     fn read_at(&mut self, scope: usize, name_node: Node, byte: usize) {
         let name = self.text_of(name_node).to_string();
         self.model.record_read(scope, &name, byte);
-    }
-}
-
-/// Identifier targets bound by an assignment head. Tuple heads expand
-/// per declared name; member/array/call targets reference their
-/// operands instead and bind nothing.
-fn plain_identifier_targets<'t>(n: Node<'t>, mut out: &mut Vec<Node<'t>>) {
-    match n.kind() {
-        "identifier" => out.push(n),
-        "member_expression" | "array_access" | "call_expression" => {}
-        _ => {
-            let mut cursor = n.walk();
-            let children: Vec<_> = n.children(&mut cursor).collect();
-            for child in children {
-                plain_identifier_targets(child, &mut out);
-            }
-        }
-    }
-}
-
-fn plain_identifier_target(n: Node) -> Option<Node> {
-    let mut out = Vec::new();
-    plain_identifier_targets(n, &mut out);
-    if out.len() == 1 {
-        out.pop()
-    } else {
-        None
-    }
-}
-
-fn collect_decls<'t>(n: Node<'t>, out: &mut Vec<Node<'t>>) {
-    match n.kind() {
-        "variable_declaration" => out.push(n),
-        "variable_declaration_tuple" => {
-            let mut cursor = n.walk();
-            let children: Vec<_> = n.children(&mut cursor).collect();
-            for child in children {
-                collect_decls(child, out);
-            }
-        }
-        _ => {}
     }
 }

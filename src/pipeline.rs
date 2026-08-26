@@ -131,18 +131,19 @@ fn clike_arm(
             dirs.suppresses_abc(o.line)
         });
     }
-    // Variable rules run on the JS/TS family today; the other C-family
-    // grammars keep ABC-only coverage until their collectors land.
-    if matches!(lang, Lang::Js | Lang::Ts | Lang::Tsx) {
-        let scopes = crate::clike::collect_scopes(src, tree);
+    // Variable rules run on JS/TS and Swift; the remaining C-family
+    // grammars (C/C++, Objective-C) keep ABC-only coverage pending their
+    // collectors.
+    if matches!(lang, Lang::Js | Lang::Ts | Lang::Tsx | Lang::Swift) {
+        let scopes = crate::clike::collect_scopes(src, tree, lang);
         if checks.want_used {
             r.used_once =
-                suppressed(crate::clike::used_once_offenses(&scopes), |o| {
+                suppressed(crate::clike::used_once_offenses(&scopes, lang), |o| {
                     dirs.suppresses_all(o.line)
                 });
         }
         if checks.want_never {
-            r.never_used = crate::clike::never_used_offenses(&scopes);
+            r.never_used = crate::clike::never_used_offenses(&scopes, lang);
         }
     }
 }

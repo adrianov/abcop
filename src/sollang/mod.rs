@@ -20,16 +20,15 @@
 //!   same exclusions.
 
 mod abc;
+mod decl;
 mod scope;
 mod usage;
 
+pub use usage::{never_used_offenses, used_once_offenses};
+
 #[cfg(test)]
 mod tests;
-
-
 use tree_sitter::Tree;
-
-pub use usage::{never_used_offenses, used_once_offenses};
 
 pub struct SolFile<'t> {
     pub src: &'t [u8],

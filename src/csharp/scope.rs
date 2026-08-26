@@ -29,6 +29,7 @@ static SPEC: Spec = Spec {
         "switch_body",
     ],
     function_kinds: &["method_declaration", "constructor_declaration", "accessor_declaration"],
+    read_kinds: &["identifier"],
     exclude_fields: &[("member_access_expression", "name")],
 };
 
@@ -37,7 +38,7 @@ pub(super) fn collect(root: Node, src: &[u8]) -> Vec<crate::scope_model::Scope> 
         src,
         model: Model::rooted(),
     };
-    c.walk(root, 0);
+    dispatch(&mut c, root, 0);
     c.model.scopes
 }
 
@@ -62,17 +63,7 @@ impl Backend for Collector<'_> {
     fn custom(&mut self, n: Node, scope: usize) {
         match n.kind() {
             // `var x = ...;` / `int a, b = 0;`
-            "variable_declaration" => {
-                let mut cursor = n.walk();
-                let children: Vec<_> = n.children(&mut cursor).collect();
-                for child in children {
-                    if child.kind() == "variable_declarator" {
-                        self.bind_declarator_with_rhs_field(child, scope);
-                    } else {
-                        dispatch(self, child, scope);
-                    }
-                }
-            }
+            "variable_declaration" => self.bind_variable_declarations(n, scope),
             "assignment_expression" => self.walk_assignment(n, scope),
             // `out var x` / declaration expressions: bind and pass --
             // they read through the `out`, never inline candidates
@@ -86,54 +77,47 @@ impl Backend for Collector<'_> {
                 // the control variable is loop protocol -- never tracked;
                 // the iterated collection still produces its reads
                 let s = self.model.open_scope(ScopeKind::Block, scope);
-                self.walk_children_excluding_left(n, s);
+                self.walk_children_excluding_field(n, s, "left");
             }
-            "catch_clause" => {
-                let s = self.model.open_scope(ScopeKind::Block, scope);
-                // bind the declaration's name but exclude the whole
-                // declaration node: its identifier must never leak into
-                // the read path
-                let decl = child_of_kind(n, "catch_declaration");
-                if let Some(decl) = decl
-                    && let Some(name) = decl.child_by_field_name("name")
-                {
-                    let w = Write::rewrite(name.start_byte(), name.id());
-                    self.bind_var(name, s, w, IntroKind::Binding);
-                }
-                let skipped = decl.map(|d| d.id());
-                let mut cursor = n.walk();
-                let children: Vec<_> = n.children(&mut cursor).collect();
-                for child in children {
-                    if Some(child.id()) != skipped {
-                        dispatch(self, child, s);
-                    }
-                }
-            }
+            "catch_clause" => self.bind_catch_clause(n, scope),
             // everything else: generic dispatch over the children --
             // including local_declaration_statement wrappers
-            _ => {
-                let mut cursor = n.walk();
-                let children: Vec<_> = n.children(&mut cursor).collect();
-                for child in children {
-                    dispatch(self, child, scope);
-                }
-            }
+            _ => self.walk_children(n, scope),
         }
     }
 }
 
 impl Collector<'_> {
-    fn walk(&mut self, n: Node, scope: usize) {
-        dispatch(self, n, scope);
+    /// Bind each `variable_declarator` of a C# declaration statement;
+    /// wrapper tokens and modifiers pass through the generic walk.
+    fn bind_variable_declarations(&mut self, n: Node, scope: usize) {
+        let mut cursor = n.walk();
+        for child in n.children(&mut cursor) {
+            if child.kind() == "variable_declarator" {
+                self.bind_declarator_with_rhs_field(child, scope);
+            } else {
+                dispatch(self, child, scope);
+            }
+        }
     }
 
-    fn walk_children_excluding_left(&mut self, n: Node, scope: usize) {
-        let skipped = n.child_by_field_name("left").map(|c| c.id());
+    /// A catch handler opens a block scope; its exception variable is
+    /// bound as a rewrite (never an inline candidate) while the rest of
+    /// the declaration node must not leak into the read path.
+    fn bind_catch_clause(&mut self, n: Node, scope: usize) {
+        let s = self.model.open_scope(ScopeKind::Block, scope);
+        let decl = child_of_kind(n, "catch_declaration");
+        if let Some(decl) = decl
+            && let Some(name) = decl.child_by_field_name("name")
+        {
+            let w = Write::rewrite(name.start_byte(), name.id());
+            self.bind_var(name, s, w, IntroKind::Binding);
+        }
+        let skipped = decl.map(|d| d.id());
         let mut cursor = n.walk();
-        let children: Vec<_> = n.children(&mut cursor).collect();
-        for child in children {
+        for child in n.children(&mut cursor) {
             if Some(child.id()) != skipped {
-                dispatch(self, child, scope);
+                dispatch(self, child, s);
             }
         }
     }
@@ -143,38 +127,20 @@ impl Collector<'_> {
     /// visible binding introduced target fields or outer symbols --
     /// C# has no undeclared locals -- so their operands are reads only,
     /// and the assigned field itself is never registered as a local.
+    /// The `[`left`/`right`] field family is the JS one.
     fn walk_assignment(&mut self, n: Node, scope: usize) {
         let left = n.child_by_field_name("left");
         let right = n.child_by_field_name("right");
         let plain =
             n.child_by_field_name("operator").and_then(|o| o.utf8_text(self.src).ok()) == Some("=");
-        let Some(left) = left else { return };
-
-        if left.kind() != "identifier" {
-            // member/indexer targets: operands are reads
-            let mut cursor = left.walk();
-            let children: Vec<_> = left.children(&mut cursor).collect();
-            for child in children {
-                dispatch(self, child, scope);
-            }
-        } else {
-            let name = self.text_of(left).to_string();
-            if self.model.lookup(scope, left.start_byte(), &name).is_some() {
-                let (w, intro) = if plain {
-                    (
-                        Write::assign(left.start_byte(), left.id(), right.map(|r| r.id())),
-                        IntroKind::Assign,
-                    )
-                } else {
-                    (Write::rewrite(left.start_byte(), left.id()), IntroKind::Binding)
-                };
-                self.model.bind(scope, &name, w, intro);
-                if !plain {
-                    self.model.record_read(scope, &name, left.end_byte());
-                }
+        if let Some(left) = left {
+            if left.kind() == "identifier" {
+                self.rebind_local(left, scope, plain, right.map(|r| r.id()));
+            } else {
+                // member/indexer targets: operands are reads
+                self.walk_children(left, scope);
             }
         }
-
         if let Some(right) = right {
             dispatch(self, right, scope);
         }

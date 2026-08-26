@@ -266,10 +266,12 @@ output format and one CI gate.
 | TypeScript | `.ts .tsx .mts .cts` | all four |
 | C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | AbcSize + ModuleSize |
 | Objective-C | `.m .mm` | AbcSize + ModuleSize |
-| Swift | `.swift` | AbcSize + ModuleSize |
+| Swift | `.swift` | all four |
 
-The C / C++ / Objective-C / Swift backends measure size only; their
-variable-usage collectors have not landed yet.
+The C / C++ / Objective-C backends measure size only; their
+variable-usage collectors have not landed yet. Swift joined the JS/TS family
+earlier and ships all four checks (AbcSize, UsedOnce, NeverUsed and
+ModuleSize) on the same shared scope-model engine.
 
 Scoring semantics stay uniform across languages: named declarations are
 the measured units, anonymous function-likes roll into their enclosing

@@ -31,6 +31,7 @@ static SPEC: Spec = Spec {
         "function",
     ],
     function_kinds: &[],
+    read_kinds: &["identifier"],
     exclude_fields: &[],
 };
 
@@ -39,7 +40,7 @@ pub(super) fn collect(root: Node, src: &[u8]) -> Vec<crate::scope_model::Scope> 
         src,
         model: Model::rooted(),
     };
-    c.walk(root, 0);
+    dispatch(&mut c, root, 0);
     c.model.scopes
 }
 
@@ -63,43 +64,10 @@ impl Backend for Collector<'_> {
 
     fn custom(&mut self, n: Node, scope: usize) {
         match n.kind() {
-            // const/let/var declarators: a plain identifier name binds
-            // with its initializer linked; destructuring patterns bind
-            // every contained element name (no RHS link)
-            "variable_declarator" => {
-                match n.child_by_field_name("name").map(|x| x.kind()) {
-                    Some("identifier") | None => {
-                        if let Some(name) = n.child_by_field_name("name") {
-                            let rhs = n.child_by_field_name("value").map(|v| v.id());
-                            let w = Write::assign(name.start_byte(), name.id(), rhs);
-                            self.bind_var(name, scope, w, IntroKind::Assign);
-                            // initializer subtrees may contain closures
-                            // reading outer bindings -- walk them too
-                            if let Some(value) = n.child_by_field_name("value") {
-                                dispatch(self, value, scope);
-                            }
-                        }
-                    }
-                    _ => {
-                        if let Some(pattern) = n.child_by_field_name("name") {
-                            self.bind_pattern_elements(pattern, scope);
-                        }
-                    }
-                }
-            }
+            "variable_declarator" => self.bind_variable_declarator(n, scope),
             // shorthand object literals ({ diagLog }) read the identically
             // named local; keyed pairs fall through to generic walking
-            "pair" if n.child_by_field_name("value").is_none() => {
-                if let Some(key) = n.child_by_field_name("key") {
-                    if matches!(
-                        key.kind(),
-                        "property_identifier" | "shorthand_property_identifier"
-                    ) {
-                        let name = self.text_of(key).to_string();
-                        self.model.record_read(scope, &name, key.start_byte());
-                    }
-                }
-            }
+            "pair" if n.child_by_field_name("value").is_none() => self.read_shorthand_key(n, scope),
             "assignment_expression" | "augmented_assignment_expression" => {
                 self.walk_assignment(n, scope);
             }
@@ -109,32 +77,56 @@ impl Backend for Collector<'_> {
                 self.walk_children_excluding_field(n, s, "left");
             }
             // ++/-- read and rewrite
-            "update_expression" => {
-                if let Some(operand) = n.named_child(0).filter(|o| o.kind() == "identifier") {
-                    let w = Write::rewrite(operand.start_byte(), operand.id());
-                    self.bind_var(operand, scope, w, IntroKind::Binding);
-                    let name = self.text_of(operand).to_string();
-                    self.model.record_read(scope, &name, operand.end_byte());
-                } else {
-                    let mut cursor = n.walk();
-                    let children: Vec<_> = n.children(&mut cursor).collect();
-                    for child in children {
-                        dispatch(self, child, scope);
-                    }
-                }
-            }
-            _ => {
-                let mut cursor = n.walk();
-                let children: Vec<_> = n.children(&mut cursor).collect();
-                for child in children {
-                    dispatch(self, child, scope);
-                }
-            }
+            "update_expression" => self.bind_inc_dec(n, scope),
+            _ => self.walk_children(n, scope),
         }
     }
 }
 
 impl Collector<'_> {
+    /// Bind a const/let/var declarator: a plain identifier name binds with
+    /// its initializer linked; destructuring patterns bind every contained
+    /// element name (no RHS link). Initializer subtrees may contain closures
+    /// reading outer bindings -- walked in the identifier case.
+    fn bind_variable_declarator(&mut self, n: Node, scope: usize) {
+        match n.child_by_field_name("name") {
+            Some(name) if name.kind() == "identifier" => {
+                self.bind_declarator_with_rhs_field(n, scope);
+                if let Some(value) = n.child_by_field_name("value") {
+                    dispatch(self, value, scope);
+                }
+            }
+            Some(pattern) => self.bind_pattern_elements(pattern, scope),
+            None => {}
+        }
+    }
+
+    /// Shorthand object literal `{ diagLog }`: the key text is also a read
+    /// of the identically named local.
+    fn read_shorthand_key(&mut self, n: Node, scope: usize) {
+        if let Some(key) = n.child_by_field_name("key")
+            && matches!(
+                key.kind(),
+                "property_identifier" | "shorthand_property_identifier"
+            )
+        {
+            let name = self.text_of(key).to_string();
+            self.model.record_read(scope, &name, key.start_byte());
+        }
+    }
+
+    /// ++/-- reads and rewrites the operand in place.
+    fn bind_inc_dec(&mut self, n: Node, scope: usize) {
+        if let Some(operand) = n.named_child(0).filter(|o| o.kind() == "identifier") {
+            let w = Write::rewrite(operand.start_byte(), operand.id());
+            self.bind_var(operand, scope, w, IntroKind::Binding);
+            let name = self.text_of(operand).to_string();
+            self.model.record_read(scope, &name, operand.end_byte());
+        } else {
+            self.walk_children(n, scope);
+        }
+    }
+
     /// Bind every identifier introduced by a destructuring pattern.
     /// Array patterns contribute their elements; object patterns
     /// contribute shorthand keys and `key: target` values.
@@ -160,16 +152,13 @@ impl Collector<'_> {
         }
     }
 
-    /// Plain `=` rebinds a visible local; compound operators
-    /// rewrite-and-read. Assignments to names no visible binding
-    /// introduced create globals -- their operands are reads only.
+    /// Plain `=` rebinds a visible local; compound operators rewrite-and-read.
+    /// Assignments to names with no visible local create globals -- their
+    /// operands are reads only. Destructuring LHS rebinds pattern elements.
     fn walk_assignment(&mut self, n: Node, scope: usize) {
         let left = n.child_by_field_name("left");
         let right = n.child_by_field_name("right");
-        let plain = n
-            .child_by_field_name("operator")
-            .and_then(|o| o.utf8_text(self.src).ok())
-            == Some("=");
+        let plain = n.child_by_field_name("operator").map_or(false, |o| self.text_of(o) == "=");
         if let Some(left) = left {
             if matches!(left.kind(), "array_pattern" | "object_pattern") {
                 // destructuring reassignment: elements bind, occurrence
@@ -181,78 +170,14 @@ impl Collector<'_> {
                 return;
             }
             if left.kind() == "identifier" {
-                let name = self.text_of(left).to_string();
-                if self.model.lookup(scope, left.start_byte(), &name).is_some() {
-                    let (w, intro) = if plain {
-                        (
-                            Write::assign(left.start_byte(), left.id(), right.map(|r| r.id())),
-                            IntroKind::Assign,
-                        )
-                    } else {
-                        (Write::rewrite(left.start_byte(), left.id()), IntroKind::Binding)
-                    };
-                    self.model.bind(scope, &name, w, intro);
-                    if !plain {
-                        self.model.record_read(scope, &name, left.end_byte());
-                    }
-                }
+                self.rebind_local(left, scope, plain, right.map(|r| r.id()));
             } else {
-                let mut cursor = left.walk();
-                let children: Vec<_> = left.children(&mut cursor).collect();
-                for child in children {
-                    dispatch(self, child, scope);
-                }
+                self.walk_children(left, scope);
             }
         }
         if let Some(right) = right {
             dispatch(self, right, scope);
         }
     }
-
-    fn walk(&mut self, n: Node, scope: usize) {
-        dispatch(self, n, scope);
-    }
-
-    fn walk_children_excluding_field(&mut self, n: Node, scope: usize, field: &str) {
-        let skipped = n.child_by_field_name(field).map(|c| c.id());
-        let mut cursor = n.walk();
-        let children: Vec<_> = n.children(&mut cursor).collect();
-        for child in children {
-            if Some(child.id()) != skipped {
-                dispatch(self, child, scope);
-            }
-        }
-    }
 }
 
-/// Conservative RHS purity for JavaScript/TypeScript: literals,
-/// operator compositions, and template literals without substitutions.
-/// References to other locals, calls, and member reads fail it.
-pub(super) fn js_pure(n: Node) -> bool {
-    match n.kind() {
-        "number"
-        | "string"
-        | "template_string"
-        | "true"
-        | "false"
-        | "null"
-        | "undefined" => children_without_interpolation(n),
-        "parenthesized_expression" | "binary_expression" | "unary_expression"
-        | "typeof_expression" => children_pure(n),
-        _ => false,
-    }
-}
-
-fn children_without_interpolation(n: Node) -> bool {
-    let mut c = n.walk();
-    n.children(&mut c)
-        .filter(|ch| ch.is_named())
-        .all(|ch| ch.kind() != "substitution" && js_pure(ch))
-}
-
-fn children_pure(n: Node) -> bool {
-    let mut c = n.walk();
-    n.children(&mut c)
-        .filter(|ch| ch.is_named())
-        .all(|ch| js_pure(ch))
-}

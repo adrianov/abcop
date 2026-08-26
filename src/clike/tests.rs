@@ -1,149 +1,13 @@
+//! UsedOnce / NeverUsed end-to-end vectors over the JS/TS and Swift
+//! scope-model backends. AbcSize vectors live in [`tests_abc`].
+
 use crate::paths::{parse_file_lang, Lang};
-use super::*;
-
-fn scores(lang: Lang, code: &str, max: f64) -> Vec<AbcOffense> {
-    let tree = crate::paths::parse_file_lang(code.as_bytes(), lang).unwrap();
-    analyze(code.as_bytes(), &tree, lang, max)
-}
-
-#[test]
-fn javascript_counts_assignments_calls_and_conditions() {
-    let code = "\
-function checkout(user, items) {
-  let total = 0;
-  for (const it of items) {
-    total = total + it.price;
-  }
-  if (user.vip) {
-    total = applyDiscount(total);
-  }
-  log(total);
-}
-";
-    // Force all scores out for exact-vector assertions.
-    let off = scores(Lang::Js, code, 0.0);
-    assert_eq!(off.len(), 1);
-    assert_eq!(off[0].name, "checkout");
-    // A: total init, total += price, total = applyDiscount(...)
-    // B: applyDiscount call, log call, `+` arithmetic operator
-    // C: for-of, if
-    assert_eq!(off[0].vector, "<3, 3, 2>");
-    assert!(scores(Lang::Js, code, 17.0).is_empty());
-}
-
-#[test]
-fn ts_const_arrow_is_a_named_unit_and_nested_fns_do_not_double_count() {
-    let off = scores(
-        Lang::Ts,
-        "\
-const outer = (xs) => {
-  function inner(y) {
-    return helper(y) + helper(y);
-  }
-  return inner(1);
-};
-",
-        0.0,
-    );
-    assert_eq!(off.len(), 2, "{off:?}");
-    let inner = off.iter().find(|o| o.name == "inner").unwrap();
-    let outer = off.iter().find(|o| o.name == "outer").unwrap();
-    // Inner owns helper x2 (+ operator); outer only its own call.
-    assert_eq!(inner.vector, "<0, 3, 0>");
-    assert_eq!(outer.vector, "<0, 1, 0>");
-}
-
-#[test]
-fn c_counts_loop_body_with_updates_and_comparisons() {
-    let off = scores(
-        Lang::C,
-        "\
-int sum_upto(int n) {
-  int s = 0;
-  for (int i = 0; i < n; i++) {
-    s += i;
-  }
-  return s;
-}
-",
-        0.0,
-    );
-    assert_eq!(off.len(), 1);
-    assert_eq!(off[0].name, "sum_upto");
-    // A: s=0, i=0 init, s+=i, i++ update
-    // B: none (comparisons are conditions here)
-    // C: for, i<n comparison
-    assert_eq!(off[0].vector, "<4, 0, 2>");
-}
-
-#[test]
-fn objective_c_message_sends_are_branches() {
-    let off = scores(
-        Lang::ObjC,
-        "\
-@implementation Widget
-- (int)pick:(NSArray *)items {
-  if ([items count] > 0) {
-    return [[self factory] build];
-  }
-  return 0;
-}
-@end
-",
-        0.0,
-    );
-    assert_eq!(off.len(), 1, "{off:?}");
-    // B: [items count], [self factory], [.. build] = 3 sends
-    // C: if, > = 2
-    assert_eq!(off[0].vector, "<0, 3, 2>");
-}
-
-#[test]
-fn swift_functions_score_on_the_same_scale() {
-    let off = scores(
-        Lang::Swift,
-        "\
-func grade(_ score: Int) -> String {
-  if score >= 90 {
-    return \"A\"
-  } else if score >= 80 {
-    return \"B\"
-  }
-  return \"F\"
-}
-",
-        0.0,
-    );
-    assert_eq!(off.len(), 1);
-    assert_eq!(off[0].name, "grade");
-    // C: two ifs + two >= comparisons
-    assert_eq!(off[0].vector, "<0, 0, 4>");
-}
-
-#[test]
-fn cpp_throw_and_new_are_branches() {
-    let off = scores(
-        Lang::Cpp,
-        "\
-Widget* make(int n) {
-  if (n <= 0) throw std::invalid_argument(\"n\");
-  return new Widget(n);
-}
-",
-        0.0,
-    );
-    assert_eq!(off.len(), 1);
-    // B: throw, new
-    // C: if, <= comparison
-    assert_eq!(off[0].vector, "<0, 2, 2>");
-}
 
 // ---- UsedOnce / NeverUsed over the JS/TS family ----
-
 fn js_used(src: &'static str) -> Vec<String> {
     let tree = parse_file_lang(src.as_bytes(), Lang::Js).expect("js parses");
-    let sc = super::collect_scopes(src.as_bytes(), &tree);
-    let mut v: Vec<_> = super::used_once_offenses(&sc)
+    let sc = super::collect_scopes(src.as_bytes(), &tree, Lang::Js);
+    let mut v: Vec<_> = super::used_once_offenses(&sc, Lang::Js)
         .into_iter()
         .map(|o| o.name)
         .collect();
@@ -153,8 +17,30 @@ fn js_used(src: &'static str) -> Vec<String> {
 
 fn js_dead(src: &'static str) -> Vec<String> {
     let tree = parse_file_lang(src.as_bytes(), Lang::Js).expect("js parses");
-    let sc = super::collect_scopes(src.as_bytes(), &tree);
-    let mut v: Vec<_> = super::never_used_offenses(&sc)
+    let sc = super::collect_scopes(src.as_bytes(), &tree, Lang::Js);
+    let mut v: Vec<_> = super::never_used_offenses(&sc, Lang::Js)
+        .into_iter()
+        .map(|o| o.name)
+        .collect();
+    v.sort();
+    v
+}
+
+fn swift_used(src: &'static str) -> Vec<String> {
+    let tree = parse_file_lang(src.as_bytes(), Lang::Swift).expect("swift parses");
+    let sc = super::collect_scopes(src.as_bytes(), &tree, Lang::Swift);
+    let mut v: Vec<_> = super::used_once_offenses(&sc, Lang::Swift)
+        .into_iter()
+        .map(|o| o.name)
+        .collect();
+    v.sort();
+    v
+}
+
+fn swift_dead(src: &'static str) -> Vec<String> {
+    let tree = parse_file_lang(src.as_bytes(), Lang::Swift).expect("swift parses");
+    let sc = super::collect_scopes(src.as_bytes(), &tree, Lang::Swift);
+    let mut v: Vec<_> = super::never_used_offenses(&sc, Lang::Swift)
         .into_iter()
         .map(|o| o.name)
         .collect();
@@ -244,3 +130,61 @@ fn js_shorthand_object_literal_is_a_read() {
     let src = "function emit(diagLog, insRun) {\n\x20 return { diagLog, insRun };\n}";
     assert_eq!(js_dead(src), Vec::<String>::new());
 }
+
+// ---- UsedOnce / NeverUsed over Swift ----
+
+#[test]
+fn swift_never_used_flags_dead_binding() {
+    let src = "func f() {\n  let unused = 1\n  return 0\n}";
+    assert_eq!(swift_dead(src), vec!["unused".to_string()]);
+}
+
+#[test]
+fn swift_used_once_flags_inline_candidate() {
+    let src = "func f(a: Int) -> Int {\n  let r = a + 1\n  let d = r + 2\n  let g = 5\n  return g + d\n}";
+    // `g` is assigned a pure literal and read once -> inline candidate.
+    // `d`/`r` have local-reading (impure) RHS -> not candidates, matching
+    // the JS backend purity rules.
+    assert_eq!(swift_used(src), vec!["g".to_string()]);
+}
+#[test]
+fn swift_reassigned_var_is_not_inline_candidate() {
+    let src = "func f() {\n  var c = 0\n  c = 1\n  c = 2\n  return c\n}";
+    assert_eq!(swift_used(src), Vec::<String>::new());
+}
+
+#[test]
+fn swift_member_reads_are_not_variable_reads() {
+    let src = "class C {\n  func f() {\n    let x = 1\n    return self.helper + x\n  }\n  func helper() -> Int { 0 }\n}";
+    let tree = parse_file_lang(src.as_bytes(), Lang::Swift).unwrap();
+    let sc = super::collect_scopes(src.as_bytes(), &tree, Lang::Swift);
+    let bindings: Vec<String> = sc.scopes.iter().flat_map(|s| s.entries.keys()).map(|k| k.as_ref().to_string()).collect();
+    // `x` is a local binding (read via the trailing expression); `helper`
+    // is a member read off `self` and must NOT appear as a local binding.
+    assert!(bindings.contains(&"x".to_string()));
+    assert!(!bindings.contains(&"helper".to_string()));
+}
+
+#[test]
+fn swift_member_field_read_does_not_count_as_local_read() {
+    // `self.x` must not register a phantom read of a same-named local `x`;
+    // the local is never read, so it is NeverUsed (not a UsedOnce candidate).
+    let src = "class C {\n  func f() -> Int {\n    let x = 1\n    return self.x\n  }\n  var x: Int { 0 }\n}";
+    assert_eq!(swift_dead(src), vec!["x".to_string()]);
+    assert_eq!(swift_used(src), Vec::<String>::new());
+}
+
+#[test]
+fn swift_compound_assignment_is_not_used_once() {
+    let src = "func f() {\n  var t = 0\n  t += 1\n  return t\n}";
+    assert_eq!(swift_used(src), Vec::<String>::new());
+}
+
+#[test]
+fn swift_closure_rhs_is_not_pure() {
+    // A closure is not a pure RHS, so even a single-use captured local
+    // must not be inlined across the capture boundary.
+    let src = "func f() {\n  let n = 1\n  let c = { (_: Int) in n }\n  return c(0) + n\n}";
+    assert_eq!(swift_used(src), Vec::<String>::new());
+}
+

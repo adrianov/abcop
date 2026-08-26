@@ -12,6 +12,7 @@
 //! escapes through [`ScopeKind::Block`] scopes (closures, nested
 //! blocks) and stops at any other kind (functions, methods).
 
+mod backend;
 mod eval;
 pub mod walk;
 

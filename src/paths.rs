@@ -4,7 +4,7 @@
 
 use tree_sitter::Parser;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Lang {
     Ruby,
     Rust,
