@@ -198,10 +198,17 @@ mod tests {
     }
 
     #[test]
-    fn shorthand_hash_read_is_a_use() {
+    fn shorthand_only_read_never_qualifies_as_inlinable() {
+        // Inlining would demand the invalid `g(42:)`; the binding must stay.
         let f = flags("def k\n  x = 42\n  g(x:)\nend\n");
-        assert_eq!(f.len(), 1);
-        assert_eq!(f[0].name, "x");
+        assert!(f.is_empty(), "shorthand read cannot be inlined: {f:?}");
+    }
+
+    #[test]
+    fn shorthand_read_on_one_binding_leaves_others_flagged() {
+        // `a` is only read via shorthand -> stays; `b` has one plain read.
+        let f = flags("def k\n  a = 5\n  b = 7\n  g(a:, b)\nend\n");
+        assert_eq!(f, vec![UsedOnceOffense { line: 3, column: 2, name: "b".into() }]);
     }
 
     #[test]

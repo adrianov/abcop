@@ -49,16 +49,27 @@ impl Builder<'_> {
             return;
         }
         let name = key.utf8_text(self.src).unwrap_or("").to_string();
-        let r = Read {
-            byte: key.start_byte(),
-            under_defined,
-        };
-        if self.lookup(scope, r.byte, &name).is_some() {
-            if !name.starts_with('_') {
-                self.record_read(scope, &name, r);
-            }
-        } else {
-            self.vcall_sites.push(r.byte);
+        // Two read positions across the key: UsedOnce demands exactly one
+        // read, and a shorthand read can never be inlined away (`42:` is
+        // not valid Ruby), so it must never qualify as the single use.
+        let bytes = [key.start_byte(), key.end_byte()];
+        let bound = self.lookup(scope, bytes[0], &name).is_some();
+        if !bound {
+            self.vcall_sites.push(bytes[0]);
+            return;
+        }
+        if name.starts_with('_') {
+            return;
+        }
+        for byte in bytes {
+            self.record_read(
+                scope,
+                &name,
+                Read {
+                    byte,
+                    under_defined,
+                },
+            );
         }
     }
 
