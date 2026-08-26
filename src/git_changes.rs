@@ -8,7 +8,7 @@
 //! (`ls-files --others --exclude-standard`), which count as fully changed.
 //! Unified-diff parsing itself lives in [`crate::diffparse`].
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::process::Command;
 
 use crate::diffparse::parse_diff;
@@ -90,7 +90,7 @@ impl Changeset {
 
     /// Changed code files that still exist on disk, as absolute paths.
     pub fn code_files(&self) -> Vec<std::path::PathBuf> {
-        use std::path::Path;
+use std::path::Path;
         self.files
             .keys()
             .filter(|k| crate::paths::is_code_path(std::path::Path::new(k)))
@@ -180,11 +180,11 @@ pub fn mr_base_in(dir: Option<&std::path::Path>) -> Result<(String, String), Str
     }
 }
 
-/// Newest merge-base of HEAD against every other local/remote branch
-/// tip, after collapsing ancestor chains (the deepest fork point wins).
-fn fork_point_in(
-    dir: Option<&std::path::Path>,
-) -> Result<Option<(String, String)>, String> {
+/// Newest commit shared by HEAD and any sibling branch tip -- the
+/// parent/fork point. One `rev-list --boundary` pass replaces a
+/// merge-base subprocess per branch, so detection cost stays flat no
+/// matter how many branches the repository carries.
+fn fork_point_in(dir: Option<&std::path::Path>) -> Result<Option<(String, String)>, String> {
     let head = git_in(dir, &["rev-parse", "HEAD"])?
         .trim()
         .to_string();
@@ -193,6 +193,8 @@ fn fork_point_in(
         Some(b) => vec![format!("refs/heads/{b}"), format!("refs/remotes/{b}")],
         None => vec![],
     };
+
+    // one pass: every branch tip with its sha
     let listing = git_in(
         dir,
         &[
@@ -202,8 +204,8 @@ fn fork_point_in(
             "refs/remotes",
         ],
     )?;
-
-    let mut bases: Vec<String> = Vec::new();
+    let mut tips: Vec<String> = Vec::new();
+    let mut names_by_sha: HashMap<String, String> = HashMap::new();
     for line in listing.lines() {
         let Some((sha, refname)) = line.split_once(' ') else {
             continue;
@@ -211,19 +213,43 @@ fn fork_point_in(
         if sha == head || own_refs.iter().any(|r| refname == r) {
             continue;
         }
-        if let Ok(mb) = git_in(dir, &["merge-base", &head, sha]) {
-            let mb = mb.trim().to_string();
-            if !mb.is_empty() && mb != head {
-                bases.push(mb);
-            }
+        if !tips.contains(&sha.to_string()) {
+            tips.push(sha.to_string());
         }
+        let display = refname
+            .trim_start_matches("refs/heads/")
+            .trim_start_matches("refs/remotes/");
+        names_by_sha
+            .entry(sha.to_string())
+            .or_insert_with(|| display.to_string());
     }
+    if tips.is_empty() {
+        return Ok(None);
+    }
+
+    // boundary commits of `HEAD --not tips` are exactly the shared
+    // ancestor frontier -- the candidate fork points, in one pass
+    let negations: Vec<String> = tips.iter().map(|t| format!("^{t}")).collect();
+    let mut args: Vec<&str> = vec!["rev-list", "--boundary", "HEAD"];
+    for n in &negations {
+        args.push(n.as_str());
+    }
+    let out = git_in(dir, &args)?;
+    let mut bases: Vec<String> = out
+        .lines()
+        .filter_map(|l| l.strip_prefix('-'))
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
     bases.sort();
     bases.dedup();
-    // keep only the most recent fork points (drop ancestors of others)
+    // drop bases that are proper ancestors of another base: the deepest
+    // fork point wins
     let mut stale: Vec<usize> = Vec::new();
     for (i, b) in bases.iter().enumerate() {
-        if bases.iter().any(|o| o.as_str() != *b && is_ancestor_in(dir, b, o)) {
+        if bases.iter().enumerate().any(|(j, o)| {
+            i != j && is_ancestor_in(dir, b.as_str(), o.as_str())
+        }) {
             stale.push(i);
         }
     }
@@ -243,7 +269,13 @@ fn fork_point_in(
 
     Ok(best.map(|b| {
         let short = b[..b.len().min(7)].to_string();
-        (b, format!("changes since fork point {short}"))
+        let parent = names_by_sha.get(&b).map(String::as_str).unwrap_or("");
+        let label = if parent.is_empty() {
+            format!("changes since fork point {short}")
+        } else {
+            format!("changes since fork point {short} (parent {parent})")
+        };
+        (b, label)
     }))
 }
 
@@ -299,7 +331,8 @@ fn topic_branch_base_in(dir: Option<&std::path::Path>, branch: &str, default_bra
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
+    use std::collections::HashMap;
+use std::path::Path;
     use std::process::Command;
     use std::sync::Mutex;
 
