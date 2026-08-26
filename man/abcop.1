@@ -114,22 +114,30 @@ trees are exempt. For Rust files the trailing
 .B #[cfg(test)]
 module does not count toward the budget.
 .SH SUPPORTED LANGUAGES
-Language;Extensions / files;Notes
-Ruby;.rb .rake .ru .gemspec plus Gemfile/Rakefile;full parity, directives
-Rust;.rs;spec defined in this manual
+Language;Extensions / files;Checks
+Ruby;.rb .rake .ru .gemspec plus Gemfile/Rakefile;all four, RuboCop\-parity counting
+Rust;.rs;all four
+Python;.py .pyi .pyw;all four
+Go;.go;all four
+PHP;.php;all four
+Java;.java;all four
+C#;.cs;all four
+Solidity;.sol;all four
+JavaScript;.js .mjs .cjs .jsx;all four
+TypeScript;.ts .tsx .mts .cts;all four
+C/C++;.c .h .cc .cpp .cxx .hpp .hxx .hh;AbcSize + ModuleSize
+Objective\-C;.m .mm;AbcSize + ModuleSize
+Swift;.swift;AbcSize + ModuleSize
 .br
-JavaScript (.js .mjs .cjs .jsx), TypeScript (.ts .tsx .mts .cts), C/C++
-(.c .h .cc .cpp .cxx .hpp .hxx .hh), Objective\-C (.m .mm) and Swift
-(.swift) are scored on the same engine: named declarations are units,
+Every language is scored on the same engine: named declarations are units,
 anonymous function\-likes roll into the enclosing unit, assignments count
 A, calls/new/message sends/yield/throw and arithmetic operators count B,
 and if/ternary/guard, loops, switch arms, catch clauses, comparisons and
-logical operators count C. Directives apply to `//` comments as well.
-UsedOnce/NeverUsed stay Ruby/Rust\-only: their safety proofs are
-language\-specific.
+logical operators count C. C/C++, Objective\-C and Swift ship the size
+checks only; their variable\-usage collectors have not landed yet.
 .SH DIRECTIVES
-For scanned Ruby sources abcop honours RuboCop suppression comments, so
-existing codebases do not need new markers:
+In every supported language except Rust abcop honours RuboCop suppression
+comments (`#` or `//`), so existing codebases do not need new markers:
 .TP
 .B # rubocop:disable Metrics/AbcSize
 disables from this line until a matching enable or end of file.

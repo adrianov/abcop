@@ -1,8 +1,9 @@
 # abcop
 
 **One self-contained binary that lints every language in your stack** —
-Ruby, Rust, Python, Go, PHP, JavaScript, TypeScript, C, C++, Objective-C and
-Swift — with no runtimes, no plugins, no per-language installs. Written in
+Ruby, Rust, Python, Go, PHP, Java, C#, JavaScript, TypeScript, C, C++,
+Objective-C, Swift and Solidity — with no runtimes, no plugins, no
+per-language installs. Written in
 Rust with speed as a design constraint: one parse per file, one walk per
 metric, file-level parallelism, all grammars compiled in. Whole trees in
 milliseconds; every run prints how many files it analysed and how long it
@@ -205,8 +206,9 @@ a scoped diff crosses the 100-line threshold above.
 
 ### Directives
 
-For Ruby sources (and, text-based, for Rust comments too) abcop honours
-RuboCop suppression comments — trailing and block forms, cop lists or bare:
+In every supported language except Rust, abcop honours RuboCop-style
+suppression comments (`#` or `//`) — trailing and block forms, cop lists
+or bare:
 
 ```ruby
 def legacy_path # rubocop:disable Metrics/AbcSize
@@ -238,22 +240,27 @@ recent entries; disable entirely with `--no-cache`, relocate with
 
 ## Supported languages
 
-One binary, ten languages, nothing to install per language — the same
-four rules run everywhere, with one output format and one CI gate.
+One binary, fourteen languages, nothing to install per language — one
+output format and one CI gate.
 
-| Language | Files | Status |
+| Language | Files | Checks |
 |---|---|---|
-| Ruby | `.rb .rake .ru .gemspec`, `Gemfile`, `Rakefile`, … | all four rules, RuboCop-parity counting |
-| Rust | `.rs` | all four rules |
-| Python | `.py .pyi .pyw` | all four rules |
-| Go | `.go` | all four rules |
-| Go | `.go` | all four rules |
-| Java | `.java` | all four rules |
-| C# | `.cs` | all four rules || JavaScript | `.js .mjs .cjs .jsx` | all four rules |
-| TypeScript | `.ts .tsx .mts .cts` | all four rules |
+| Ruby | `.rb .rake .ru .gemspec`, `Gemfile`, `Rakefile`, … | all four, RuboCop-parity counting |
+| Rust | `.rs` | all four |
+| Python | `.py .pyi .pyw` | all four |
+| Go | `.go` | all four |
+| PHP | `.php` | all four |
+| Java | `.java` | all four |
+| C# | `.cs` | all four |
+| Solidity | `.sol` | all four |
+| JavaScript | `.js .mjs .cjs .jsx` | all four |
+| TypeScript | `.ts .tsx .mts .cts` | all four |
 | C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | AbcSize + ModuleSize |
 | Objective-C | `.m .mm` | AbcSize + ModuleSize |
 | Swift | `.swift` | AbcSize + ModuleSize |
+
+The C / C++ / Objective-C / Swift backends measure size only; their
+variable-usage collectors have not landed yet.
 
 Scoring semantics stay uniform across languages: named declarations are
 the measured units, anonymous function-likes roll into their enclosing
