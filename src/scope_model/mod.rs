@@ -1,20 +1,24 @@
-//! Shared variable-scope model behind UsedOnce/NeverUsed: the write/
-//! read bookkeeping every non-C backend needs, plus the candidate
-//! evaluation itself. Language backends own only what genuinely differs
-//! -- their collector walk (which nodes bind or read) and their RHS
-//! purity whitelist, supplied here as [`Semantics`].
+//! Shared variable-scope model behind UsedOnce/NeverUsed.
+//!
+//! This module splits in two:
+//! * [`mod@self`] (here) -- the scope-tree data structure: kinds, the
+//!   write/read [`Entry`] bookkeeping and the introduction-aware
+//!   [`Model`] collectors drive while walking;
+//! * [`eval`] -- candidate evaluation over that tree, parameterized by
+//!   a per-language [`Semantics`].
 //!
 //! Scope resolution contract: a name resolves to the nearest enclosing
 //! scope that already introduced it at the read position; resolution
 //! escapes through [`ScopeKind::Block`] scopes (closures, nested
 //! blocks) and stops at any other kind (functions, methods).
 
+mod eval;
+
 use std::collections::HashMap;
 
 use tree_sitter::Node;
 
-use crate::never_used::NeverUsedOffense;
-use crate::used_once::UsedOnceOffense;
+pub use eval::{never_used_offenses, used_once_offenses, Semantics};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IntroKind {
@@ -161,148 +165,9 @@ impl Model {
     }
 }
 
-/// The parts of candidate evaluation that differ per language.
-pub struct Semantics {
-    /// Conservative RHS purity: may this expression be inlined without
-    /// changing behavior?
-    pub pure: fn(Node) -> bool,
-    /// Ancestors that mark a write as conditional (kills inlining).
-    pub veto: &'static [&'static str],
-    /// Ancestors that end the straight-line check (unit boundaries).
-    pub owners: &'static [&'static str],
-}
-
-/// Inline candidates: one plain introduction, one later resolved read,
-/// pure RHS, written on a straight-line path.
-pub fn used_once_offenses(
-    root: Node,
-    line_col: &dyn Fn(usize) -> (usize, usize),
-    scopes: &[Scope],
-    sem: &Semantics,
-) -> Vec<UsedOnceOffense> {
-    let nodes = index_nodes(root);
-    let mut out = Vec::new();
-    for scope in scopes {
-        for (name, e) in &scope.entries {
-            let Some(w) = candidate(e) else {
-                continue;
-            };
-            let Some(rhs_id) = w.rhs else { continue };
-            let (Some(rhs), Some(write_node)) = (nodes.get(&rhs_id), nodes.get(&w.node_id))
-            else {
-                continue;
-            };
-            if !(sem.pure)(*rhs) || !straight_line(*write_node, sem) {
-                continue;
-            }
-            let (line, column) = line_col(w.byte);
-            out.push(UsedOnceOffense {
-                line,
-                column,
-                name: name.to_string(),
-            });
-        }
-    }
-    finish(out)
-}
-
-fn candidate(e: &Entry) -> Option<&Write> {
-    if e.intro_kind != IntroKind::Assign || e.writes.len() != 1 || e.reads.len() != 1 {
-        return None;
-    }
-    let w = &e.writes[0];
-    (w.plain && e.reads[0] > w.byte).then_some(w)
-}
-
-fn straight_line(write_node: Node, sem: &Semantics) -> bool {
-    let mut cur = Some(write_node);
-    while let Some(n) = cur {
-        if sem.veto.contains(&n.kind()) {
-            return false;
-        }
-        if sem.owners.contains(&n.kind()) {
-            return true;
-        }
-        cur = n.parent();
-    }
-    true
-}
-
-/// Dead writes: bindings with at least one write and no resolved read,
-/// reported once at the first write.
-pub fn never_used_offenses(
-    line_col: &dyn Fn(usize) -> (usize, usize),
-    scopes: &[Scope],
-) -> Vec<NeverUsedOffense> {
-    let mut out = Vec::new();
-    for scope in scopes {
-        for (name, e) in &scope.entries {
-            if !e.reads.is_empty() || e.writes.is_empty() {
-                continue;
-            }
-            let first = e.writes.iter().map(|w| w.byte).min().unwrap_or(0);
-            let (line, column) = line_col(first);
-            out.push(NeverUsedOffense {
-                line,
-                column,
-                name: name.to_string(),
-            });
-        }
-    }
-    finish(out)
-}
-
-fn finish<T>(mut out: Vec<T>) -> Vec<T>
-where
-    T: HasPos + PartialEq,
-{
-    out.sort_by_key(|o| (o.line(), o.column()));
-    out.dedup_by(|a, b| a.line() == b.line() && a.column() == b.column() && a.name() == b.name());
-    out
-}
-
-trait HasPos {
-    fn line(&self) -> usize;
-    fn column(&self) -> usize;
-    fn name(&self) -> &str;
-}
-
-macro_rules! impl_has_pos {
-    ($t:ty) => {
-        impl HasPos for $t {
-            fn line(&self) -> usize {
-                self.line
-            }
-            fn column(&self) -> usize {
-                self.column
-            }
-            fn name(&self) -> &str {
-                &self.name
-            }
-        }
-    };
-}
-
-impl_has_pos!(UsedOnceOffense);
-impl_has_pos!(NeverUsedOffense);
-
 /// First child of the given kind -- the small lookup every collector
 /// ends up needing for protocol heads and bindings.
 pub(crate) fn child_of_kind<'t>(n: Node<'t>, kind: &str) -> Option<Node<'t>> {
     let mut c = n.walk();
     n.children(&mut c).find(|ch| ch.kind() == kind)
-}
-
-fn index_nodes<'t>(root: Node<'t>) -> HashMap<usize, Node<'t>> {
-    let mut map = HashMap::new();
-    rec(root, &mut map);
-    map
-}
-
-fn rec<'t>(n: Node<'t>, map: &mut HashMap<usize, Node<'t>>) {
-    map.insert(n.id(), n);
-    let mut cursor = n.walk();
-    for child in n.children(&mut cursor) {
-        rec(child, map);
-    }
 }

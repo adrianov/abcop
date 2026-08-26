@@ -51,3 +51,43 @@ Feature: Python language support
   Scenario: ModuleSize applies to Python files
     Given a production Python module of 200 lines or more
     Then abcop reports a ModuleSize warning
+
+Feature: Go and PHP language support
+  The same four rules run on Go (.go) and PHP (.php) sources.
+
+  Scenario: Named functions and methods are units
+    When abcop analyses Go or PHP sources
+    Then named declarations produce AbcSize candidates
+    And anonymous/arrow/closure bodies roll into the enclosing unit
+
+  Scenario: Language operators follow the shared B/C split
+    When expressions contain calls, arithmetic and condition logic
+    Then calls and arithmetic/bitwise operators count toward B
+    And branches, case/match arms, catches, comparisons and logic count toward C
+
+  Scenario: Loop heads are protocol bindings
+    Given variables bound by foreach/range heads
+    Then they never qualify as UsedOnce candidates
+    And unused loop keys are not reported as dead writes
+
+  Scenario: Scoped runs treat Go and PHP like first-class languages
+    Given changes in Go or PHP files within an MR scope
+    Then all applicable rules run with suppression directives honored
+
+Feature: Java language support
+  The same four rules run on Java (.java) sources.
+
+  Scenario: Methods and constructors are units
+    When abcop analyses Java sources
+    Then method and constructor declarations produce AbcSize candidates
+    And lambdas roll into the enclosing unit
+
+  Scenario: Switch labels and update expressions follow the shared spec
+    When expressions contain invocations, increments and condition logic
+    Then invocations and arithmetic count toward B
+    And each switch label, catch clause and comparison counts toward C
+    And i++ / --i rewrite a variable exactly like other assignments
+
+  Scenario: Members and qualified names are never variable reads
+    Given field accesses, method names and package-qualified types
+    Then only genuine local identifiers are tracked for the variable rules
