@@ -166,6 +166,43 @@ resumed from the previous morning. Force an explicit base with
 `--base <ref>`. `--changed` remains available for plain working-tree diffs vs
 any ref.
 
+### Scope rules and why they exist
+
+**Bare `abcop` gates everything you are responsible for right now.**
+The default scope is the union of uncommitted work vs `HEAD` and the
+branch's committed changes vs its base. Rationale: whether you commit
+little-and-often onto the default branch or stage a feature branch,
+"what changed" must never silently miss half of your work — and direct
+commits to `main` should not depend on a time heuristic to be seen.
+
+**Route tables (`config/routes.rb`, `config/routes/*.rb`) are never
+review surface.** They are declarative wiring: nearly every line added
+is an endpoint someone asked for, so AbcSize/ModuleSize findings there
+are noise with no action. Name one explicitly (`abcop config/routes.rb`)
+to analyse it anyway.
+
+**In `--mr`/`--changed` scopes, ModuleSize fires only when your diff
+touched ≥100 lines of that module** (untracked files count as fully
+changed) — and this applies to **any** module, spec/test files included:
+a hundred changed lines in a spec means the extraction conversation is
+on the table there too. Rationale: scoped reviews exist to keep changes
+compact — easier to review and less likely to drift out of the MR's task
+scope. A three-line patch into a 500-line legacy module should not gate
+your review for a size problem you did not cause; refactor-scale diffs
+are exactly where extracting a coherent subunit is expected. Full scans
+(`--full`, `--everything`) keep reporting every oversized module.
+
+**Code rules run in tests; only ModuleSize exempts them by default.**
+AbcSize, UsedOnce and NeverUsed stay active in `spec/`, `test/` and
+friends: tests are code, dead bindings and inline candidates smell just
+as much there. ModuleSize's test-tree exemption lifts automatically once
+a scoped diff crosses the 100-line threshold above.
+
+**Ruby shorthand hash arguments count as reads.** In
+`create(:order, user:, status: :ok)` the value-less `user:` key reads
+the local variable `user`; UsedOnce/NeverUsed treat it exactly like a
+bare identifier reference.
+
 ### Directives
 
 For Ruby sources (and, text-based, for Rust comments too) abcop honours

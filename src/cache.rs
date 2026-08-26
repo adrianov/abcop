@@ -69,7 +69,7 @@ impl Cache {
         Self::open_at(&base)
     }
 
-    fn open_at(base: &Path) -> Option<Cache> {
+    pub(crate) fn open_at(base: &Path) -> Option<Cache> {
         std::fs::create_dir_all(base).ok()?;
         let db = Database::create(base.join(DB_FILE)).ok()?;
         drop_legacy_entries(base);

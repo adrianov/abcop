@@ -4,6 +4,12 @@
 
 pub const MAX_LINES: usize = 200;
 
+/// In --mr/--changed scopes ModuleSize only fires when the diff itself
+/// touches at least this many lines: a refactor-scale change invites the
+/// size conversation, while a three-line patch into an already-large
+/// legacy module should not gate the review.
+pub(crate) const MIN_REVIEW_REFACTOR_LINES: usize = 100;
+
 pub(crate) const NON_PROD_DIRS: [&str; 9] = [
     "spec/",
     "specs/",
@@ -100,7 +106,7 @@ pub(crate) fn is_route_table(rel: &std::path::Path) -> bool {
     is_routes_rb || (in_routes_dir && name.ends_with(".rb"))
 }
 
-fn is_test_path(path: &str) -> bool {
+pub(crate) fn is_test_path(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
     in_non_prod_dir(&p) || is_test_basename(base_name(&p))
 }

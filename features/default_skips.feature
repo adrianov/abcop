@@ -24,8 +24,20 @@ Feature: Default skip policy
     Then AbcSize, UsedOnce and NeverUsed still run on the test files
     And only ModuleSize exempts test trees by default
     And route tables are excluded entirely
-    And a bare invocation covers both uncommitted work versus HEAD
-      And the branch's committed changes versus its base
+    And the goal is compact reviews that stay within the MR's task scope
+
+  Scenario: ModuleSize gates scoped reviews only on refactor-scale diffs
+    Given a 228-line production module where the branch changed 4 lines
+    When an "--mr" or "--changed" scope runs
+    Then no ModuleSize warning is reported for that module
+    But when the diff touches at least 100 lines of it
+    Then the ModuleSize warning is reported
+
+  Scenario: Default invocation is the union of both scopes
+    Given uncommitted edits against HEAD and commits on the branch
+    When abcop runs with no scope flags
+    Then files from both changes are analysed
+    And direct commits to the default branch are always covered
 
   Feature: Ruby shorthand hash arguments count as reads
     Ruby 3 allows `foo(user:, strict: false)` where a value-less key reads

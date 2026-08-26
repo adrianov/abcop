@@ -13,7 +13,7 @@ mod helpers;
 
 use crate::model::FileModel;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct AbcOffense {
     pub line: usize,
     pub end_line: usize,

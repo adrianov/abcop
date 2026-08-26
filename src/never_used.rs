@@ -7,7 +7,7 @@
 
 use crate::model::FileModel;
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NeverUsedOffense {
     pub line: usize,
     pub column: usize,
