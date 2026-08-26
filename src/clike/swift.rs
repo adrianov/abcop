@@ -8,7 +8,7 @@
 
 use tree_sitter::Node;
 
-use crate::scope_model::walk::{dispatch, Backend, Spec};
+use crate::scope_model::walk::{Backend, Spec, dispatch};
 use crate::scope_model::{IntroKind, Model, Write};
 
 // Swift's static scope/spec tables. Swift mirrors the JS/TS family:
@@ -116,9 +116,15 @@ impl SwiftCollector<'_> {
     fn walk_assignment(&mut self, n: Node, scope: usize) {
         // Swift's `assignment` node fields are `target`/`result`; JS-family
         // uses `left`/`right` -- accept either field-name set.
-        let left = n.child_by_field_name("left").or_else(|| n.child_by_field_name("target"));
-        let right = n.child_by_field_name("right").or_else(|| n.child_by_field_name("result"));
-        let plain = n.child_by_field_name("operator").map_or(false, |o| self.text_of(o) == "=");
+        let left = n
+            .child_by_field_name("left")
+            .or_else(|| n.child_by_field_name("target"));
+        let right = n
+            .child_by_field_name("right")
+            .or_else(|| n.child_by_field_name("result"));
+        let plain = n
+            .child_by_field_name("operator")
+            .map_or(false, |o| self.text_of(o) == "=");
         if let Some(left) = left {
             if left.kind() == "simple_identifier" {
                 self.rebind_local(left, scope, plain, right.map(|r| r.id()));

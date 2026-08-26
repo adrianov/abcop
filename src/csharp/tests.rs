@@ -2,7 +2,7 @@
 //! UsedOnce candidacy and NeverUsed reporting.
 
 use super::{build, never_used_offenses, used_once_offenses};
-use crate::paths::{parse_file_lang, Lang};
+use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::csharp::CSharpFile<'static> {
     let tree = parse_file_lang(src.as_bytes(), Lang::CSharp).expect("csharp parses");
@@ -31,8 +31,12 @@ fn used(src: &'static str) -> Vec<String> {
     if std::env::var("ABCOP_DBG").is_ok() {
         for (i, sc) in fm.scopes.iter().enumerate() {
             for (n, e) in &sc.entries {
-                eprintln!("[dbg] scope{i} {n} w={} r={:?} kind={:?}",
-                    e.writes.len(), e.reads, e.intro_kind);
+                eprintln!(
+                    "[dbg] scope{i} {n} w={} r={:?} kind={:?}",
+                    e.writes.len(),
+                    e.reads,
+                    e.intro_kind
+                );
             }
         }
         for o in super::used_once_offenses(&fm) {

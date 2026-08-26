@@ -7,7 +7,6 @@ use tree_sitter::Node;
 use super::pure::{pure, unconditionally_executed};
 use super::scope::{Entry, IntroKind, RustFile, Write};
 
-
 use crate::used_once::UsedOnceOffense;
 pub fn used_once_offenses(fm: &RustFile) -> Vec<UsedOnceOffense> {
     let nodes = index_nodes(fm.tree.root_node());

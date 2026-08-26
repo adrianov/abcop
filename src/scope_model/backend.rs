@@ -5,7 +5,7 @@
 
 use tree_sitter::Node;
 
-use super::walk::{dispatch, Spec};
+use super::walk::{Spec, dispatch};
 use super::{IntroKind, Model, Write};
 
 /// A backend collector driving the shared [`Model`].
@@ -76,15 +76,13 @@ pub trait Backend {
     /// operators are a rewrite that also reads the previous value. Returns
     /// whether a visible local was rebound -- callers treat a false result
     /// as "no local binding here" and walk the operand(s) as reads only.
-    fn rebind_local(
-        &mut self,
-        left: Node,
-        scope: usize,
-        plain: bool,
-        rhs: Option<usize>,
-    ) -> bool {
+    fn rebind_local(&mut self, left: Node, scope: usize, plain: bool, rhs: Option<usize>) -> bool {
         let name = self.text_of(left).to_string();
-        if self.model().lookup(scope, left.start_byte(), &name).is_none() {
+        if self
+            .model()
+            .lookup(scope, left.start_byte(), &name)
+            .is_none()
+        {
             return false;
         }
         let (w, intro) = write_for_rebind(left, plain, rhs);

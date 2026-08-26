@@ -10,8 +10,8 @@
 
 use tree_sitter::Node;
 
-use crate::scope_model::walk::{dispatch, Backend, Spec};
-use crate::scope_model::{child_of_kind, IntroKind, Model, ScopeKind, Write};
+use crate::scope_model::walk::{Backend, Spec, dispatch};
+use crate::scope_model::{IntroKind, Model, ScopeKind, Write, child_of_kind};
 
 static SPEC: Spec = Spec {
     skip_kinds: &[
@@ -28,7 +28,11 @@ static SPEC: Spec = Spec {
         "anonymous_method_expression",
         "switch_body",
     ],
-    function_kinds: &["method_declaration", "constructor_declaration", "accessor_declaration"],
+    function_kinds: &[
+        "method_declaration",
+        "constructor_declaration",
+        "accessor_declaration",
+    ],
     read_kinds: &["identifier"],
     exclude_fields: &[("member_access_expression", "name")],
 };
@@ -131,8 +135,10 @@ impl Collector<'_> {
     fn walk_assignment(&mut self, n: Node, scope: usize) {
         let left = n.child_by_field_name("left");
         let right = n.child_by_field_name("right");
-        let plain =
-            n.child_by_field_name("operator").and_then(|o| o.utf8_text(self.src).ok()) == Some("=");
+        let plain = n
+            .child_by_field_name("operator")
+            .and_then(|o| o.utf8_text(self.src).ok())
+            == Some("=");
         if let Some(left) = left {
             if left.kind() == "identifier" {
                 self.rebind_local(left, scope, plain, right.map(|r| r.id()));

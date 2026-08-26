@@ -9,7 +9,7 @@
 use tree_sitter::Node;
 
 use crate::paths::Lang;
-use crate::scope_model::walk::{dispatch, Backend, Spec};
+use crate::scope_model::walk::{Backend, Spec, dispatch};
 use crate::scope_model::{IntroKind, Model, Write};
 
 const PREPROC: &[&str] = &[
@@ -52,12 +52,12 @@ const OBJC_SPEC: Spec = Spec {
     exclude_fields: &[],
 };
 
-pub(super) fn collect(
-    root: Node,
-    src: &[u8],
-    lang: Lang,
-) -> Vec<crate::scope_model::Scope> {
-    let mut c = Collector { src, model: Model::rooted(), lang };
+pub(super) fn collect(root: Node, src: &[u8], lang: Lang) -> Vec<crate::scope_model::Scope> {
+    let mut c = Collector {
+        src,
+        model: Model::rooted(),
+        lang,
+    };
     dispatch(&mut c, root, 0);
     c.model.scopes
 }
@@ -94,7 +94,9 @@ impl Backend for Collector<'_> {
             // i++ / ++i read-and-rewrite a visible local; targets with no
             // visible binding contribute operand reads only
             "update_expression" => {
-                let arg = n.child_by_field_name("argument").or_else(|| n.named_child(0));
+                let arg = n
+                    .child_by_field_name("argument")
+                    .or_else(|| n.named_child(0));
                 if let Some(operand) = arg.filter(|o| o.kind() == "identifier") {
                     self.rebind_local(operand, scope, false, None);
                 } else if let Some(arg) = arg {
@@ -155,8 +157,9 @@ impl Collector<'_> {
     fn bind_assignment(&mut self, n: Node, scope: usize) {
         let left = n.child_by_field_name("left");
         let right = n.child_by_field_name("right");
-        let plain =
-            n.child_by_field_name("operator").map_or(false, |o| self.text_of(o) == "=");
+        let plain = n
+            .child_by_field_name("operator")
+            .map_or(false, |o| self.text_of(o) == "=");
         if let Some(left) = left {
             if left.kind() == "identifier" {
                 self.rebind_local(left, scope, plain, right.map(|r| r.id()));

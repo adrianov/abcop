@@ -2,7 +2,7 @@
 //! UsedOnce candidacy and NeverUsed reporting.
 
 use super::{build, never_used_offenses, used_once_offenses};
-use crate::paths::{parse_file_lang, Lang};
+use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::javalang::JavaFile<'static> {
     let tree = parse_file_lang(src.as_bytes(), Lang::Java).expect("java parses");
@@ -49,9 +49,7 @@ fn dead(src: &'static str) -> Vec<String> {
 #[test]
 fn assignment_and_binary_count_as_a_and_b() {
     assert_eq!(
-        scores(
-            "class K {\n  int simple(int a) {\n    int x = a + 1;\n    return x;\n  }\n}"
-        ),
+        scores("class K {\n  int simple(int a) {\n    int x = a + 1;\n    return x;\n  }\n}"),
         vec![("simple".to_string(), 1, 1, 0)]
     );
 }
@@ -89,7 +87,8 @@ fn constructors_are_units_and_lambdas_roll_in() {
 
 #[test]
 fn member_names_are_not_variable_reads() {
-    let src = "class K {\n  int m(K other) {\n    other.count = 1;\n    return other.count;\n  }\n}";
+    let src =
+        "class K {\n  int m(K other) {\n    other.count = 1;\n    return other.count;\n  }\n}";
     // A: 0 (field targets bind nothing); B: none beyond assignments? the
     // two field accesses are reads of `other` only; assignments to fields
     // contribute no A. C: 0.

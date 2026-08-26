@@ -32,10 +32,10 @@ use tree_sitter::Node;
 
 use crate::abc::{AbcOffense, fmt_vector};
 
+pub use builder::build;
 pub use pure::never_used_offenses;
 pub use scope::RustFile;
 pub use usedonce::used_once_offenses;
-pub use builder::build;
 
 /// Node kinds whose subtrees are type/attribute territory — no variable reads
 /// or metric contributions live there.

@@ -2,7 +2,7 @@
 //! UsedOnce candidacy and NeverUsed reporting.
 
 use super::{build, never_used_offenses, used_once_offenses};
-use crate::paths::{parse_file_lang, Lang};
+use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::phplang::PhpFile<'static> {
     let tree = parse_file_lang(src.as_bytes(), Lang::Php).expect("php parses");

@@ -1,7 +1,7 @@
 //! UsedOnce / NeverUsed contract vectors for the plain-C-family scope
 //! collectors (C, C++, Objective-C).
 
-use crate::paths::{parse_file_lang, Lang};
+use crate::paths::{Lang, parse_file_lang};
 
 fn used(lang: Lang, src: &'static str) -> Vec<String> {
     let tree = parse_file_lang(src.as_bytes(), lang).expect("fixture parses");

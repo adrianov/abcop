@@ -21,10 +21,7 @@ struct Found {
 /// below a root are filtered through `skipped_by_default` and the walker's
 /// ignore rules -- unless `everything` is set (`--everything`), which lifts
 /// every filter: gitignore, hidden files, vendored/generated pruning.
-pub(crate) fn collect_files(
-    paths: &[String],
-    everything: bool,
-) -> Vec<std::path::PathBuf> {
+pub(crate) fn collect_files(paths: &[String], everything: bool) -> Vec<std::path::PathBuf> {
     let (explicit, roots) = classify_targets(paths);
     let mut all = explicit;
     all.extend(walk_roots(&roots, everything));
@@ -33,9 +30,7 @@ pub(crate) fn collect_files(
 
 /// Split CLI targets: existing files are scanned directly (depth 0),
 /// everything else that exists becomes a walked root; missing paths drop.
-fn classify_targets(
-    paths: &[String],
-) -> (Vec<Found>, Vec<std::path::PathBuf>) {
+fn classify_targets(paths: &[String]) -> (Vec<Found>, Vec<std::path::PathBuf>) {
     let mut explicit = Vec::new();
     let mut roots = Vec::new();
     for raw in paths {
@@ -68,8 +63,11 @@ fn walk_roots(roots: &[std::path::PathBuf], everything: bool) -> Vec<Found> {
         // literally every code file below the target.
         lift_all_filters(&mut builder);
     }
-    let mut collector =
-        CollectorBuilder { sink: &discovered, roots, no_skip: everything };
+    let mut collector = CollectorBuilder {
+        sink: &discovered,
+        roots,
+        no_skip: everything,
+    };
     builder.build_parallel().visit(&mut collector);
     discovered.into_inner().unwrap_or_default()
 }

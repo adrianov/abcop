@@ -2,7 +2,7 @@
 //! UsedOnce candidacy and NeverUsed reporting.
 
 use super::{build, never_used_offenses, used_once_offenses};
-use crate::paths::{parse_file_lang, Lang};
+use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::sollang::SolFile<'static> {
     let tree = parse_file_lang(src.as_bytes(), Lang::Solidity).expect("solidity parses");
@@ -95,9 +95,11 @@ fn constructors_are_units() {
 #[test]
 fn used_once_flags_single_pure_straightline_binding() {
     assert_eq!(
-        used("contract T {\n  function ok(uint256 f) public pure returns (uint256) {\n\
+        used(
+            "contract T {\n  function ok(uint256 f) public pure returns (uint256) {\n\
               \x20   uint256 x = 42;\n\
-              \x20   return x + f;\n  }\n}"),
+              \x20   return x + f;\n  }\n}"
+        ),
         vec!["x"]
     );
 }

@@ -119,12 +119,18 @@ pub(crate) fn is_third_party(path: &std::path::Path) -> bool {
     for comp in path.components() {
         let name = comp.as_os_str();
         let lower = name.to_string_lossy().to_ascii_lowercase();
-        if GENERATED_DIRS.iter().any(|d| lower == d.trim_end_matches('/')) {
+        if GENERATED_DIRS
+            .iter()
+            .any(|d| lower == d.trim_end_matches('/'))
+        {
             return true;
         }
         if let Some(p) = prev {
             let parent = p.to_string_lossy().to_ascii_lowercase();
-            if GENERATED_DIR_PAIRS.iter().any(|(a, b)| parent == *a && lower == *b) {
+            if GENERATED_DIR_PAIRS
+                .iter()
+                .any(|(a, b)| parent == *a && lower == *b)
+            {
                 return true;
             }
         }

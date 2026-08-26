@@ -2,7 +2,7 @@
 //! UsedOnce candidacy and NeverUsed reporting.
 
 use super::{build, never_used_offenses, used_once_offenses};
-use crate::paths::{parse_file_lang, Lang};
+use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::pylang::PyFile<'static> {
     let tree = parse_file_lang(src.as_bytes(), Lang::Py).expect("python parses");
@@ -136,12 +136,18 @@ fn attribute_and_subscript_targets_bind_nothing() {
                \x20   o[k] = 2\n\
                \x20   return o\n";
     let got = dead(src);
-    assert!(got.is_empty(), "reference targets are not bindings: {got:?}");
+    assert!(
+        got.is_empty(),
+        "reference targets are not bindings: {got:?}"
+    );
 }
 
 #[test]
 fn used_once_flags_single_pure_straightline_binding() {
-    assert_eq!(used("def ok(f):\n    x = 42\n    return x + f\n"), vec!["x"]);
+    assert_eq!(
+        used("def ok(f):\n    x = 42\n    return x + f\n"),
+        vec!["x"]
+    );
 }
 
 #[test]

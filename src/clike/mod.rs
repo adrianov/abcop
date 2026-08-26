@@ -8,22 +8,22 @@
 //! collector), [`purity`] (shared RHS-purity predicates), [`tests`] and
 //! [`tests_abc`] (end-to-end vector assertions).
 
+mod c;
+mod purity;
 mod scan;
 mod scope;
 mod spec;
-mod tally;
-mod purity;
-mod c;
 mod swift;
+mod tally;
 
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
-mod tests_swift;
+mod tests_abc;
 #[cfg(test)]
 mod tests_cfamily;
 #[cfg(test)]
-mod tests_abc;
+mod tests_swift;
 
 use std::collections::HashSet;
 
@@ -51,7 +51,10 @@ pub(crate) fn collect_scopes<'t>(
         Lang::C | Lang::Cpp | Lang::ObjC => c::collect(tree.root_node(), src, lang),
         other => unreachable!("clike scope backend for lang: {other:?}"),
     };
-    JsScopes { scopes, root: tree.root_node() }
+    JsScopes {
+        scopes,
+        root: tree.root_node(),
+    }
 }
 
 static JS_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semantics {
@@ -67,7 +70,11 @@ static JS_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semanti
         "try_statement",
         "catch_clause",
     ],
-    owners: &["function_declaration", "generator_function_declaration", "method_definition"],
+    owners: &[
+        "function_declaration",
+        "generator_function_declaration",
+        "method_definition",
+    ],
     include_root_scope: false,
 };
 
@@ -82,7 +89,11 @@ static SWIFT_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Sema
         "switch_statement",
         "do_catch_statement",
     ],
-    owners: &["function_declaration", "init_declaration", "closure_expression"],
+    owners: &[
+        "function_declaration",
+        "init_declaration",
+        "closure_expression",
+    ],
     include_root_scope: false,
 };
 
@@ -112,19 +123,25 @@ static C_FAMILY_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::S
     include_root_scope: false,
 };
 
-pub(crate) fn used_once_offenses(
-    sc: &JsScopes,
-    lang: crate::paths::Lang,
-) -> Vec<UsedOnceOffense> {
-    crate::scope_model::used_once_offenses(sc.root, &|b| line_col(sc.root, b), &sc.scopes, semantics_for(lang))
- }
- 
+pub(crate) fn used_once_offenses(sc: &JsScopes, lang: crate::paths::Lang) -> Vec<UsedOnceOffense> {
+    crate::scope_model::used_once_offenses(
+        sc.root,
+        &|b| line_col(sc.root, b),
+        &sc.scopes,
+        semantics_for(lang),
+    )
+}
+
 pub(crate) fn never_used_offenses(
     sc: &JsScopes,
     lang: crate::paths::Lang,
 ) -> Vec<NeverUsedOffense> {
-    crate::scope_model::never_used_offenses(&|b| line_col(sc.root, b), &sc.scopes, semantics_for(lang))
- }
+    crate::scope_model::never_used_offenses(
+        &|b| line_col(sc.root, b),
+        &sc.scopes,
+        semantics_for(lang),
+    )
+}
 
 fn line_col(root: tree_sitter::Node, byte: usize) -> (usize, usize) {
     let point = root

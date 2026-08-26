@@ -27,7 +27,6 @@ mod usage;
 #[cfg(test)]
 mod tests;
 
-
 use tree_sitter::Tree;
 
 pub use usage::{never_used_offenses, used_once_offenses};

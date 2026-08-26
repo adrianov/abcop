@@ -16,8 +16,8 @@ const UNIT_KINDS: &[&str] = &["function_definition", "method_declaration"];
 /// Binary operators counted toward C; the rest (arithmetic, bitwise,
 /// string concat `.`) count toward B.
 const C_OPERATORS: &[&str] = &[
-    "&&", "||", "and", "or", "xor", "==", "!=", "===", "!==", "<>", "<=>",
-    "<", ">", "<=", ">=", "??",
+    "&&", "||", "and", "or", "xor", "==", "!=", "===", "!==", "<>", "<=>", "<", ">", "<=", ">=",
+    "??",
 ];
 
 pub(crate) fn all_scores(fm: &PhpFile) -> Vec<AbcOffense> {
@@ -26,7 +26,10 @@ pub(crate) fn all_scores(fm: &PhpFile) -> Vec<AbcOffense> {
         let Some(body) = unit.child_by_field_name("body") else {
             return;
         };
-        let mut t = Tally { src: fm.src, ..Default::default() };
+        let mut t = Tally {
+            src: fm.src,
+            ..Default::default()
+        };
         t.walk(body);
         let pos = unit.start_position();
         let raw = ((t.a * t.a + t.b * t.b + t.c * t.c) as f64).sqrt();
@@ -142,8 +145,10 @@ fn count_identifiers(n: Node) -> u32 {
     match n.kind() {
         "variable_name" | "identifier" => 1,
         // reference targets bind nothing
-        "member_access_expression" | "nullsafe_member_access_expression"
-        | "subscript_expression" | "function_call_expression" => 0,
+        "member_access_expression"
+        | "nullsafe_member_access_expression"
+        | "subscript_expression"
+        | "function_call_expression" => 0,
         _ => {
             let mut sum = 0;
             let mut cursor = n.walk();

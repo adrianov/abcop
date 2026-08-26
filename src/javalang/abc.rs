@@ -15,9 +15,7 @@ const UNIT_KINDS: &[&str] = &["method_declaration", "constructor_declaration"];
 
 /// Binary operators counted toward C; arithmetic, bitwise and shifts
 /// count toward B. `instanceof` is a type test (branch).
-const C_OPERATORS: &[&str] = &[
-    "&&", "||", "==", "!=", "<", ">", "<=", ">=", "instanceof",
-];
+const C_OPERATORS: &[&str] = &["&&", "||", "==", "!=", "<", ">", "<=", ">=", "instanceof"];
 
 pub(crate) fn all_scores(fm: &JavaFile) -> Vec<AbcOffense> {
     let mut offenses = Vec::new();
@@ -25,7 +23,10 @@ pub(crate) fn all_scores(fm: &JavaFile) -> Vec<AbcOffense> {
         let Some(body) = unit.child_by_field_name("body") else {
             return;
         };
-        let mut t = Tally { src: fm.src, ..Default::default() };
+        let mut t = Tally {
+            src: fm.src,
+            ..Default::default()
+        };
         t.walk(body);
         let pos = unit.start_position();
         let raw = ((t.a * t.a + t.b * t.b + t.c * t.c) as f64).sqrt();
@@ -103,12 +104,8 @@ impl Tally<'_> {
             }
             // i++ / --i rewrite a variable, exactly like Go's inc/dec
             "update_expression" => self.a += 1,
-            "if_statement"
-            | "for_statement"
-            | "while_statement"
-            | "do_statement"
-            | "switch_label"
-            | "catch_clause" => self.c += 1,
+            "if_statement" | "for_statement" | "while_statement" | "do_statement"
+            | "switch_label" | "catch_clause" => self.c += 1,
             "ternary_expression" => self.c += 1,
             "binary_expression" => {
                 if self.op_is_c(n) {

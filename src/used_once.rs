@@ -164,10 +164,7 @@ fn single_use_offense<'t>(
 }
 
 /// Tree nodes for a write's RHS expression and for the write itself.
-fn offense_nodes<'t>(
-    nodes: &HashMap<usize, Node<'t>>,
-    w: &Write,
-) -> Option<(Node<'t>, Node<'t>)> {
+fn offense_nodes<'t>(nodes: &HashMap<usize, Node<'t>>, w: &Write) -> Option<(Node<'t>, Node<'t>)> {
     let (rhs_id, _) = w.rhs?;
     Some((*nodes.get(&rhs_id)?, *nodes.get(&w.node_id)?))
 }
@@ -208,7 +205,14 @@ mod tests {
     fn shorthand_read_on_one_binding_leaves_others_flagged() {
         // `a` is only read via shorthand -> stays; `b` has one plain read.
         let f = flags("def k\n  a = 5\n  b = 7\n  g(a:, b)\nend\n");
-        assert_eq!(f, vec![UsedOnceOffense { line: 3, column: 2, name: "b".into() }]);
+        assert_eq!(
+            f,
+            vec![UsedOnceOffense {
+                line: 3,
+                column: 2,
+                name: "b".into()
+            }]
+        );
     }
 
     #[test]

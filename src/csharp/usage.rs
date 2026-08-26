@@ -46,14 +46,13 @@ pub fn never_used_offenses(fm: &CSharpFile) -> Vec<crate::never_used::NeverUsedO
 /// are rejected via their children.
 fn pure(n: Node) -> bool {
     match n.kind() {
-        "integer_literal"
-        | "real_literal"
-        | "character_literal"
-        | "string_literal"
-        | "boolean_literal"
-        | "null_literal" => true,
-        "parenthesized_expression" | "binary_expression" | "unary_expression"
-        | "prefix_unary_expression" | "postfix_unary_expression" => children_pure(n),
+        "integer_literal" | "real_literal" | "character_literal" | "string_literal"
+        | "boolean_literal" | "null_literal" => true,
+        "parenthesized_expression"
+        | "binary_expression"
+        | "unary_expression"
+        | "prefix_unary_expression"
+        | "postfix_unary_expression" => children_pure(n),
         _ => false,
     }
 }

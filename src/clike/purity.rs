@@ -36,9 +36,10 @@ pub(super) fn js_pure(n: Node) -> bool {
             children_without_substitution(n, js_pure)
         }
         "template_string" => children_without_substitution(n, js_pure),
-        "parenthesized_expression" | "binary_expression" | "unary_expression" | "typeof_expression" => {
-            children_all_pure(n, js_pure)
-        }
+        "parenthesized_expression"
+        | "binary_expression"
+        | "unary_expression"
+        | "typeof_expression" => children_all_pure(n, js_pure),
         _ => false,
     }
 }

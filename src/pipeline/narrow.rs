@@ -6,11 +6,7 @@ use crate::git_changes;
 use crate::output::FileResult;
 
 /// Drops diagnostics outside the changed lines of this file.
-pub(super) fn apply(
-    changeset: Option<&git_changes::Changeset>,
-    r: &mut FileResult,
-    src: &[u8],
-) {
+pub(super) fn apply(changeset: Option<&git_changes::Changeset>, r: &mut FileResult, src: &[u8]) {
     let Some(cs) = changeset else { return };
     let Some(rel) = cs.rel_of(&r.path) else {
         return;
@@ -33,7 +29,8 @@ fn apply_module_size_policy(
     src: &[u8],
     r: &mut FileResult,
 ) {
-    let refactor_scale = changed_line_count(cs, rel) >= crate::modulesize::MIN_REVIEW_REFACTOR_LINES;
+    let refactor_scale =
+        changed_line_count(cs, rel) >= crate::modulesize::MIN_REVIEW_REFACTOR_LINES;
     if r.oversize.is_some() {
         if !refactor_scale {
             r.oversize = None;

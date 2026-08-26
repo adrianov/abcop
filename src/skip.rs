@@ -53,9 +53,7 @@ pub(crate) fn skipped_by_default(path: &std::path::Path, roots: &[std::path::Pat
         return false;
     };
     let file_name = rel.file_name().unwrap_or_default();
-    if is_generated_name(file_name)
-        || crate::modulesize::is_route_table(rel)
-    {
+    if is_generated_name(file_name) || crate::modulesize::is_route_table(rel) {
         return true;
     }
     rel.parent().is_some_and(any_component_matches)

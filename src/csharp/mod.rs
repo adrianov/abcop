@@ -24,7 +24,6 @@ mod scope;
 mod tests;
 mod usage;
 
-
 use crate::scope_model::Scope;
 use tree_sitter::Tree;
 

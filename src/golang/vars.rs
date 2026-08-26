@@ -165,10 +165,7 @@ fn unary_op_ok(n: Node) -> bool {
     let mut c = n.walk();
     for ch in n.children(&mut c) {
         if !ch.is_named() {
-            return matches!(
-                ch.utf8_text(b"").unwrap_or(""),
-                "-" | "+" | "^" | "!"
-            );
+            return matches!(ch.utf8_text(b"").unwrap_or(""), "-" | "+" | "^" | "!");
         }
     }
     false
@@ -255,7 +252,11 @@ impl Collector<'_> {
     fn lookup(&self, scope: usize, pos: usize, name: &str) -> Option<usize> {
         let data = &self.scopes[scope];
         if let Some(e) = data.entries.get(name) {
-            return if e.intro_byte <= pos { Some(scope) } else { None };
+            return if e.intro_byte <= pos {
+                Some(scope)
+            } else {
+                None
+            };
         }
         match data.kind {
             ScopeKind::Block => self.lookup(data.parent?, pos, name),

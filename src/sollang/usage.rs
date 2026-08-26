@@ -49,14 +49,15 @@ pub fn never_used_offenses(fm: &SolFile) -> Vec<crate::never_used::NeverUsedOffe
 /// inside that wrapper fail it naturally.
 fn pure(n: Node) -> bool {
     match n.kind() {
-        "number_literal"
-        | "string_literal"
-        | "string"
-        | "boolean_literal"
-        | "true"
-        | "false" => true,
-        "expression" | "parenthesized_expression" | "tuple_expression"
-        | "array_expression" | "binary_expression" | "unary_op_expression"
+        "number_literal" | "string_literal" | "string" | "boolean_literal" | "true" | "false" => {
+            true
+        }
+        "expression"
+        | "parenthesized_expression"
+        | "tuple_expression"
+        | "array_expression"
+        | "binary_expression"
+        | "unary_op_expression"
         | "unary_expression" => children_pure(n),
         _ => false,
     }

@@ -1,6 +1,6 @@
 //! UsedOnce / NeverUsed contract vectors for the Swift scope collector.
 
-use crate::paths::{parse_file_lang, Lang};
+use crate::paths::{Lang, parse_file_lang};
 
 fn used(lang: Lang, src: &'static str) -> Vec<String> {
     let tree = parse_file_lang(src.as_bytes(), lang).expect("fixture parses");
@@ -24,7 +24,6 @@ fn dead(lang: Lang, src: &'static str) -> Vec<String> {
     v
 }
 
-
 #[test]
 fn swift_never_used_flags_dead_binding() {
     let src = "func f() {\n  let unused = 1\n  return 0\n}";
@@ -33,7 +32,8 @@ fn swift_never_used_flags_dead_binding() {
 
 #[test]
 fn swift_used_once_flags_inline_candidate() {
-    let src = "func f(a: Int) -> Int {\n  let r = a + 1\n  let d = r + 2\n  let g = 5\n  return g + d\n}";
+    let src =
+        "func f(a: Int) -> Int {\n  let r = a + 1\n  let d = r + 2\n  let g = 5\n  return g + d\n}";
     // `g` is assigned a pure literal and read once -> inline candidate.
     // `d`/`r` have local-reading (impure) RHS -> not candidates, matching
     // the JS backend purity rules.
@@ -50,7 +50,12 @@ fn swift_member_reads_are_not_variable_reads() {
     let src = "class C {\n  func f() {\n    let x = 1\n    return self.helper + x\n  }\n  func helper() -> Int { 0 }\n}";
     let tree = parse_file_lang(src.as_bytes(), Lang::Swift).unwrap();
     let sc = super::collect_scopes(src.as_bytes(), &tree, Lang::Swift);
-    let bindings: Vec<String> = sc.scopes.iter().flat_map(|s| s.entries.keys()).map(|k| k.as_ref().to_string()).collect();
+    let bindings: Vec<String> = sc
+        .scopes
+        .iter()
+        .flat_map(|s| s.entries.keys())
+        .map(|k| k.as_ref().to_string())
+        .collect();
     // `x` is a local binding (read via the trailing expression); `helper`
     // is a member read off `self` and must NOT appear as a local binding.
     assert!(bindings.contains(&"x".to_string()));
@@ -79,4 +84,3 @@ fn swift_closure_rhs_is_not_pure() {
     let src = "func f() {\n  let n = 1\n  let c = { (_: Int) in n }\n  return c(0) + n\n}";
     assert_eq!(used(Lang::Swift, src), Vec::<String>::new());
 }
-

@@ -32,7 +32,10 @@ pub(crate) fn resolve(
 
 /// When the base cannot be resolved: fall back to uncommitted HEAD work
 /// alone, or to the whole tree when even that is empty or unavailable.
-fn head_fallback(head: Result<Changeset, String>, reason: &str) -> Result<Option<Changeset>, String> {
+fn head_fallback(
+    head: Result<Changeset, String>,
+    reason: &str,
+) -> Result<Option<Changeset>, String> {
     match head {
         Ok(h) if !h.files.is_empty() => Ok(Some(h)),
         _ => {

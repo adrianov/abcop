@@ -5,7 +5,7 @@
 
 use tree_sitter::Node;
 
-use crate::scope_model::walk::{dispatch, Backend};
+use crate::scope_model::walk::{Backend, dispatch};
 use crate::scope_model::{IntroKind, Write};
 
 /// Bind every declared name of a `variable_declaration_statement`. A
@@ -17,7 +17,11 @@ pub(super) fn bind_declaration_statement(b: &mut impl Backend, n: Node, scope: u
     let single_pair = decls.len() == 1 && value.is_some();
     for d in &decls {
         if let Some(name) = d.child_by_field_name("name") {
-            let rhs = if single_pair { value.map(|v| v.id()) } else { None };
+            let rhs = if single_pair {
+                value.map(|v| v.id())
+            } else {
+                None
+            };
             let w = Write::assign(name.start_byte(), name.id(), rhs);
             b.bind_var(name, scope, w, IntroKind::Assign);
         }
@@ -76,11 +80,7 @@ pub(super) fn plain_identifier_targets<'t>(n: Node<'t>, out: &mut Vec<Node<'t>>)
 pub(super) fn plain_identifier_target(n: Node) -> Option<Node> {
     let mut out = Vec::new();
     plain_identifier_targets(n, &mut out);
-    if out.len() == 1 {
-        out.pop()
-    } else {
-        None
-    }
+    if out.len() == 1 { out.pop() } else { None }
 }
 
 fn collect_decls<'t>(n: Node<'t>, out: &mut Vec<Node<'t>>) {

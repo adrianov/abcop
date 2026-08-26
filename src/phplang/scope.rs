@@ -8,7 +8,7 @@
 
 use tree_sitter::Node;
 
-use crate::scope_model::{child_of_kind, IntroKind, Model, Scope, ScopeKind, Write};
+use crate::scope_model::{IntroKind, Model, Scope, ScopeKind, Write, child_of_kind};
 
 /// Subtrees carrying no local-variable writes or reads.
 const SKIP_KINDS: &[&str] = &[

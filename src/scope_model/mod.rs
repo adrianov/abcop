@@ -25,7 +25,7 @@ use std::collections::HashMap;
 
 use tree_sitter::Node;
 
-pub use eval::{never_used_offenses, used_once_offenses, Semantics};
+pub use eval::{Semantics, never_used_offenses, used_once_offenses};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IntroKind {
@@ -122,7 +122,11 @@ impl Model {
     pub fn lookup(&self, scope: usize, pos: usize, name: &str) -> Option<usize> {
         let data = &self.scopes[scope];
         if let Some(e) = data.entries.get(name) {
-            return if e.intro_byte <= pos { Some(scope) } else { None };
+            return if e.intro_byte <= pos {
+                Some(scope)
+            } else {
+                None
+            };
         }
         match data.kind {
             ScopeKind::Block => self.lookup(data.parent?, pos, name),

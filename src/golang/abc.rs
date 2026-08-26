@@ -31,7 +31,10 @@ pub(crate) fn all_scores(fm: &GoFile) -> Vec<AbcOffense> {
         let Some(body) = unit.child_by_field_name("body") else {
             return;
         };
-        let mut t = Tally { src: fm.src, ..Default::default() };
+        let mut t = Tally {
+            src: fm.src,
+            ..Default::default()
+        };
         t.walk(body);
         let pos = unit.start_position();
         let raw = ((t.a * t.a + t.b * t.b + t.c * t.c) as f64).sqrt();
@@ -95,8 +98,8 @@ impl Tally<'_> {
                 self.a += count_identifiers(n.child_by_field_name("left"));
             }
             "assignment_statement" => {
-                let plain = Self::op_of(self.src, n)
-                    .is_some_and(|op| PLAIN_ASSIGN_OPS.contains(&op));
+                let plain =
+                    Self::op_of(self.src, n).is_some_and(|op| PLAIN_ASSIGN_OPS.contains(&op));
                 if plain {
                     self.a += count_identifiers(n.child_by_field_name("left"));
                 } else {
@@ -120,9 +123,7 @@ impl Tally<'_> {
                 }
             }
             "binary_expression" => {
-                if Self::op_of(self.src, n)
-                    .is_some_and(|op| C_OPERATORS.contains(&op))
-                {
+                if Self::op_of(self.src, n).is_some_and(|op| C_OPERATORS.contains(&op)) {
                     self.c += 1;
                 } else {
                     self.b += 1;
@@ -152,7 +153,9 @@ fn count_identifiers(left: Option<Node>) -> u32 {
     fn rec(n: Node) -> u32 {
         match n.kind() {
             "identifier" => 1,
-            "selector_expression" | "index_expression" | "call_expression"
+            "selector_expression"
+            | "index_expression"
+            | "call_expression"
             | "composite_literal" => 0,
             _ => {
                 let mut sum = 0;

@@ -89,13 +89,14 @@ fn scoped_changeset(root: &std::path::Path, rel: &str, hi: usize) -> Changeset {
 /// served un-narrowed results. Both paths must narrow identically.
 /// A narrowed-scope fixture: temp repo root, the filler file inside it,
 /// and a 3-line changeset over that file.
-fn narrow_fixture()
-    -> (std::path::PathBuf, std::path::PathBuf, Changeset)
-{
+fn narrow_fixture() -> (std::path::PathBuf, std::path::PathBuf, Changeset) {
     let dir = std::env::temp_dir().join(format!("abcop_pipeline_narrow_{}", std::process::id()));
     let rel = "app/models_big.rb";
-    let (file, _) =
-        filler_ruby_file(&dir, rel, "def filler_{i}\n  x_{i} = 1\n  unused_{i} = 2\nend\n\n");
+    let (file, _) = filler_ruby_file(
+        &dir,
+        rel,
+        "def filler_{i}\n  x_{i} = 1\n  unused_{i} = 2\nend\n\n",
+    );
     let cs = scoped_changeset(&dir, rel, 2);
     (dir, file, cs)
 }
@@ -129,13 +130,18 @@ fn assert_fresh_unflagged(file: &std::path::Path, cs: &Changeset) -> FileResult 
     r
 }
 
-
 /// A 60-test spec fixture plus its repo root.
 fn spec_fixture(tag: &str) -> (std::path::PathBuf, std::path::PathBuf, String) {
-    let dir =
-        std::env::temp_dir().join(format!("abcop_pipeline_specsize_{}_{}", std::process::id(), tag));
-    let (file, src) =
-        filler_ruby_file(&dir, "test/commit_plan_finalize_test.rb", "def test_fill_{i}\n  assert true\nend\n\n");
+    let dir = std::env::temp_dir().join(format!(
+        "abcop_pipeline_specsize_{}_{}",
+        std::process::id(),
+        tag
+    ));
+    let (file, src) = filler_ruby_file(
+        &dir,
+        "test/commit_plan_finalize_test.rb",
+        "def test_fill_{i}\n  assert true\nend\n\n",
+    );
     (dir, file, src)
 }
 

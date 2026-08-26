@@ -8,7 +8,6 @@ use std::path::Path;
 
 use crate::git_changes::{current_branch_in, git_in, is_ancestor_in};
 
-
 /// Newest commit shared by HEAD and any sibling branch tip -- the
 /// parent/fork point. One `rev-list --boundary` pass replaces a
 /// merge-base subprocess per branch, so detection cost stays flat no
@@ -33,7 +32,10 @@ fn head_sha_in(dir: Option<&Path>) -> Result<String, String> {
 /// provided it when one is known.
 fn fork_label(sha: &str, names: &HashMap<String, String>) -> (String, String) {
     match names.get(sha) {
-        Some(parent) => (sha.to_string(), format!("changes since fork point (parent {parent})")),
+        Some(parent) => (
+            sha.to_string(),
+            format!("changes since fork point (parent {parent})"),
+        ),
         None => (sha.to_string(), "changes since fork point".to_string()),
     }
 }
@@ -139,11 +141,7 @@ fn boundary_shas(out: &str) -> Vec<String> {
 /// deepest fork point wins.
 fn drop_ancestor_bases(dir: Option<&Path>, mut bases: Vec<String>) -> Vec<String> {
     let stale: Vec<usize> = (0..bases.len())
-        .filter(|&i| {
-            (0..bases.len()).any(|j| {
-                i != j && is_ancestor_in(dir, &bases[i], &bases[j])
-            })
-        })
+        .filter(|&i| (0..bases.len()).any(|j| i != j && is_ancestor_in(dir, &bases[i], &bases[j])))
         .collect();
     for i in stale.into_iter().rev() {
         bases.remove(i);

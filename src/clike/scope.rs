@@ -11,7 +11,7 @@
 
 use tree_sitter::Node;
 
-use crate::scope_model::walk::{dispatch, Backend, Spec};
+use crate::scope_model::walk::{Backend, Spec, dispatch};
 use crate::scope_model::{IntroKind, Model, ScopeKind, Write};
 
 // NOTE: JavaScript functions are closures -- nested functions read outer
@@ -158,7 +158,9 @@ impl Collector<'_> {
     fn walk_assignment(&mut self, n: Node, scope: usize) {
         let left = n.child_by_field_name("left");
         let right = n.child_by_field_name("right");
-        let plain = n.child_by_field_name("operator").map_or(false, |o| self.text_of(o) == "=");
+        let plain = n
+            .child_by_field_name("operator")
+            .map_or(false, |o| self.text_of(o) == "=");
         if let Some(left) = left {
             if matches!(left.kind(), "array_pattern" | "object_pattern") {
                 // destructuring reassignment: elements bind, occurrence
@@ -180,4 +182,3 @@ impl Collector<'_> {
         }
     }
 }
-

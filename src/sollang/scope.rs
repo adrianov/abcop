@@ -8,8 +8,8 @@
 
 use tree_sitter::Node;
 
-use crate::scope_model::walk::{dispatch, Backend, Spec};
-use crate::scope_model::{child_of_kind, IntroKind, Model, Scope, Write};
+use crate::scope_model::walk::{Backend, Spec, dispatch};
+use crate::scope_model::{IntroKind, Model, Scope, Write, child_of_kind};
 
 use super::decl;
 
@@ -120,7 +120,11 @@ impl Collector<'_> {
     fn rebind_tuple(&mut self, targets: &[Node], plain: bool, right: Option<Node>, scope: usize) {
         let single_pair = targets.len() == 1;
         for t in targets {
-            let rhs = if plain && single_pair { right.map(|r| r.id()) } else { None };
+            let rhs = if plain && single_pair {
+                right.map(|r| r.id())
+            } else {
+                None
+            };
             let w = Write::assign(t.start_byte(), t.id(), rhs);
             self.bind_var(*t, scope, w, IntroKind::Assign);
             if !plain {

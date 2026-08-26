@@ -145,10 +145,15 @@ fn pure(n: Node) -> bool {
         "integer" | "float" | "true" | "false" | "none" => true,
         "string" => children_pure(n),
         "string_content" | "escape_sequence" => true,
-        "list" | "tuple" | "set" | "dictionary" | "pair" | "unary_operator"
-        | "binary_operator" | "boolean_operator" | "parenthesized_expression" => {
-            children_pure(n)
-        }
+        "list"
+        | "tuple"
+        | "set"
+        | "dictionary"
+        | "pair"
+        | "unary_operator"
+        | "binary_operator"
+        | "boolean_operator"
+        | "parenthesized_expression" => children_pure(n),
         _ => false,
     }
 }
@@ -229,7 +234,11 @@ impl Collector<'_> {
     fn lookup(&self, scope: usize, pos: usize, name: &str) -> Option<usize> {
         let data = &self.scopes[scope];
         if let Some(e) = data.entries.get(name) {
-            return if e.intro_byte <= pos { Some(scope) } else { None };
+            return if e.intro_byte <= pos {
+                Some(scope)
+            } else {
+                None
+            };
         }
         match data.kind {
             ScopeKind::Block => self.lookup(data.parent?, pos, name),

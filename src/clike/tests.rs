@@ -3,7 +3,7 @@
 //! family in [`tests_cfamily`], and AbcSize score vectors in
 //! [`tests_abc`].
 
-use crate::paths::{parse_file_lang, Lang};
+use crate::paths::{Lang, parse_file_lang};
 
 fn used(lang: Lang, src: &'static str) -> Vec<String> {
     let tree = parse_file_lang(src.as_bytes(), lang).expect("fixture parses");

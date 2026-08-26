@@ -4,11 +4,11 @@
 
 use crate::cache;
 use crate::git_changes;
-use crate::paths::{lang_for, parse_file_lang, Lang};
-use crate::srcbuf::{load_src, SrcBuf};
+use crate::paths::{Lang, lang_for, parse_file_lang};
+use crate::srcbuf::{SrcBuf, load_src};
 mod backends;
-mod non_clike;
 mod narrow;
+mod non_clike;
 
 #[cfg(test)]
 mod tests;

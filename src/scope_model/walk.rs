@@ -7,9 +7,8 @@
 
 use tree_sitter::Node;
 
-pub use super::backend::Backend;
 use super::ScopeKind;
-
+pub use super::backend::Backend;
 
 /// Static description of a backend's generic walk behavior.
 pub struct Spec {
@@ -26,7 +25,6 @@ pub struct Spec {
     /// variables: walking skips exactly those slots.
     pub exclude_fields: &'static [(&'static str, &'static str)],
 }
-
 
 /// Consume everything the [`Spec`] covers. Returns `true` when handled;
 /// otherwise runs the backend's custom arms itself.

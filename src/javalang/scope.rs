@@ -9,7 +9,7 @@
 
 use tree_sitter::Node;
 
-use crate::scope_model::{child_of_kind, IntroKind, Model, Scope, ScopeKind, Write};
+use crate::scope_model::{IntroKind, Model, Scope, ScopeKind, Write, child_of_kind};
 
 /// Subtrees carrying no local-variable writes or reads.
 const SKIP_KINDS: &[&str] = &[
@@ -22,8 +22,11 @@ const SKIP_KINDS: &[&str] = &[
 
 /// Expressions whose given named fields are member references, not
 /// variables: walking skips exactly those slots.
-const EXCLUDE_FIELDS: &[(&str, &str)] =
-    &[("method_invocation", "name"), ("field_access", "field"), ("nullsafe_member_call_expression", "name")];
+const EXCLUDE_FIELDS: &[(&str, &str)] = &[
+    ("method_invocation", "name"),
+    ("field_access", "field"),
+    ("nullsafe_member_call_expression", "name"),
+];
 
 /// Kinds that open a nested scope: blocks, lambdas and switch blocks
 /// capture outward; everything else stops resolution.
@@ -173,16 +176,27 @@ impl Collector<'_> {
     /// field/array targets contribute operand reads only.
     fn walk_assignment(&mut self, n: Node, scope: usize) {
         let left = n.child_by_field_name("left");
-        let plain = n.child_by_field_name("operator").and_then(|o| o.utf8_text(self.src).ok()) == Some("=");
+        let plain = n
+            .child_by_field_name("operator")
+            .and_then(|o| o.utf8_text(self.src).ok())
+            == Some("=");
         if let Some(left) = left {
             if left.kind() == "identifier" {
                 let name = self.text(left).to_string();
                 let w = if plain {
-                    Write::assign(left.start_byte(), left.id(), n.child_by_field_name("right").map(|r| r.id()))
+                    Write::assign(
+                        left.start_byte(),
+                        left.id(),
+                        n.child_by_field_name("right").map(|r| r.id()),
+                    )
                 } else {
                     Write::rewrite(left.start_byte(), left.id())
                 };
-                let intro = if plain { IntroKind::Assign } else { IntroKind::Binding };
+                let intro = if plain {
+                    IntroKind::Assign
+                } else {
+                    IntroKind::Binding
+                };
                 self.model.bind(scope, &name, w, intro);
                 if !plain {
                     self.model.record_read(scope, &name, left.end_byte());
@@ -195,4 +209,3 @@ impl Collector<'_> {
         self.walk_children(n, scope);
     }
 }
-

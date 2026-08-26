@@ -16,9 +16,7 @@ const UNIT_KINDS: &[&str] = &["method_declaration", "constructor_declaration"];
 /// Binary operators counted toward C; arithmetic, bitwise, shifts and
 /// null-coalescing count toward B... `??` picks a fallback value, which
 /// is control logic the same way `?:` is, so it sits with C here.
-const C_OPERATORS: &[&str] = &[
-    "&&", "||", "==", "!=", "<", ">", "<=", ">=", "is",
-];
+const C_OPERATORS: &[&str] = &["&&", "||", "==", "!=", "<", ">", "<=", ">=", "is"];
 
 pub(crate) fn all_scores(fm: &CSharpFile) -> Vec<AbcOffense> {
     let mut offenses = Vec::new();
@@ -26,7 +24,10 @@ pub(crate) fn all_scores(fm: &CSharpFile) -> Vec<AbcOffense> {
         let Some(body) = unit.child_by_field_name("body") else {
             return;
         };
-        let mut t = Tally { src: fm.src, ..Default::default() };
+        let mut t = Tally {
+            src: fm.src,
+            ..Default::default()
+        };
         t.walk(body);
         let pos = unit.start_position();
         let raw = ((t.a * t.a + t.b * t.b + t.c * t.c) as f64).sqrt();

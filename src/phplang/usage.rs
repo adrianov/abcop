@@ -49,10 +49,11 @@ fn pure(n: Node) -> bool {
     match n.kind() {
         "integer" | "float" | "string" | "encapsed_string" => children_pure(n),
         "boolean" | "null" => true,
-        "array_creation_expression" | "array_element_initializer"
-        | "parenthesized_expression" | "binary_expression" | "unary_op_expression" => {
-            children_pure(n)
-        }
+        "array_creation_expression"
+        | "array_element_initializer"
+        | "parenthesized_expression"
+        | "binary_expression"
+        | "unary_op_expression" => children_pure(n),
         _ => false,
     }
 }

@@ -16,11 +16,15 @@
 use std::path::Path;
 
 use crate::fork_point::fork_point_in;
-use crate::git_changes::{current_branch_in, detect_default_branch_in, git_in, on_default_branch, rev_exists_in};
-
+use crate::git_changes::{
+    current_branch_in, detect_default_branch_in, git_in, on_default_branch, rev_exists_in,
+};
 
 /// Default-branch scope: everything committed in the last 36 hours.
-fn aged_default_base_in(dir: Option<&Path>, default_branch: &str) -> Result<(String, String), String> {
+fn aged_default_base_in(
+    dir: Option<&Path>,
+    default_branch: &str,
+) -> Result<(String, String), String> {
     let aged = format!("{default_branch}@{{36.hours.ago}}");
     if rev_exists_in(dir, &aged) {
         return Ok((aged, format!("last 36 hours on {default_branch}")));
@@ -31,7 +35,11 @@ fn aged_default_base_in(dir: Option<&Path>, default_branch: &str) -> Result<(Str
 }
 
 /// Topic-branch scope: merge-base with the default branch.
-fn topic_branch_base_in(dir: Option<&Path>, branch: &str, default_branch: &str) -> Result<(String, String), String> {
+fn topic_branch_base_in(
+    dir: Option<&Path>,
+    branch: &str,
+    default_branch: &str,
+) -> Result<(String, String), String> {
     let mb = git_in(dir, &["merge-base", "HEAD", default_branch])?
         .trim()
         .to_string();
@@ -97,7 +105,6 @@ fn fallback_base_in(
         ),
     }
 }
-
 
 #[cfg(test)]
 mod tests {
