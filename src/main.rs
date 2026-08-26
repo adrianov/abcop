@@ -1,10 +1,10 @@
 //! abcop — fast multi-language ABC-size and used-once-variable linter.
 
 mod abc;
-mod abc_count;
 mod cache;
 mod clike;
 mod directives;
+mod diffparse;
 mod dump;
 mod git_changes;
 mod model;
@@ -13,6 +13,7 @@ mod never_used;
 mod output;
 mod paths;
 mod pipeline;
+mod srcbuf;
 mod run;
 mod rustlang;
 mod skip;

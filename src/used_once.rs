@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use tree_sitter::Node;
 
-use crate::model::{FileModel, IntroKind, WriteKind};
+use crate::model::{Entry, FileModel, IntroKind, Read, Write, WriteKind};
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct UsedOnceOffense {
@@ -31,13 +31,30 @@ fn index_nodes<'t>(root: Node<'t>) -> HashMap<usize, Node<'t>> {
 /// Straight-line execution check: no conditional/loop/rescue ancestor between
 /// the write and its owning scope boundary.
 const VETO_ANCESTORS: [&str; 14] = [
-    "if", "unless", "if_modifier", "unless_modifier", "conditional", "while",
-    "until", "while_modifier", "until_modifier", "for", "rescue",
-    "rescue_modifier", "in_clause", "when",
+    "if",
+    "unless",
+    "if_modifier",
+    "unless_modifier",
+    "conditional",
+    "while",
+    "until",
+    "while_modifier",
+    "until_modifier",
+    "for",
+    "rescue",
+    "rescue_modifier",
+    "in_clause",
+    "when",
 ];
 const SCOPE_OWNERS: [&str; 8] = [
-    "method", "singleton_method", "class", "module", "singleton_class",
-    "block", "do_block", "lambda",
+    "method",
+    "singleton_method",
+    "class",
+    "module",
+    "singleton_class",
+    "block",
+    "do_block",
+    "lambda",
 ];
 
 fn unconditionally_executed(write_node: Node) -> bool {
@@ -58,64 +75,54 @@ fn unconditionally_executed(write_node: Node) -> bool {
 /// comparisons/logical operators over those. Anything calling methods is out.
 fn pure(fm: &FileModel, n: Node) -> bool {
     match n.kind() {
-        "integer" | "float" | "true" | "false" | "nil" | "simple_symbol" | "symbol"
-        | "self" | "constant" => true,
-        "string" => {
-            let mut cur = n.walk();
-            !n.children(&mut cur)
-                .any(|c| c.kind() == "interpolation")
-                && n.child_by_field_name("interpolation").is_none()
-        }
-        "array" | "range" => {
-            let mut cur = n.walk();
-            n.children(&mut cur)
-                .filter(|c| c.is_named())
-                .all(|c| pure(fm, c))
-        }
-        "hash" => {
-            let mut cur = n.walk();
-            n.children(&mut cur)
-                .filter(|c| c.is_named())
-                .all(|pair| {
-                    if pair.kind() != "pair" {
-                        return true; // punctuation-level named nodes
-                    }
-                    let mut pc = pair.walk();
-                    pair.children(&mut pc)
-                        .filter(|c| c.is_named())
-                        .all(|side| pure(fm, side))
-                })
-        }
-        "binary" => {
-            let mut cur = n.walk();
-            n.children(&mut cur)
-                .filter(|c| c.is_named())
-                .all(|c| pure(fm, c))
-        }
-        "unary" => {
-            let op = n
-                .child_by_field_name("operator")
-                .map(|o| fm.text(o))
-                .unwrap_or("");
-            op != "defined?"
-                && {
-                    let mut cur = n.walk();
-                    n.children(&mut cur)
-                        .filter(|c| c.is_named())
-                        .all(|c| pure(fm, c))
-                }
-        }
-        "parenthesized_statements" => {
-            // `(expr)` — pure only when a single pure expression inside
-            let mut cur = n.walk();
-            let inner: Vec<_> = n
-                .children(&mut cur)
-                .filter(|c| c.is_named())
-                .collect();
-            inner.len() == 1 && pure(fm, inner[0])
-        }
+        "integer" | "float" | "true" | "false" | "nil" | "simple_symbol" | "symbol" | "self"
+        | "constant" => true,
+        "string" => string_without_interpolation(n),
+        "array" | "range" | "binary" => all_named_pure(fm, n),
+        "hash" => hash_pure(fm, n),
+        "unary" => unary_pure(fm, n),
+        // `(expr)` -- pure only when a single pure expression inside
+        "parenthesized_statements" => paren_pure(fm, n),
         _ => false,
     }
+}
+
+fn named_children<'t>(n: Node<'t>) -> Vec<Node<'t>> {
+    let mut cur = n.walk();
+    n.children(&mut cur).filter(|c| c.is_named()).collect()
+}
+
+/// Every named child is pure.
+fn all_named_pure(fm: &FileModel, n: Node) -> bool {
+    named_children(n).into_iter().all(|c| pure(fm, c))
+}
+
+fn string_without_interpolation(n: Node) -> bool {
+    let mut cur = n.walk();
+    !n.children(&mut cur).any(|c| c.kind() == "interpolation")
+        && n.child_by_field_name("interpolation").is_none()
+}
+
+/// Hash literal: both sides of every `pair` pure; punctuation-level named
+/// nodes are ignored.
+fn hash_pure(fm: &FileModel, n: Node) -> bool {
+    named_children(n)
+        .into_iter()
+        .all(|pair| pair.kind() != "pair" || all_named_pure(fm, pair))
+}
+
+/// `defined?` results depend on scope state, so they are never pure.
+fn unary_pure(fm: &FileModel, n: Node) -> bool {
+    let op = n
+        .child_by_field_name("operator")
+        .map(|o| fm.text(o))
+        .unwrap_or("");
+    op != "defined?" && all_named_pure(fm, n)
+}
+
+fn paren_pure(fm: &FileModel, n: Node) -> bool {
+    let inner = named_children(n);
+    inner.len() == 1 && pure(fm, inner[0])
 }
 
 pub fn analyze(fm: &FileModel) -> Vec<UsedOnceOffense> {
@@ -124,44 +131,62 @@ pub fn analyze(fm: &FileModel) -> Vec<UsedOnceOffense> {
 
     for scope in &fm.scopes {
         for (name, e) in &scope.entries {
-            if e.intro_kind != IntroKind::Assign {
-                continue;
+            if let Some(offense) = single_use_offense(fm, &nodes, name, e) {
+                out.push(offense);
             }
-            if e.writes.len() != 1 || e.reads.len() != 1 {
-                continue;
-            }
-            let w = e.writes[0];
-            let r = e.reads[0];
-            if w.kind != WriteKind::Plain || r.under_defined {
-                continue;
-            }
-            if r.byte <= w.byte {
-                continue;
-            }
-            let Some((rhs_id, _)) = w.rhs else { continue };
-            let Some(&rhs_node) = nodes.get(&rhs_id) else {
-                continue;
-            };
-            let Some(&write_node) = nodes.get(&w.node_id) else {
-                continue;
-            };
-            if !pure(fm, rhs_node) {
-                continue;
-            }
-            if !unconditionally_executed(write_node) {
-                continue;
-            }
-            let (line, column) = fm.line_col(w.byte);
-            out.push(UsedOnceOffense {
-                line,
-                column,
-                name: name.to_string(),
-            });
         }
     }
     out.sort_by_key(|o| (o.line, o.column));
     out.dedup_by(|a, b| a.line == b.line && a.column == b.column && a.name == b.name);
     out
+}
+
+/// One plain write, one later read, pure RHS and straight-line execution:
+/// the read can be inlined into the write.
+fn single_use_offense<'t>(
+    fm: &FileModel,
+    nodes: &HashMap<usize, Node<'t>>,
+    name: &str,
+    e: &Entry,
+) -> Option<UsedOnceOffense> {
+    let w = exactly_one_plain_write(e)?;
+    later_single_read(e, &w)?;
+    let (rhs_node, write_node) = offense_nodes(nodes, &w)?;
+    if !pure(fm, rhs_node) || !unconditionally_executed(write_node) {
+        return None;
+    }
+    let (line, column) = fm.line_col(w.byte);
+    Some(UsedOnceOffense {
+        line,
+        column,
+        name: name.to_string(),
+    })
+}
+
+/// Tree nodes for a write's RHS expression and for the write itself.
+fn offense_nodes<'t>(
+    nodes: &HashMap<usize, Node<'t>>,
+    w: &Write,
+) -> Option<(Node<'t>, Node<'t>)> {
+    let (rhs_id, _) = w.rhs?;
+    Some((*nodes.get(&rhs_id)?, *nodes.get(&w.node_id)?))
+}
+
+/// The entry is assign-introduced and has exactly one plain write.
+fn exactly_one_plain_write(e: &Entry) -> Option<&Write> {
+    if e.intro_kind != IntroKind::Assign || e.writes.len() != 1 {
+        return None;
+    }
+    let w = &e.writes[0];
+    (w.kind == WriteKind::Plain).then_some(w)
+}
+
+/// The single read happens after the write and outside any `defined?` guard.
+fn later_single_read<'a>(e: &'a Entry, w: &Write) -> Option<&'a Read> {
+    if e.reads.len() != 1 || e.reads[0].under_defined || e.reads[0].byte <= w.byte {
+        return None;
+    }
+    Some(&e.reads[0])
 }
 #[cfg(test)]
 mod tests {

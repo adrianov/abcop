@@ -43,13 +43,7 @@ impl Cache {
         fs::create_dir_all(&base).ok()?;
         Some(Cache { dir: base })
     }
-    pub fn file_key(
-        &self,
-        path: &Path,
-        contents: &[u8],
-        only: Option<&str>,
-        max: f64,
-    ) -> String {
+    pub fn file_key(&self, path: &Path, contents: &[u8], only: Option<&str>, max: f64) -> String {
         use sha2::Digest;
         let path_string = path.display().to_string();
         let mut h = sha2::Sha256::new();
@@ -122,7 +116,10 @@ fn cache_base() -> Option<PathBuf> {
 
 /// Variable value without surrounding blanks; unset or blank means absent.
 fn non_empty_env(key: &str) -> Option<String> {
-    std::env::var(key).ok().map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
+    std::env::var(key)
+        .ok()
+        .map(|v| v.trim().to_owned())
+        .filter(|v| !v.is_empty())
 }
 
 fn home_cache_dir() -> Option<PathBuf> {

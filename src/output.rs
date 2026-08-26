@@ -1,8 +1,8 @@
 //! Human and JSON rendering of scan results.
 
 use crate::abc;
-use crate::modulesize;
 use crate::abc::AbcOffense;
+use crate::modulesize;
 use crate::never_used::NeverUsedOffense;
 use crate::used_once::UsedOnceOffense;
 
@@ -39,16 +39,18 @@ fn print_module_size(r: &FileResult) {
     }
 }
 
-pub fn print_text(
-    results: &[FileResult],
-    max: f64,
-    elapsed: std::time::Duration,
-) {
+pub fn print_text(results: &[FileResult], max: f64, elapsed: std::time::Duration) {
     for r in results {
         for o in &r.abc {
             println!(
                 "{}:{}:{}: C: Metrics/AbcSize: Assignment Branch Condition size for `{}` is too high. [{} {}/{}]",
-                r.path, o.line, o.column, o.name, o.vector, abc::g4(o.score), abc::g4(max)
+                r.path,
+                o.line,
+                o.column,
+                o.name,
+                o.vector,
+                abc::g4(o.score),
+                abc::g4(max)
             );
         }
         for o in &r.used_once {
@@ -76,83 +78,80 @@ pub fn print_text(
     );
 }
 
-pub fn print_json(
-    file_count: &usize,
-    results: &[FileResult],
-    elapsed: std::time::Duration,
-) {
-    let mut diags = Vec::new();
-    for r in results {
-        if let Some(lines) = r.oversize {
-            diags.push(Diagnostic {
-                file: r.path.clone(),
-                line: lines,
-                column: 0,
-                severity: "W",
-                rule: "ModuleSize",
-                message: format!(
-                    "module has {} lines (>= {}) -- extract a coherent subunit",
-                    lines,
-                    modulesize::MAX_LINES
-                ),
-                score: None,
-                vector: None,
-            });
-        }
-        for o in &r.abc {
-            diags.push(Diagnostic {
-                file: r.path.clone(),
-                line: o.line,
-                column: o.column,
-                severity: "C",
-                rule: "Metrics/AbcSize",
-                message: format!(
-                    "Assignment Branch Condition size for `{}` is too high. [{} {}]",
-                    o.name,
-                    o.vector,
-                    abc::g4(o.score)
-                ),
-                score: Some(o.score),
-                vector: Some(o.vector.clone()),
-            });
-        }
-        for o in &r.never_used {
-            diags.push(Diagnostic {
-                file: r.path.clone(),
-                line: o.line,
-                column: o.column,
-                severity: "W",
-                rule: "NeverUsed",
-                message: format!(
-                    "variable `{}` is assigned but never used",
-                    o.name
-                ),
-                score: None,
-                vector: None,
-            });
-        }
-        for o in &r.used_once {
-            diags.push(Diagnostic {
-                file: r.path.clone(),
-                line: o.line,
-                column: o.column,
-                severity: "W",
-                rule: "UsedOnce",
-                message: format!(
-                    "variable `{}` is assigned once and read once -- consider inlining",
-                    o.name
-                ),
-                score: None,
-                vector: None,
-            });
-        }
-    }
+pub fn print_json(file_count: &usize, results: &[FileResult], elapsed: std::time::Duration) {
+    let diags: Vec<Diagnostic> = results.iter().flat_map(result_diagnostics).collect();
     let out = JsonOut {
         files: *file_count,
         elapsed_ms: elapsed.as_millis(),
         diagnostics: &diags,
     };
     println!("{}", serde_json::to_string(&out).unwrap());
+}
+
+/// Every diagnostic one file contributes, in rule order.
+fn result_diagnostics(r: &FileResult) -> Vec<Diagnostic> {
+    let mut diags = Vec::new();
+    if let Some(lines) = r.oversize {
+        diags.push(Diagnostic {
+            file: r.path.clone(),
+            line: lines,
+            column: 0,
+            severity: "W",
+            rule: "ModuleSize",
+            message: format!(
+                "module has {} lines (>= {}) -- extract a coherent subunit",
+                lines,
+                modulesize::MAX_LINES
+            ),
+            score: None,
+            vector: None,
+        });
+    }
+    for o in &r.abc {
+        diags.push(Diagnostic {
+            file: r.path.clone(),
+            line: o.line,
+            column: o.column,
+            severity: "C",
+            rule: "Metrics/AbcSize",
+            message: format!(
+                "Assignment Branch Condition size for `{}` is too high. [{} {}]",
+                o.name,
+                o.vector,
+                abc::g4(o.score)
+            ),
+            score: Some(o.score),
+            vector: Some(o.vector.clone()),
+        });
+    }
+    for o in &r.never_used {
+        diags.push(Diagnostic {
+            file: r.path.clone(),
+            line: o.line,
+            column: o.column,
+            severity: "W",
+            rule: "NeverUsed",
+            message: format!("variable `{}` is assigned but never used", o.name),
+            score: None,
+            vector: None,
+        });
+    }
+    for o in &r.used_once {
+        diags.push(Diagnostic {
+            file: r.path.clone(),
+            line: o.line,
+            column: o.column,
+            severity: "W",
+            rule: "UsedOnce",
+            message: format!(
+                "variable `{}` is assigned once and read once -- consider inlining",
+                o.name
+            ),
+            score: None,
+            vector: None,
+        });
+    }
+    diags
 }
 
 #[derive(serde::Serialize)]

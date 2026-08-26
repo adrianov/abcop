@@ -24,8 +24,7 @@ impl Directives {
     }
 
     pub fn suppresses_all(&self, line: usize) -> bool {
-        self.all_lines.contains(&line)
-            || self.all_ranges.iter().any(|r| r.0 <= line && line <= r.1)
+        self.all_lines.contains(&line) || self.all_ranges.iter().any(|r| r.0 <= line && line <= r.1)
     }
 }
 
@@ -79,16 +78,8 @@ fn apply_line(d: &mut Directives, pending: &mut Vec<bool>, line_no: usize, raw: 
     let markers = [(raw.find('#'), '#'), (raw.find("//"), '/')];
     for (at, marker) in markers {
         let Some(hash) = at else { continue };
-        let comment = match marker {
-            '#' => raw[hash..].trim_start_matches('#').trim(),
-            _ => {
-                let content = &raw[hash + 2..];
-                let trimmed = content.trim_start_matches('/').trim();
-                if trimmed.is_empty() && !content.contains("rubocop:") {
-                    continue;
-                }
-                trimmed
-            }
+        let Some(comment) = comment_body(raw, hash, marker) else {
+            continue;
         };
         match classify(comment) {
             Directive::None => continue,
@@ -101,6 +92,21 @@ fn apply_line(d: &mut Directives, pending: &mut Vec<bool>, line_no: usize, raw: 
     }
 }
 
+/// Comment content at the marker: Ruby strips leading `#` characters;
+/// C-family strips `//`, except that a bare `////`-style run stays
+/// interesting when it introduces a `rubocop:` word.
+fn comment_body<'a>(raw: &'a str, hash: usize, marker: char) -> Option<&'a str> {
+    if marker == '#' {
+        return Some(raw[hash..].trim_start_matches('#').trim());
+    }
+    let content = &raw[hash + 2..];
+    let trimmed = content.trim_start_matches('/').trim();
+    if trimmed.is_empty() && !content.contains("rubocop:") {
+        return None;
+    }
+    Some(trimmed)
+}
+
 fn apply_disable(
     d: &mut Directives,
     pending: &mut Vec<bool>,
@@ -110,7 +116,9 @@ fn apply_disable(
     after: &str,
 ) {
     let names = cop_names(after.trim());
-    let mentions_abc = names.iter().any(|n| n == "Metrics/AbcSize" || n == "Metrics");
+    let mentions_abc = names
+        .iter()
+        .any(|n| n == "Metrics/AbcSize" || n == "Metrics");
     let relevant = names.is_empty() || mentions_abc;
     let trailing = !raw[..hash].trim().is_empty();
     if trailing {

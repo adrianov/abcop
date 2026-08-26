@@ -22,8 +22,7 @@ impl Lang {
     pub fn is_clike(self) -> bool {
         matches!(
             self,
-            Lang::Js | Lang::Ts | Lang::Tsx | Lang::C | Lang::Cpp
-                | Lang::ObjC | Lang::Swift
+            Lang::Js | Lang::Ts | Lang::Tsx | Lang::C | Lang::Cpp | Lang::ObjC | Lang::Swift
         )
     }
 }
@@ -69,12 +68,7 @@ const CODE_EXTS: [&str; 24] = [
 ];
 
 const CODE_NAMES: [&str; 6] = [
-    "Gemfile",
-    "Rakefile",
-    "Capfile",
-    "Brewfile",
-    "Podfile",
-    "Fastfile",
+    "Gemfile", "Rakefile", "Capfile", "Brewfile", "Podfile", "Fastfile",
 ];
 
 pub fn is_code_path(p: &std::path::Path) -> bool {
