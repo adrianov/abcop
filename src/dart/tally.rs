@@ -7,7 +7,9 @@ use tree_sitter::Node;
 use super::patterns::bare_target;
 
 /// Unit kinds; also the tally boundary set.
-const UNIT_KINDS: &[&str] = &[
+/// Unit kinds; discovered by `super::abc`, enforced here as the tally's
+/// own nesting safety net -- one definition, two consumers.
+pub(super) const UNIT_KINDS: &[&str] = &[
     "function_declaration",
     "method_declaration",
     "getter_declaration",
