@@ -1,10 +1,12 @@
 # abcop
 
-**Blazing-fast, opinionated, multi-language static-analysis linter**, written
-in Rust with speed as a design constraint — not an afterthought. One parse
-per file, one walk per metric, file-level parallelism, zero language runtime.
-Whole trees in milliseconds; every run prints how many files it analysed and
-how long it took.
+**One self-contained binary that lints every language in your stack** —
+Ruby, Rust, Python, Go, JavaScript, TypeScript, C, C++, Objective-C and
+Swift — with no runtimes, no plugins, no per-language installs. Written in
+Rust with speed as a design constraint: one parse per file, one walk per
+metric, file-level parallelism, all grammars compiled in. Whole trees in
+milliseconds; every run prints how many files it analysed and how long it
+took.
 
 ```text
 lib/sinatra/base.rb:1254:0: C: Metrics/AbcSize: Assignment Branch Condition size for `error_block!` is too high. [<7, 14, 9> 18.06/17]
@@ -94,8 +96,13 @@ start.
 - **ModuleSize**: warns when a production module reaches 200 lines. Test
   suites, fixtures, lockfiles and schema dumps are exempt; Rust `#[cfg(test)]`
   tails don't count toward the budget.
-- **No runtime hassle**: one static binary; parses via tree-sitter grammars,
-  so machines without Ruby/Rust/Python installed can lint their code.
+- **One tool, zero dependencies.** A single self-contained binary replaces
+  the per-language linter fleet — no Ruby gems, no pip/npm packages, no
+  plugins, no version drift between machines. Every grammar is compiled
+  in, so it lints code on machines without Ruby/Rust/Python/Go toolchains
+  installed: CI images, containers, clean checkouts, a colleague's laptop.
+  The result cache is an embedded pure-Rust database file — no external
+  services to run or configure.
 - **Deterministic**: identical output across runs; JSON mode for CI.
 
 ## Usage
@@ -237,6 +244,9 @@ recent entries; disable entirely with `--no-cache`, relocate with
 `ABCOP_CACHE_DIR=/path`. Nothing is ever written inside your project.
 
 ## Supported languages
+
+One binary, ten languages, nothing to install per language — the same
+four rules run everywhere, with one output format and one CI gate.
 
 | Language | Files | Status |
 |---|---|---|
