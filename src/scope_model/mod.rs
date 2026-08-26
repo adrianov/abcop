@@ -1,11 +1,16 @@
 //! Shared variable-scope model behind UsedOnce/NeverUsed.
 //!
-//! This module splits in two:
+//! This module splits in four:
 //! * [`mod@self`] (here) -- the scope-tree data structure: kinds, the
 //!   write/read [`Entry`] bookkeeping and the introduction-aware
 //!   [`Model`] collectors drive while walking;
 //! * [`eval`] -- candidate evaluation over that tree, parameterized by
-//!   a per-language [`Semantics`].
+//!   a per-language [`Semantics`];
+//! * [`walk`] -- the static [`Spec`](walk::Spec) tables plus the
+//!   dispatcher consuming everything that needs no language-specific
+//!   judgment;
+//! * [`backend`] -- the [`Backend`](walk::Backend) collector contract and
+//!   the default bindings every language inherits.
 //!
 //! Scope resolution contract: a name resolves to the nearest enclosing
 //! scope that already introduced it at the read position; resolution

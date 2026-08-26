@@ -1,11 +1,12 @@
-//! C-family language backend: JavaScript, TypeScript, C, C++, Objective-C
-//! and Swift AbcSize over the shared tree-sitter tree.
+//! C-family language backend: AbcSize for JavaScript, TypeScript, C,
+//! C++, Objective-C and Swift over the shared tree-sitter tree, plus
+//! UsedOnce/NeverUsed for JavaScript, TypeScript and Swift.
 //!
 //! Submodules: [`spec`] (per-language grammar tables), [`scan`] (unit
 //! discovery and naming), [`tally`] (the ABC counter), [`scope`] (the
 //! JavaScript/TypeScript scope collector), [`swift`] (the Swift scope
-//! collector), [`purity`] (shared RHS-purity predicates), [`tests`]
-//! (end-to-end vector assertions per language).
+//! collector), [`purity`] (shared RHS-purity predicates), [`tests`] and
+//! [`tests_abc`] (end-to-end vector assertions).
 
 mod scan;
 mod scope;

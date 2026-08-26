@@ -135,8 +135,10 @@ A, calls/new/message sends/yield/throw and arithmetic operators count B,
 and if/ternary/guard, loops, switch arms, catch clauses, comparisons and
 logical operators count C. C/C++ and Objective\-C ship the size checks
 only for now; their variable\-usage collectors (UsedOnce, NeverUsed) have
-not landed yet. Swift joined the JavaScript/TypeScript family and ships
-all four checks on the same shared scope\-model engine.
+not landed yet. JavaScript, TypeScript and Swift share one scope\-model
+engine: static spec tables describe each grammar (which kinds bind, read,
+open scopes), and one dispatcher evaluates UsedOnce, NeverUsed,
+purity\-gated inlining and ModuleSize on top.
 .SH DIRECTIVES
 In every supported language except Rust abcop honours RuboCop suppression
 comments (`#` or `//`), so existing codebases do not need new markers:

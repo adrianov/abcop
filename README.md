@@ -268,10 +268,11 @@ output format and one CI gate.
 | Objective-C | `.m .mm` | AbcSize + ModuleSize |
 | Swift | `.swift` | all four |
 
-The C / C++ / Objective-C backends measure size only; their
-variable-usage collectors have not landed yet. Swift joined the JS/TS family
-earlier and ships all four checks (AbcSize, UsedOnce, NeverUsed and
-ModuleSize) on the same shared scope-model engine.
+C / C++ and Objective-C measure size only; their variable-usage
+collectors have not landed yet. JavaScript, TypeScript and Swift share one
+scope-model engine — static spec tables describe each grammar (which kinds
+bind, read, open scopes); the same dispatcher evaluates UsedOnce,
+NeverUsed, purity-gated inlining and ModuleSize on top.
 
 Scoring semantics stay uniform across languages: named declarations are
 the measured units, anonymous function-likes roll into their enclosing
@@ -292,10 +293,30 @@ makes repeat runs look near-instant otherwise.
 ## Development
 
 ```sh
-cargo test          # unit tests: metric vectors, scope model, used-once gates
-cargo clippy        # keep zero warnings
-abcop src           # dogfood: abcop lints itself
+cargo test                # unit tests: metric vectors, scope model, used-once gates
+cargo build --all-targets # keep zero warnings (including test targets)
+abcop src                 # dogfood: abcop lints itself
 ```
+
+Layout of the shared scope-model engine:
+
+- `src/scope_model/backend.rs` — the `Backend` contract: three accessors
+  plus default bindings every collector inherits (`bind_var`,
+  `bind_declarator_with_rhs_field`, `walk_children`, `rebind_local`).
+- `src/scope_model/walk.rs` — the `Spec` tables and the dispatcher that
+  consumes everything needing no language-specific judgment.
+- `src/clike/scope.rs` + `swift.rs` — JS/TS and Swift collectors; each is
+  a `Spec` static table plus custom arms for genuinely language-specific
+  node kinds.
+- `src/clike/purity.rs` — shared RHS-purity predicates gating inline
+  candidates; `src/sollang/decl.rs` — Solidity declaration/tuple-head
+  binding. Evaluation lives in `scope_model::eval`, independent of any
+  grammar.
+
+Per-language behavioral vectors live beside their engine: AbcSize score
+vectors in `clike/tests_abc.rs`, UsedOnce/NeverUsed end-to-end cases in
+`clike/tests.rs` and `sollang/tests.rs`. Grammar-node kinds are probed
+with `abcop --dump-tree FILE` — never trusted from grammar docs.
 
 `scripts/compare_parity.py` joins abcop JSON against
 `rubocop --format json` output to verify per-method ABC vectors.
