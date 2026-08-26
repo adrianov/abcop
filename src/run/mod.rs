@@ -99,6 +99,7 @@ impl ScanRun<'_> {
                 .code_files()
                 .into_iter()
                 .filter(|p| !crate::modulesize::is_route_table(p))
+                .filter(|p| !crate::modulesize::is_third_party(p))
                 .collect(),
             None if explicit_paths => collect_files(self.paths, self.everything),
             None => collect_files(&[String::from(".")], self.everything),

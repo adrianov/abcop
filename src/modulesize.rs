@@ -106,6 +106,33 @@ pub(crate) fn is_route_table(rel: &std::path::Path) -> bool {
     is_routes_rb || (in_routes_dir && name.ends_with(".rb"))
 }
 
+/// Third-party material: vendored dependency/build/cache trees
+/// (`vendor/`, `node_modules/`, `target/`, ...), generated directory
+/// sequences (`db/migrate`) and generated file names (`app.min.js`,
+/// `user_pb.rb`). Matched on any path form (repo-relative or absolute)
+/// so both the walker's default prune and MR/changed-scope selection
+/// drop them: touching a vendored file does not make it owned production
+/// code. Test trees are deliberately NOT matched -- specs stay
+/// size-accountable in scoped runs.
+pub(crate) fn is_third_party(path: &std::path::Path) -> bool {
+    let mut prev: Option<&std::ffi::OsStr> = None;
+    for comp in path.components() {
+        let name = comp.as_os_str();
+        let lower = name.to_string_lossy().to_ascii_lowercase();
+        if GENERATED_DIRS.iter().any(|d| lower == d.trim_end_matches('/')) {
+            return true;
+        }
+        if let Some(p) = prev {
+            let parent = p.to_string_lossy().to_ascii_lowercase();
+            if GENERATED_DIR_PAIRS.iter().any(|(a, b)| parent == *a && lower == *b) {
+                return true;
+            }
+        }
+        prev = Some(name);
+    }
+    path.file_name().is_some_and(is_generated_name)
+}
+
 pub(crate) fn is_test_path(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
     in_non_prod_dir(&p) || is_test_basename(base_name(&p))
@@ -192,6 +219,35 @@ mod tests {
             "main.rb",
         ] {
             assert!(!is_route_table(std::path::Path::new(p)), "{p}");
+        }
+    }
+
+    #[test]
+    fn third_party_trees_are_dropped_from_scope() {
+        for p in [
+            "vendor/tree-sitter-swift/src/scanner.c",
+            "app/assets/node_modules/left-pad/index.js",
+            "target/debug/foo.rs",
+            "db/migrate/20260101120000_add_users.rb",
+            "app/assets/builds/app.min.js",
+            "lib/user_pb.rb",
+            "/repo/vendor/x.go",
+        ] {
+            assert!(is_third_party(std::path::Path::new(p)), "{p}");
+        }
+    }
+
+    #[test]
+    fn owned_sources_stay_in_scope() {
+        for p in [
+            "src/main.rs",
+            "spec/models/user_spec.rb",
+            "test/lib/format_test.rb",
+            "app/models/user.rb",
+            "vendor_all/owned.rb",
+            "lib/pb.rb",
+        ] {
+            assert!(!is_third_party(std::path::Path::new(p)), "{p}");
         }
     }
 }
