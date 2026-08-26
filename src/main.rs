@@ -3,34 +3,35 @@
 mod abc;
 mod cache;
 mod clike;
-mod directives;
+mod csharp;
+mod dart;
 mod diffparse;
+mod directives;
 mod dump;
-mod git_changes;
 mod fork_point;
-mod mr_scope;
+mod git_changes;
+mod golang;
+mod javalang;
 mod model;
 mod modulesize;
+mod mr_scope;
 mod never_used;
 mod output;
 mod paths;
-mod csharp;
-mod javalang;
 mod phplang;
-mod sollang;
-mod pylang;
-mod golang;
 mod pipeline;
-mod srcbuf;
+mod pylang;
 mod run;
+mod rustlang;
 mod scan_scope;
 mod scope_model;
-mod rustlang;
 mod skip;
-mod used_once;
-mod walker;
+mod sollang;
+mod srcbuf;
 #[cfg(test)]
 mod test_repo;
+mod used_once;
+mod walker;
 
 use std::process::ExitCode;
 
@@ -38,7 +39,11 @@ use clap::Parser as ClapParser;
 
 /// Parsed command line: the surface that builds a [`run::ScanRun`].
 #[derive(ClapParser)]
-#[command(name = "abcop", version, about = "Fast multi-language ABC-size + used-once-variable linter")]
+#[command(
+    name = "abcop",
+    version,
+    about = "Fast multi-language ABC-size + used-once-variable linter"
+)]
 pub(crate) struct Cli {
     /// Files or directories to analyse; omitted means current-MR scope
     pub(crate) paths: Vec<String>,

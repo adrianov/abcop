@@ -1,7 +1,7 @@
 # abcop
 
 **One self-contained binary that lints every language in your stack** —
-Ruby, Rust, Python, Go, PHP, Java, C#, JavaScript, TypeScript, C, C++,
+Ruby, Rust, Python, Go, PHP, Java, C#, Dart, JavaScript, TypeScript, C, C++,
 Objective-C, Swift and Solidity — with no runtimes, no plugins, no
 per-language installs. Written in
 Rust with speed as a design constraint: one parse per file, one walk per
@@ -249,7 +249,7 @@ recent entries; disable entirely with `--no-cache`, relocate with
 
 ## Supported languages
 
-One binary, fourteen languages, nothing to install per language — one
+One binary, fifteen languages, nothing to install per language — one
 output format and one CI gate.
 
 | Language | Files | Checks |
@@ -267,6 +267,7 @@ output format and one CI gate.
 | C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | all four |
 | Objective-C | `.m .mm` | all four |
 | Swift | `.swift` | all four |
+| Dart | `.dart` | all four |
 
 Every row runs the same scope-model engine — static spec tables describe
 each grammar (which kinds bind, read, open scopes); one dispatcher

@@ -12,13 +12,13 @@
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
 #[cfg(test)]
 use redb::ReadableTableMetadata;
+use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinition};
 
 /// Bump whenever counting rules or output shape change so stale entries are
 /// never served.
-pub const RULES_REV: u32 = 10;
+pub const RULES_REV: u32 = 11;
 const MAX_ENTRIES: usize = 20_000;
 const DB_FILE: &str = "cache.redb";
 
@@ -131,7 +131,6 @@ impl Cache {
         let _ = tx.commit();
     }
 
-
     /// Keep the newest MAX_ENTRIES entries; drop the rest.
     pub fn prune(&self) {
         let Some(by_age) = self.entries_by_age() else {
@@ -142,8 +141,11 @@ impl Cache {
         }
         let mut newest_first = by_age;
         newest_first.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
-        let stale: Vec<String> =
-            newest_first.iter().skip(MAX_ENTRIES).map(|(_, k)| k.clone()).collect();
+        let stale: Vec<String> = newest_first
+            .iter()
+            .skip(MAX_ENTRIES)
+            .map(|(_, k)| k.clone())
+            .collect();
         self.remove_keys(&stale);
     }
 
@@ -236,10 +238,8 @@ mod tests {
     use super::*;
 
     fn temp_cache_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "abcop-cache-test-{}-{tag}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("abcop-cache-test-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }
@@ -258,22 +258,23 @@ mod tests {
     /// ascending timestamps (`0000…` .. count-1).
     fn seed_entries(cache: &Cache, count: u64) {
         for i in 0..count {
-            let payload = format!(
-                r#"{{"ts":{i},"abc":[],"used_once":[],"never_used":[],"oversize":null}}"#
-            );
+            let payload =
+                format!(r#"{{"ts":{i},"abc":[],"used_once":[],"never_used":[],"oversize":null}}"#);
             seed_raw(cache, &format!("{i:064}"), payload.as_bytes());
         }
     }
 
     fn sample(oversize: Option<usize>) -> (Vec<crate::abc::AbcOffense>, CachedDiags) {
-        let mk = || vec![crate::abc::AbcOffense {
-            line: 7,
-            end_line: 19,
-            column: 3,
-            name: "Foo#bar".into(),
-            score: 22.5,
-            vector: "<9, 4, 2>".into(),
-        }];
+        let mk = || {
+            vec![crate::abc::AbcOffense {
+                line: 7,
+                end_line: 19,
+                column: 3,
+                name: "Foo#bar".into(),
+                score: 22.5,
+                vector: "<9, 4, 2>".into(),
+            }]
+        };
         let abc = mk();
         let diags = (
             mk(),
@@ -313,13 +314,7 @@ mod tests {
         let dir = temp_cache_dir("miss");
         let cache = Cache::open_at(&dir).expect("cache opens");
         let (_, diags) = sample(Some(210));
-        cache.store(
-            &"a".repeat(64),
-            &diags.0,
-            &diags.1,
-            &diags.2,
-            diags.3,
-        );
+        cache.store(&"a".repeat(64), &diags.0, &diags.1, &diags.2, diags.3);
         // note: store signature is (&[u8] key, &abc, &used, &never, oversize)
         assert!(cache.get(&"b".repeat(64)).is_none(), "unrelated key misses");
     }
@@ -333,7 +328,10 @@ mod tests {
 
         assert_eq!(count_rows(&cache), MAX_ENTRIES);
         // oldest ten dropped, newest kept
-        assert!((0..=9).all(|i| entry_absent(&cache, i)), "oldest ten pruned");
+        assert!(
+            (0..=9).all(|i| entry_absent(&cache, i)),
+            "oldest ten pruned"
+        );
         assert!(entry_present(&cache, MAX_ENTRIES as u64 + 9));
     }
 

@@ -9,9 +9,9 @@ use crate::never_used::NeverUsedOffense;
 use crate::output::FileResult;
 use crate::used_once::UsedOnceOffense;
 
-use crate::paths::Lang;
 use super::Checks;
-use super::non_clike::{CSharpB, GoB, JavaB, NonClike, PhpB, PyB, SolidityB};
+use super::non_clike::{CSharpB, DartB, GoB, JavaB, NonClike, PhpB, PyB, SolidityB};
+use crate::paths::Lang;
 
 /// Inline directives, parsed once per file.
 fn directives_for(src: &[u8]) -> Directives {
@@ -128,7 +128,9 @@ fn ruby_arm(r: &mut FileResult, src: &[u8], checks: &Checks, max: f64) -> bool {
         return false;
     };
     if checks.want_abc {
-        r.abc = suppressed(crate::abc::analyze(&fm, max), |o| dirs.suppresses_abc(o.line));
+        r.abc = suppressed(crate::abc::analyze(&fm, max), |o| {
+            dirs.suppresses_abc(o.line)
+        });
     }
     if checks.want_used {
         r.used_once = suppressed(crate::used_once::analyze(&fm), |o| {
@@ -160,6 +162,7 @@ pub(super) fn non_clike_arm(
         Lang::Java => non_clike_directed::<JavaB>(r, src, tree, checks, max),
         Lang::CSharp => non_clike_directed::<CSharpB>(r, src, tree, checks, max),
         Lang::Solidity => non_clike_directed::<SolidityB>(r, src, tree, checks, max),
+        Lang::Dart => non_clike_directed::<DartB>(r, src, tree, checks, max),
         _ => unreachable!("unsupported non-clike language"),
     }
 }
