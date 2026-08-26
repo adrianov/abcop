@@ -28,7 +28,18 @@ pub struct Changeset {
 }
 
 pub fn git(args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git")
+    git_in(None, args)
+}
+
+/// Runs git optionally inside `dir` -- detection helpers take a
+/// directory so tests can exercise repository topologies without
+/// mutating the process-wide working directory.
+pub fn git_in(dir: Option<&std::path::Path>, args: &[&str]) -> Result<String, String> {
+    let mut cmd = Command::new("git");
+    if let Some(d) = dir {
+        cmd.current_dir(d);
+    }
+    let out = cmd
         .args(args)
         .output()
         .map_err(|e| format!("failed to run git: {e}"))?;
@@ -98,36 +109,146 @@ fn add_untracked(files: &mut BTreeMap<String, Lines>) {
 
 const DEFAULT_BRANCHES: [&str; 4] = ["origin/main", "origin/master", "main", "master"];
 
-fn rev_exists(rev: &str) -> bool {
-    git(&[
-        "rev-parse",
-        "--verify",
-        "--quiet",
-        &format!("{rev}^{{commit}}"),
-    ])
+fn rev_exists_in(dir: Option<&std::path::Path>, rev: &str) -> bool {
+    git_in(
+        dir,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("{rev}^{{commit}}"),
+        ],
+    )
     .is_ok()
 }
 
-pub fn current_branch() -> Option<String> {
-    let b = git(&["rev-parse", "--abbrev-ref", "HEAD"]).ok()?;
+fn current_branch_in(dir: Option<&std::path::Path>) -> Option<String> {
+    let b = git_in(dir, &["rev-parse", "--abbrev-ref", "HEAD"]).ok()?;
     let t = b.trim();
     (!t.is_empty() && t != "HEAD").then(|| t.to_string())
 }
 
-fn detect_default_branch() -> Option<&'static str> {
-    DEFAULT_BRANCHES.iter().copied().find(|c| rev_exists(c))
+fn detect_default_branch_in(dir: Option<&std::path::Path>) -> Option<&'static str> {
+    DEFAULT_BRANCHES
+        .iter()
+        .copied()
+        .find(|c| rev_exists_in(dir, c))
 }
 
 /// Resolve the diff base for an "MR scope": when on a topic branch, the
 /// merge-base with the default branch; when committing straight onto the
 /// default branch, its tip 36 hours ago.
 pub fn mr_base() -> Result<(String, String), String> {
-    let default_branch = detect_default_branch().ok_or_else(missing_default_branch)?;
-    let branch = current_branch().unwrap_or_else(|| "HEAD".to_string());
-    if on_default_branch(&branch, default_branch) {
-        return aged_default_base(default_branch);
+    mr_base_in(None)
+}
+
+/// Resolve the diff base for an MR scope. Preference order:
+///
+/// 1. The parent branch's fork point -- the newest commit shared by the
+///    current branch and any sibling branch -- so chained feature
+///    branches diff against their immediate parent instead of master.
+/// 2. On a topic branch with no sibling: merge-base with the default
+///    branch.
+/// 3. On the default branch itself (or detached): the last 36 hours.
+pub fn mr_base_in(dir: Option<&std::path::Path>) -> Result<(String, String), String> {
+    let branch = current_branch_in(dir);
+    let default = detect_default_branch_in(dir);
+    let on_default = match (&branch, default) {
+        (Some(b), Some(d)) => on_default_branch(b, d),
+        _ => true,
+    };
+
+    if let Some(fp) = fork_point_in(dir)? {
+        // On the default branch the 36-hour window stays the primary
+        // contract; a fork point is only a fallback there.
+        if on_default {
+            if let Ok(aged) = aged_default_base_in(dir, default.unwrap_or("origin/main")) {
+                return Ok(aged);
+            }
+        }
+        return Ok(fp);
     }
-    topic_branch_base(&branch, default_branch)
+
+    match (&branch, default) {
+        (Some(b), Some(d)) if !on_default_branch(b, d) => topic_branch_base_in(dir, b, d),
+        (_, Some(d)) => aged_default_base_in(dir, d),
+        (Some(b), None) => Err(format!(
+            "cannot determine a base for branch {b}: no master/main and \
+             no sibling branches to fork from"
+        )),
+        _ => Err(missing_default_branch()),
+    }
+}
+
+/// Newest merge-base of HEAD against every other local/remote branch
+/// tip, after collapsing ancestor chains (the deepest fork point wins).
+fn fork_point_in(
+    dir: Option<&std::path::Path>,
+) -> Result<Option<(String, String)>, String> {
+    let head = git_in(dir, &["rev-parse", "HEAD"])?
+        .trim()
+        .to_string();
+    let branch = current_branch_in(dir);
+    let own_refs: Vec<String> = match &branch {
+        Some(b) => vec![format!("refs/heads/{b}"), format!("refs/remotes/{b}")],
+        None => vec![],
+    };
+    let listing = git_in(
+        dir,
+        &[
+            "for-each-ref",
+            "--format=%(objectname) %(refname)",
+            "refs/heads",
+            "refs/remotes",
+        ],
+    )?;
+
+    let mut bases: Vec<String> = Vec::new();
+    for line in listing.lines() {
+        let Some((sha, refname)) = line.split_once(' ') else {
+            continue;
+        };
+        if sha == head || own_refs.iter().any(|r| refname == r) {
+            continue;
+        }
+        if let Ok(mb) = git_in(dir, &["merge-base", &head, sha]) {
+            let mb = mb.trim().to_string();
+            if !mb.is_empty() && mb != head {
+                bases.push(mb);
+            }
+        }
+    }
+    bases.sort();
+    bases.dedup();
+    // keep only the most recent fork points (drop ancestors of others)
+    let mut stale: Vec<usize> = Vec::new();
+    for (i, b) in bases.iter().enumerate() {
+        if bases.iter().any(|o| o.as_str() != *b && is_ancestor_in(dir, b, o)) {
+            stale.push(i);
+        }
+    }
+    for i in stale.into_iter().rev() {
+        bases.remove(i);
+    }
+
+    let best = bases
+        .iter()
+        .max_by_key(|b| {
+            git_in(dir, &["show", "-s", "--format=%ct", b])
+                .ok()
+                .and_then(|s| s.trim().parse::<i64>().ok())
+                .unwrap_or(0)
+        })
+        .cloned();
+
+    Ok(best.map(|b| {
+        let short = b[..b.len().min(7)].to_string();
+        (b, format!("changes since fork point {short}"))
+    }))
+}
+
+fn is_ancestor_in(dir: Option<&std::path::Path>, a: &str, b: &str) -> bool {
+    git_in(dir, &["merge-base", "--is-ancestor", a, b]).is_ok()
 }
 
 fn missing_default_branch() -> String {
@@ -148,9 +269,9 @@ fn on_default_branch(branch: &str, default_branch: &str) -> bool {
 }
 
 /// Default-branch scope: everything committed in the last 36 hours.
-fn aged_default_base(default_branch: &str) -> Result<(String, String), String> {
+fn aged_default_base_in(dir: Option<&std::path::Path>, default_branch: &str) -> Result<(String, String), String> {
     let aged = format!("{default_branch}@{{36.hours.ago}}");
-    if rev_exists(&aged) {
+    if rev_exists_in(dir, &aged) {
         return Ok((aged, format!("last 36 hours on {default_branch}")));
     }
     Err(format!(
@@ -160,8 +281,8 @@ fn aged_default_base(default_branch: &str) -> Result<(String, String), String> {
 }
 
 /// Topic-branch scope: merge-base with the default branch.
-fn topic_branch_base(branch: &str, default_branch: &str) -> Result<(String, String), String> {
-    let mb = git(&["merge-base", "HEAD", default_branch])?
+fn topic_branch_base_in(dir: Option<&std::path::Path>, branch: &str, default_branch: &str) -> Result<(String, String), String> {
+    let mb = git_in(dir, &["merge-base", "HEAD", default_branch])?
         .trim()
         .to_string();
     if mb.is_empty() {
@@ -180,36 +301,13 @@ mod tests {
     use super::*;
     use std::path::Path;
     use std::process::Command;
+    use std::sync::Mutex;
 
-    /// Locks the contract behind MR/default scope: uncommitted work must be
-    /// selected no matter which of the three states it sits in -- unstaged
-    /// edit of a tracked file, staged new file, or fully untracked file.
-    /// This is the spec the gix migration must preserve.
-    #[test]
-    fn scope_includes_unstaged_staged_and_untracked_files() {
-        let dir = std::env::temp_dir().join(format!("abcop_scope_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+    /// Tests that temporarily chdir into a fixture repository share one
+    /// process-wide working directory -- serialize them.
+    static CWD_LOCK: Mutex<()> = Mutex::new(());
 
-        seed_repo_with_base_commit(&dir);
-        stage_three_kinds_of_uncommitted_work(&dir);
-
-        let cs = load_in_dir(&dir).expect("changeset loads");
-        let _ = std::fs::remove_dir_all(&dir);
-        assert_scope(cs);
-    }
-
-    /// `Changeset::load` resolves against the current directory, so run it
-    /// from inside the temp repo and restore the original cwd afterwards.
-    fn load_in_dir(dir: &Path) -> Result<Changeset, String> {
-        let old = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir).unwrap();
-        let result = std::panic::catch_unwind(|| Changeset::load("HEAD"));
-        std::env::set_current_dir(old).unwrap();
-        result.unwrap()
-    }
-
-    fn run_git(dir: &Path, args: &[&str]) {
+    fn git_out(dir: &Path, args: &[&str]) -> String {
         let out = Command::new("git")
             .args(args)
             .current_dir(dir)
@@ -221,6 +319,21 @@ mod tests {
             args,
             String::from_utf8_lossy(&out.stderr)
         );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    fn run_git(dir: &Path, args: &[&str]) {
+        let _ = git_out(dir, args);
+    }
+
+    fn sha_of(dir: &Path, rev: &str) -> String {
+        git_out(dir, &["rev-parse", rev]).trim().to_string()
+    }
+
+    fn commit_file(dir: &Path, name: &str, msg: &str) {
+        std::fs::write(dir.join(name), format!("// {msg}\n")).unwrap();
+        run_git(dir, &["add", "-A"]);
+        run_git(dir, &["commit", "-qm", msg]);
     }
 
     fn seed_repo_with_base_commit(dir: &Path) {
@@ -230,17 +343,13 @@ mod tests {
         std::fs::write(dir.join("a.rb"), "def base\nend\n").unwrap();
         run_git(dir, &["add", "-A"]);
         run_git(dir, &["commit", "-qm", "base"]);
+        run_git(dir, &["branch", "-M", "main"]);
     }
 
-    /// One uncommitted change per state: unstaged edit, staged new file,
-    /// fully untracked file.
     fn stage_three_kinds_of_uncommitted_work(dir: &Path) {
-        // unstaged modification of a tracked file
         std::fs::write(dir.join("a.rb"), "def base\n  x = 1\nend\n").unwrap();
-        // staged brand-new file
         std::fs::write(dir.join("b.rb"), "def staged_new\nend\n").unwrap();
         run_git(dir, &["add", "b.rb"]);
-        // fully untracked file
         std::fs::write(dir.join("c.rb"), "def untracked_new\nend\n").unwrap();
     }
 
@@ -249,8 +358,6 @@ mod tests {
             matches!(cs.files.get("a.rb"), Some(Lines::Ranges(s)) if !s.is_empty()),
             "unstaged edit selected as ranges"
         );
-        // staged new file is not untracked: it arrives via the diff as
-        // ranges covering its added lines
         assert!(
             matches!(cs.files.get("b.rb"), Some(Lines::Ranges(s)) if !s.is_empty()),
             "staged new file selected"
@@ -258,6 +365,82 @@ mod tests {
         assert!(
             matches!(cs.files.get("c.rb"), Some(Lines::All)),
             "untracked file counts fully"
+        );
+    }
+
+    fn load_in_dir(dir: &Path) -> Result<Changeset, String> {
+        let old = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir).unwrap();
+        let result = std::panic::catch_unwind(|| Changeset::load("HEAD"));
+        std::env::set_current_dir(old).unwrap();
+        result.unwrap()
+    }
+
+    fn mr_base_in_dir(dir: &Path) -> Result<(String, String), String> {
+        let old = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir).unwrap();
+        let result = std::panic::catch_unwind(|| mr_base_in(None));
+        std::env::set_current_dir(old).unwrap();
+        result.unwrap()
+    }
+
+    /// Locks the contract behind MR/default scope: uncommitted work must be
+    /// selected no matter which of the three states it sits in.
+    #[test]
+    fn scope_includes_unstaged_staged_and_untracked_files() {
+        let dir = std::env::temp_dir().join(format!("abcop_scope_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        seed_repo_with_base_commit(&dir);
+        stage_three_kinds_of_uncommitted_work(&dir);
+
+        let _guard = CWD_LOCK.lock().unwrap();
+        let cs = load_in_dir(&dir).expect("changeset loads");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_scope(cs);
+    }
+
+    #[test]
+    fn mr_base_uses_nearest_parent_branch_fork_point() {
+        let dir = std::env::temp_dir().join(format!(
+            "abcop_forkpoint_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        seed_repo_with_base_commit(&dir); // main @ a0
+        run_git(&dir, &["checkout", "-qb", "feature/one"]);
+        commit_file(&dir, "one.rb", "one"); // feature/one @ c1
+        let c1 = sha_of(&dir, "refs/heads/feature/one");
+        run_git(&dir, &["checkout", "-qb", "feature/two"]);
+        commit_file(&dir, "two.rb", "two"); // feature/two @ c2 (HEAD)
+        // advance main AFTER branching: its tip must not become the base
+        run_git(&dir, &["checkout", "-q", "main"]);
+        commit_file(&dir, "main.rb", "advance main");
+        // the review happens FROM the branch
+        run_git(&dir, &["checkout", "-q", "feature/two"]);
+
+        let (base, label) = mr_base_in_dir(&dir).expect("base resolves");
+        assert_eq!(base, c1, "nearest fork point wins; label={label}");
+    }
+
+    #[test]
+    fn mr_base_on_default_branch_keeps_36h_window() {
+        let dir = std::env::temp_dir().join(format!(
+            "abcop_36h_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let _guard = CWD_LOCK.lock().unwrap();
+        seed_repo_with_base_commit(&dir);
+
+        let (_base, label) = mr_base_in_dir(&dir).expect("base resolves");
+        assert!(
+            label.contains("36 hours"),
+            "direct-main work keeps the 36h window; got {label}"
         );
     }
 }
