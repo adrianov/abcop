@@ -192,3 +192,16 @@ fn js_loop_heads_are_protocol() {
     let src = "function f(items) {\n  for (const k in items) { items[k]; }\n}";
     assert_eq!(js_dead(src), Vec::<String>::new());
 }
+
+#[test]
+fn js_exported_functions_are_analyzed() {
+    // export wrappers must not swallow the declaration
+    let src = "export function f(items) {\n  const unused = items.length;\n  return 1;\n}";
+    assert_eq!(js_dead(src), vec!["unused"]);
+}
+
+#[test]
+fn js_class_methods_track_locals() {
+    let src = "class C {\n  m(items) {\n    const unused = items.length;\n    return 1;\n  }\n}";
+    assert_eq!(js_dead(src), vec!["unused"]);
+}

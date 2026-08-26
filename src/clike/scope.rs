@@ -15,7 +15,7 @@ use crate::scope_model::walk::{dispatch, Backend, Spec};
 use crate::scope_model::{IntroKind, Model, ScopeKind, Write};
 
 static SPEC: Spec = Spec {
-    skip_kinds: &["import_statement", "export_statement", "class_body"],
+    skip_kinds: &["import_statement"],
     block_scoped: &["statement_block", "switch_body", "match_block"],
     function_kinds: &[
         "function_declaration",
