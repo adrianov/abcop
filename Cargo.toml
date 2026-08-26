@@ -30,6 +30,7 @@ tree-sitter-python = "0.25"
 redb = "4.2"
 tree-sitter-go = "0.25"
 tree-sitter-php = "0.24.2"
+tree-sitter-java = "0.23"
 
 
 [profile.release]

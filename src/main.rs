@@ -12,6 +12,7 @@ mod modulesize;
 mod never_used;
 mod output;
 mod paths;
+mod javalang;
 mod phplang;
 mod pylang;
 mod golang;

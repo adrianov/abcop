@@ -249,8 +249,8 @@ four rules run everywhere, with one output format and one CI gate.
 | Rust | `.rs` | all four rules |
 | Python | `.py .pyi .pyw` | all four rules |
 | Go | `.go` | all four rules |
-| PHP | `.php` | all four rules |
-| JavaScript | `.js .mjs .cjs .jsx` | AbcSize + ModuleSize |
+| Go | `.go` | all four rules |
+| Java | `.java` | all four rules || JavaScript | `.js .mjs .cjs .jsx` | AbcSize + ModuleSize |
 | TypeScript | `.ts .tsx .mts .cts` | AbcSize + ModuleSize |
 | C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | AbcSize + ModuleSize |
 | Objective-C | `.m .mm` | AbcSize + ModuleSize |
