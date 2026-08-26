@@ -232,8 +232,27 @@ fn non_clike_arm(
             }
             true
         }
+        Lang::CSharp => {
+            let dirs = directives::parse(&String::from_utf8_lossy(src));
+            let fm = crate::csharp::build(src, tree);
+            if checks.want_abc {
+                r.abc = suppressed(crate::csharp::analyze(&fm, max), |o| {
+                    dirs.suppresses_abc(o.line)
+                });
+            }
+            if checks.want_used {
+                r.used_once =
+                    suppressed(crate::csharp::used_once_offenses(&fm), |o| {
+                        dirs.suppresses_all(o.line)
+                    });
+            }
+            if checks.want_never {
+                r.never_used = crate::csharp::never_used_offenses(&fm);
+            }
+            true
+        }
         Lang::Ruby => ruby_arm(r, src, checks, max),
-        _ => unreachable!("non-clike languages are Ruby, Rust, Python, Go, PHP and Java"),
+        _ => unreachable!("non-clike languages are Ruby, Rust, Python, Go, PHP, Java and C#"),
     }
 }
 
