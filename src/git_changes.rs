@@ -191,45 +191,69 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        let git = |args: &[&str]| {
-            let out = Command::new("git").args(args).current_dir(&dir).output().unwrap();
-            assert!(
-                out.status.success(),
-                "git {:?}: {}",
-                args,
-                String::from_utf8_lossy(&out.stderr)
-            );
-        };
+        seed_repo_with_base_commit(&dir);
+        stage_three_kinds_of_uncommitted_work(&dir);
 
-        git(&["init", "-q"]);
-        git(&["config", "user.email", "t@t"]);
-        git(&["config", "user.name", "t"]);
+        let cs = load_in_dir(&dir).expect("changeset loads");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_scope(cs);
+    }
+
+    /// `Changeset::load` resolves against the current directory, so run it
+    /// from inside the temp repo and restore the original cwd afterwards.
+    fn load_in_dir(dir: &Path) -> Result<Changeset, String> {
+        let old = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir).unwrap();
+        let result = std::panic::catch_unwind(|| Changeset::load("HEAD"));
+        std::env::set_current_dir(old).unwrap();
+        result.unwrap()
+    }
+
+    fn run_git(dir: &Path, args: &[&str]) {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "git {:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    fn seed_repo_with_base_commit(dir: &Path) {
+        run_git(dir, &["init", "-q"]);
+        run_git(dir, &["config", "user.email", "t@t"]);
+        run_git(dir, &["config", "user.name", "t"]);
         std::fs::write(dir.join("a.rb"), "def base\nend\n").unwrap();
-        git(&["add", "-A"]);
-        git(&["commit", "-qm", "base"]);
+        run_git(dir, &["add", "-A"]);
+        run_git(dir, &["commit", "-qm", "base"]);
+    }
 
+    /// One uncommitted change per state: unstaged edit, staged new file,
+    /// fully untracked file.
+    fn stage_three_kinds_of_uncommitted_work(dir: &Path) {
         // unstaged modification of a tracked file
         std::fs::write(dir.join("a.rb"), "def base\n  x = 1\nend\n").unwrap();
         // staged brand-new file
         std::fs::write(dir.join("b.rb"), "def staged_new\nend\n").unwrap();
-        git(&["add", "b.rb"]);
+        run_git(dir, &["add", "b.rb"]);
         // fully untracked file
         std::fs::write(dir.join("c.rb"), "def untracked_new\nend\n").unwrap();
+    }
 
-        let old = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&dir).unwrap();
-        let result = std::panic::catch_unwind(|| Changeset::load("HEAD"));
-        std::env::set_current_dir(old).unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
-
-        let cs = result.unwrap().expect("changeset loads");
+    fn assert_scope(cs: Changeset) {
         assert!(
             matches!(cs.files.get("a.rb"), Some(Lines::Ranges(s)) if !s.is_empty()),
             "unstaged edit selected as ranges"
         );
+        // staged new file is not untracked: it arrives via the diff as
+        // ranges covering its added lines
         assert!(
-            matches!(cs.files.get("b.rb"), Some(Lines::All)),
-            "staged new file counts fully"
+            matches!(cs.files.get("b.rb"), Some(Lines::Ranges(s)) if !s.is_empty()),
+            "staged new file selected"
         );
         assert!(
             matches!(cs.files.get("c.rb"), Some(Lines::All)),
