@@ -13,10 +13,15 @@ mod scope;
 mod spec;
 mod tally;
 mod purity;
+mod c;
 mod swift;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_swift;
+#[cfg(test)]
+mod tests_cfamily;
 #[cfg(test)]
 mod tests_abc;
 
@@ -43,6 +48,7 @@ pub(crate) fn collect_scopes<'t>(
     let scopes = match lang {
         Lang::Js | Lang::Ts | Lang::Tsx => scope::collect(tree.root_node(), src),
         Lang::Swift => swift::swift_collect(tree.root_node(), src),
+        Lang::C | Lang::Cpp | Lang::ObjC => c::collect(tree.root_node(), src, lang),
         other => unreachable!("clike scope backend for lang: {other:?}"),
     };
     JsScopes { scopes, root: tree.root_node() }
@@ -84,9 +90,27 @@ fn semantics_for(lang: crate::paths::Lang) -> &'static crate::scope_model::Seman
     match lang {
         Lang::Js | Lang::Ts | Lang::Tsx => &JS_SEMANTICS,
         Lang::Swift => &SWIFT_SEMANTICS,
+        Lang::C | Lang::Cpp | Lang::ObjC => &C_FAMILY_SEMANTICS,
         other => unreachable!("no semantics for non-clike lang: {other:?}"),
     }
 }
+
+static C_FAMILY_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semantics {
+    pure: purity::c_like_pure,
+    veto: &[
+        "if_statement",
+        "for_statement",
+        "for_range_statement",
+        "while_statement",
+        "do_statement",
+        "switch_statement",
+        "case_statement",
+        "try_statement",
+        "catch_clause",
+    ],
+    owners: &["function_definition", "method_definition"],
+    include_root_scope: false,
+};
 
 pub(crate) fn used_once_offenses(
     sc: &JsScopes,

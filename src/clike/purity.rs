@@ -60,3 +60,26 @@ pub(super) fn swift_pure(n: Node) -> bool {
         _ => false,
     }
 }
+
+/// Conservative RHS purity for the plain C-family grammars (C, C++,
+/// Objective-C): literal leaves plus operator compositions thereof.
+/// Identifiers (other locals), calls, member reads (`->`/`.`), increments,
+/// ternaries, and brace initializers all fail -- inlining must not
+/// reorder or duplicate their evaluation nor change object identity.
+pub(super) fn c_like_pure(n: Node) -> bool {
+    match n.kind() {
+        "number_literal"
+        | "string_literal"
+        | "char_literal"
+        | "concatenated_string"
+        | "true"
+        | "false"
+        | "null"
+        | "nil"
+        | "nullptr" => children_all_pure(n, c_like_pure),
+        "parenthesized_expression" | "binary_expression" | "unary_expression" => {
+            children_all_pure(n, c_like_pure)
+        }
+        _ => false,
+    }
+}
