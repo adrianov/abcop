@@ -13,7 +13,6 @@ mod never_used;
 mod output;
 mod paths;
 mod pipeline;
-mod srcbuf;
 mod run;
 mod rustlang;
 mod skip;
