@@ -28,6 +28,17 @@ fn scores(src: &'static str) -> Vec<(String, u32, u32, u32)> {
 
 fn used(src: &'static str) -> Vec<String> {
     let fm = parse(src);
+    if std::env::var("ABCOP_DBG").is_ok() {
+        for (i, sc) in fm.scopes.iter().enumerate() {
+            for (n, e) in &sc.entries {
+                eprintln!("[dbg] scope{i} {n} w={} r={:?} kind={:?}",
+                    e.writes.len(), e.reads, e.intro_kind);
+            }
+        }
+        for o in super::used_once_offenses(&fm) {
+            eprintln!("[dbg] offense {}:{} {}", o.line, o.column, o.name);
+        }
+    }
     let mut v: Vec<_> = used_once_offenses(&fm)
         .into_iter()
         .map(|o| o.name)
