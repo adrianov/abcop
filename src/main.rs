@@ -13,6 +13,7 @@ mod never_used;
 mod output;
 mod paths;
 mod pipeline;
+mod srcbuf;
 mod run;
 mod rustlang;
 mod skip;
@@ -69,14 +70,10 @@ fn main() -> ExitCode {
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
-    let mut cli = Cli::parse();
+    let cli = Cli::parse();
 
     if cli.dump_tree {
         return run_dump_tree(&cli.paths);
-    }
-    // Whole-tree modes need a target; bare `--full`/`--everything` scan cwd.
-    if cli.paths.is_empty() && (cli.full || cli.everything) {
-        cli.paths.push(String::from("."));
     }
     run::ScanRun::from(&cli).execute()
 }

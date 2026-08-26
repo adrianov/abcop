@@ -53,34 +53,61 @@ impl ScanRun<'_> {
                 return ExitCode::from(2);
             }
         };
-        let cache =
-            if self.no_cache { None } else { crate::cache::Cache::open(false) };
-        if let Some(cache) = cache.as_ref() {
-            cache.prune();
-        }
+        let cache = self.open_cache();
         let start = std::time::Instant::now();
+        let results =
+            self.analyse(explicit_paths, changeset.as_ref(), cache.as_ref());
+        self.render(&results, start.elapsed());
+        exit_code(&results)
+    }
 
-        // MR/changed scope picks its own files; otherwise walk the targets.
-        let files: Vec<std::path::PathBuf> = match changeset.as_ref() {
-            Some(cs) => cs.code_files(),
-            None => collect_files(self.paths, self.everything),
-        };
+    /// Run the per-file pipeline over this run's targets in walker order.
+    fn analyse(
+        &self,
+        explicit_paths: bool,
+        changeset: Option<&git_changes::Changeset>,
+        cache: Option<&crate::cache::Cache>,
+    ) -> Vec<FileResult> {
         // par_iter keeps the walker's (BFS + extension/name) order intact
-        let results: Vec<FileResult> = files
+        self.collect_targets(explicit_paths, changeset)
             .par_iter()
             .map(|p| {
                 pipeline::analyze_one(
                     p,
                     self.only,
                     self.max_abc,
-                    changeset.as_ref(),
-                    cache.as_ref(),
+                    changeset,
+                    cache,
                 )
             })
-            .collect();
+            .collect()
+    }
 
-        self.render(&results, start.elapsed());
-        exit_code(&results)
+    /// Open the on-disk result cache unless disabled, pruning stale entries.
+    fn open_cache(&self) -> Option<crate::cache::Cache> {
+        let cache =
+            if self.no_cache { None } else { crate::cache::Cache::open(false) };
+        if let Some(cache) = cache.as_ref() {
+            cache.prune();
+        }
+        cache
+    }
+
+    /// Files this run analyses: an MR/changed scope picks its own set;
+    /// otherwise walk the named targets, or cwd for whole-tree modes and
+    /// the no-repository fallback.
+    fn collect_targets(
+        &self,
+        explicit_paths: bool,
+        changeset: Option<&git_changes::Changeset>,
+    ) -> Vec<std::path::PathBuf> {
+        match changeset {
+            Some(cs) => cs.code_files(),
+            None if explicit_paths => {
+                collect_files(self.paths, self.everything)
+            }
+            None => collect_files(&[String::from(".")], self.everything),
+        }
     }
 
     /// Resolve which git-scope applies. Bare invocations default to the MR
