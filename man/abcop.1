@@ -125,20 +125,19 @@ C#;.cs;all four
 Solidity;.sol;all four
 JavaScript;.js .mjs .cjs .jsx;all four
 TypeScript;.ts .tsx .mts .cts;all four
-C/C++;.c .h .cc .cpp .cxx .hpp .hxx .hh;AbcSize + ModuleSize
-Objective\-C;.m .mm;AbcSize + ModuleSize
+C/C++;.c .h .cc .cpp .cxx .hpp .hxx .hh;all four
+Objective\-C;.m .mm;all four
 Swift;.swift;all four
 .br
 Every language is scored on the same engine: named declarations are units,
 anonymous function\-likes roll into the enclosing unit, assignments count
 A, calls/new/message sends/yield/throw and arithmetic operators count B,
 and if/ternary/guard, loops, switch arms, catch clauses, comparisons and
-logical operators count C. C/C++ and Objective\-C ship the size checks
-only for now; their variable\-usage collectors (UsedOnce, NeverUsed) have
-not landed yet. JavaScript, TypeScript and Swift share one scope\-model
-engine: static spec tables describe each grammar (which kinds bind, read,
-open scopes), and one dispatcher evaluates UsedOnce, NeverUsed,
-purity\-gated inlining and ModuleSize on top.
+logical operators count C. UsedOnce, NeverUsed, purity\-gated inlining
+and ModuleSize run on every language through one scope\-model engine:
+static spec tables describe each grammar (which kinds bind, read, open
+scopes), and a single dispatcher evaluates everything the tables do not
+cover.
 .SH DIRECTIVES
 In every supported language except Rust abcop honours RuboCop suppression
 comments (`#` or `//`), so existing codebases do not need new markers:

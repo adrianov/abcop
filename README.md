@@ -264,15 +264,16 @@ output format and one CI gate.
 | Solidity | `.sol` | all four |
 | JavaScript | `.js .mjs .cjs .jsx` | all four |
 | TypeScript | `.ts .tsx .mts .cts` | all four |
-| C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | AbcSize + ModuleSize |
-| Objective-C | `.m .mm` | AbcSize + ModuleSize |
+| C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | all four |
+| Objective-C | `.m .mm` | all four |
 | Swift | `.swift` | all four |
 
-C / C++ and Objective-C measure size only; their variable-usage
-collectors have not landed yet. JavaScript, TypeScript and Swift share one
-scope-model engine — static spec tables describe each grammar (which kinds
-bind, read, open scopes); the same dispatcher evaluates UsedOnce,
-NeverUsed, purity-gated inlining and ModuleSize on top.
+Every row runs the same scope-model engine — static spec tables describe
+each grammar (which kinds bind, read, open scopes); one dispatcher
+evaluates UsedOnce, NeverUsed, purity-gated inlining and ModuleSize on
+top. C/C++/Objective-C conventions: file-scope globals are out of reach
+of single-file analysis and never reported; loop-head variables are
+protocol; writing a struct field also reads the object itself.
 
 Scoring semantics stay uniform across languages: named declarations are
 the measured units, anonymous function-likes roll into their enclosing
