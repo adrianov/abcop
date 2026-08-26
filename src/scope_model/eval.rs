@@ -34,6 +34,11 @@ pub fn used_once_offenses(
     for scope in scopes {
         for (name, e) in &scope.entries {
             let Some(w) = candidate(e) else {
+                if std::env::var("ABCOP_DBG").is_ok() {
+                    eprintln!("[dbg] reject {name} w={} r={} kind={:?} plain={:?} rhs={:?}",
+                        e.writes.len(), e.reads.len(), e.intro_kind,
+                        e.writes.first().map(|w| w.plain), e.writes.first().and_then(|w| w.rhs));
+                }
                 continue;
             };
             let Some(rhs_id) = w.rhs else { continue };

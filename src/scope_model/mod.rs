@@ -13,6 +13,7 @@
 //! blocks) and stops at any other kind (functions, methods).
 
 mod eval;
+pub mod walk;
 
 use std::collections::HashMap;
 
