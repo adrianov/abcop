@@ -19,20 +19,23 @@
 //! - NeverUsed: written but never read, reported at the first write;
 //!   same exclusions.
 
+use crate::scope_model::Scope;
+
 mod abc;
-mod vars;
+mod scope;
+mod usage;
 
 #[cfg(test)]
 mod tests;
 
 use tree_sitter::Tree;
 
-pub use vars::{never_used_offenses, used_once_offenses};
+pub use usage::{never_used_offenses, used_once_offenses};
 
 pub struct PhpFile<'t> {
     pub src: &'t [u8],
     pub tree: Tree,
-    scopes: Vec<vars::Scope>,
+    scopes: Vec<Scope>,
 }
 
 impl PhpFile<'_> {
@@ -49,7 +52,7 @@ impl PhpFile<'_> {
 }
 
 pub fn build(src: &[u8], tree: Tree) -> PhpFile<'_> {
-    let scopes = vars::collect(tree.root_node(), src);
+    let scopes = scope::collect(tree.root_node(), src);
     PhpFile { src, tree, scopes }
 }
 
