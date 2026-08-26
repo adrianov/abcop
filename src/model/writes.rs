@@ -8,7 +8,13 @@ use super::{IntroKind, ScopeId, Write, WriteKind};
 
 impl Builder<'_> {
     /// Returns true when `kind` is a write-introducing construct.
-    pub(super) fn walk_write(&mut self, n: Node, kind: &str, scope: ScopeId, under_defined: bool) -> bool {
+    pub(super) fn walk_write(
+        &mut self,
+        n: Node,
+        kind: &str,
+        scope: ScopeId,
+        under_defined: bool,
+    ) -> bool {
         match kind {
             "assignment" => {
                 self.walk_assignment(n, scope, under_defined);
@@ -49,17 +55,7 @@ impl Builder<'_> {
                 }
             }
             Some(l) if l.kind() == "identifier" => {
-                let name = self.text(l).to_string();
-                let w = Write {
-                    byte: l.start_byte(),
-                    node_id: l.id(),
-                    kind: WriteKind::Plain,
-                    rhs: rhs.map(|r| (r.id(), r.start_byte())),
-                };
-                self.record_write(scope, &name, w, IntroKind::Assign);
-                if let Some(r) = rhs {
-                    self.walk(r, scope, under_defined);
-                }
+                self.record_identifier_write(l, rhs, scope, under_defined);
             }
             // attribute / element / ivar / const targets: not locals,
             // but the RHS may still contain reads
@@ -71,6 +67,27 @@ impl Builder<'_> {
                     self.walk(r, scope, under_defined);
                 }
             }
+        }
+    }
+
+    /// Plain `name = rhs`: record the write, then scan the RHS for reads.
+    fn record_identifier_write(
+        &mut self,
+        l: Node,
+        rhs: Option<Node>,
+        scope: ScopeId,
+        under_defined: bool,
+    ) {
+        let name = self.text(l).to_string();
+        let w = Write {
+            byte: l.start_byte(),
+            node_id: l.id(),
+            kind: WriteKind::Plain,
+            rhs: rhs.map(|r| (r.id(), r.start_byte())),
+        };
+        self.record_write(scope, &name, w, IntroKind::Assign);
+        if let Some(r) = rhs {
+            self.walk(r, scope, under_defined);
         }
     }
 
@@ -142,46 +159,6 @@ impl Builder<'_> {
                 rhs: None,
             };
             self.record_write(scope, &name, w, IntroKind::Binding);
-        }
-    }
-
-    fn collect_masgn_targets(&mut self, list: Node, scope: ScopeId) {
-        let mut cursor = list.walk();
-        for child in list.children(&mut cursor) {
-            match child.kind() {
-                "identifier" => {
-                    let name = self.text(child).to_string();
-                    let w = Write {
-                        byte: child.start_byte(),
-                        node_id: child.id(),
-                        kind: WriteKind::Masgn,
-                        rhs: None,
-                    };
-                    self.record_write(scope, &name, w, IntroKind::Binding);
-                }
-                "rest_assignment" | "destructured_left_assignment_list" => {
-                    self.collect_masgn_targets_inner(child, scope);
-                }
-                _ => {}
-            }
-        }
-    }
-
-    fn collect_masgn_targets_inner(&mut self, list: Node, scope: ScopeId) {
-        let mut cursor = list.walk();
-        for child in list.children(&mut cursor) {
-            if child.kind() == "identifier" {
-                let name = self.text(child).to_string();
-                let w = Write {
-                    byte: child.start_byte(),
-                    node_id: child.id(),
-                    kind: WriteKind::Masgn,
-                    rhs: None,
-                };
-                self.record_write(scope, &name, w, IntroKind::Binding);
-            } else if child.named_child_count() > 0 && child.kind() != "integer" {
-                self.collect_masgn_targets_inner(child, scope);
-            }
         }
     }
 }

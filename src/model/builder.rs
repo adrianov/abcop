@@ -19,7 +19,12 @@ impl<'m> Builder<'m> {
         n.utf8_text(self.src).unwrap_or("")
     }
 
-    pub(super) fn scope_for(&mut self, owner: Node, kind: ScopeKind, parent: Option<ScopeId>) -> ScopeId {
+    pub(super) fn scope_for(
+        &mut self,
+        owner: Node,
+        kind: ScopeKind,
+        parent: Option<ScopeId>,
+    ) -> ScopeId {
         self.scopes.push(ScopeData {
             parent,
             kind,

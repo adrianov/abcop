@@ -3,12 +3,15 @@
 //! classification) and the used-once detector.
 //!
 //! Submodules: [`builder`] (the tree-walking model constructor) with its
-//! [`writes`] / [`reads`] / [`scopes`] handler groups.
+//! [`writes`] / [`reads`] / [`scopes`] handler groups, plus [`masgn`] for
+//! multiple-assignment target lists.
 
 mod builder;
 mod reads;
 mod scopes;
 mod writes;
+
+mod masgn;
 
 use std::collections::HashMap;
 

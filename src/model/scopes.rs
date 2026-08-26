@@ -2,7 +2,7 @@
 
 use tree_sitter::Node;
 
-use super::builder::{body_of, Builder};
+use super::builder::{Builder, body_of};
 use super::{ScopeId, ScopeKind};
 
 impl Builder<'_> {
