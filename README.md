@@ -279,7 +279,7 @@ unit, and nested units never double-count.
 
 Apple M1 Pro, warm cache, wall time:
 
-| Corpus | Size | abcop (both rules) | rubocop `--only AbcSize`¹ | Full rubocop |
+| Corpus | Size | abcop (all checks) | rubocop `--only AbcSize`¹ | Full rubocop |
 |---|---|---|---|---|
 | rubocop/lib | 943 files, 110k LOC | **0.13 s** | 5.1 s (**~39× slower**) | 18.3 s |
 | cargo registry sample | 6,603 files, 2.6M LOC (Rust) | **~2.8 s** (~940k LOC/s) | — | — |
