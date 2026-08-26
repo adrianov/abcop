@@ -15,25 +15,30 @@ pub struct NeverUsedOffense {
 }
 
 pub fn analyze(fm: &FileModel) -> Vec<NeverUsedOffense> {
-    let mut out = Vec::new();
-
-    for scope in &fm.scopes {
-        for (name, e) in &scope.entries {
-            if !e.reads.is_empty() || e.writes.is_empty() {
-                continue;
-            }
-            let first = e.writes.iter().map(|w| w.byte).min().unwrap_or(0);
-            let (line, column) = fm.line_col(first);
-            out.push(NeverUsedOffense {
-                line,
-                column,
-                name: name.to_string(),
-            });
-        }
-    }
+    let mut out: Vec<NeverUsedOffense> = fm
+        .scopes
+        .iter()
+        .flat_map(|scope| scope.entries.iter())
+        .filter_map(|(name, e)| dead_binding(fm, name, e))
+        .collect();
     out.sort_by_key(|o| (o.line, o.column));
     out.dedup_by(|a, b| a.line == b.line && a.column == b.column && a.name == b.name);
     out
+}
+
+/// A binding with writes but zero reads is dead code; report it once, at
+/// the earliest write.
+fn dead_binding(fm: &FileModel, name: &str, e: &crate::model::Entry) -> Option<NeverUsedOffense> {
+    if !e.reads.is_empty() || e.writes.is_empty() {
+        return None;
+    }
+    let first = e.writes.iter().map(|w| w.byte).min().unwrap_or(0);
+    let (line, column) = fm.line_col(first);
+    Some(NeverUsedOffense {
+        line,
+        column,
+        name: name.to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -43,6 +48,13 @@ mod tests {
 
     fn flags(src: &str) -> Vec<NeverUsedOffense> {
         analyze(&build_from_str(src))
+    }
+
+    #[test]
+    fn shorthand_hash_arg_counts_as_read() {
+        // Ruby 3 `g(user:)` reads the local `user`
+        let f = flags("def k\n  user = compute\n  g(user:)\nend\n");
+        assert!(f.is_empty(), "shorthand key is a read: {f:?}");
     }
 
     #[test]

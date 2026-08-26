@@ -28,7 +28,37 @@ impl Builder<'_> {
                 self.walk_identifier(n, scope, under_defined);
                 true
             }
+            // Ruby 3 shorthand hash (`foo(user:)`): a pair with no value
+            // is a variable reference wearing a label.
+            "pair" if n.child_by_field_name("value").is_none() => {
+                self.walk_shorthand_pair(n, scope, under_defined);
+                true
+            }
             _ => false,
+        }
+    }
+
+    /// Record the shorthand key as a read of the identically named
+    /// local (or a vcall when no such local exists -- Ruby would call
+    /// the method).
+    fn walk_shorthand_pair(&mut self, n: Node, scope: ScopeId, under_defined: bool) {
+        let Some(key) = n.child_by_field_name("key") else {
+            return;
+        };
+        if key.kind() != "hash_key_symbol" {
+            return;
+        }
+        let name = key.utf8_text(self.src).unwrap_or("").to_string();
+        let r = Read {
+            byte: key.start_byte(),
+            under_defined,
+        };
+        if self.lookup(scope, r.byte, &name).is_some() {
+            if !name.starts_with('_') {
+                self.record_read(scope, &name, r);
+            }
+        } else {
+            self.vcall_sites.push(r.byte);
         }
     }
 
@@ -72,7 +102,8 @@ impl Builder<'_> {
         {
             let name = self.text(recv);
             if self.lookup(scope, recv.start_byte(), name).is_some() {
-                self.csend_sites.push((recv.start_byte(), name.into(), scope));
+                self.csend_sites
+                    .push((recv.start_byte(), name.into(), scope));
             }
         }
     }

@@ -198,6 +198,13 @@ mod tests {
     }
 
     #[test]
+    fn shorthand_hash_read_is_a_use() {
+        let f = flags("def k\n  x = 42\n  g(x:)\nend\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].name, "x");
+    }
+
+    #[test]
     fn simple_single_use_is_flagged_at_write_line() {
         let f = flags("def k\n  tmp = 42\n  p tmp\nend\n");
         assert_eq!(f.len(), 1);
