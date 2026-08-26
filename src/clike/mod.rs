@@ -57,6 +57,7 @@ static JS_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semanti
         "generator_function_declaration",
         "method_definition",
     ],
+    include_root_scope: false,
 };
 
 pub(crate) fn used_once_offenses(sc: &JsScopes) -> Vec<UsedOnceOffense> {
@@ -64,7 +65,7 @@ pub(crate) fn used_once_offenses(sc: &JsScopes) -> Vec<UsedOnceOffense> {
 }
 
 pub(crate) fn never_used_offenses(sc: &JsScopes) -> Vec<NeverUsedOffense> {
-    crate::scope_model::never_used_offenses(&|b| line_col(sc.root, b), &sc.scopes)
+    crate::scope_model::never_used_offenses(&|b| line_col(sc.root, b), &sc.scopes, &JS_SEMANTICS)
 }
 
 fn line_col(root: tree_sitter::Node, byte: usize) -> (usize, usize) {

@@ -205,3 +205,42 @@ fn js_class_methods_track_locals() {
     let src = "class C {\n  m(items) {\n    const unused = items.length;\n    return 1;\n  }\n}";
     assert_eq!(js_dead(src), vec!["unused"]);
 }
+
+#[test]
+fn js_closures_read_module_bindings() {
+    // the tetrogrow server.js shape: module-level const read from a
+    // nested function/closure must resolve
+    let src = "const diagLog = build();
+function wire(h) {
+  try { append(diagLog, h); } catch {}
+}
+function build(){return 1}";
+    assert_eq!(js_dead(src), Vec::<String>::new());
+}
+
+#[test]
+fn js_destructuring_declarations_bind_elements() {
+    let src = "class B {
+  steer(d) { return [1, 2]; }
+  tick() {
+    const [rx, ry] = this.steer(1);
+    return rx + ry;
+  }
+}";
+    assert_eq!(js_dead(src), Vec::<String>::new());
+}
+
+#[test]
+fn js_object_pattern_shorthand_binds() {
+    let src = "function controlHuman(p) {
+  const { ix, iy } = p.input;
+  return ix + iy;
+}";
+    assert_eq!(js_dead(src), Vec::<String>::new());
+}
+
+#[test]
+fn js_shorthand_object_literal_is_a_read() {
+    let src = "function emit(diagLog, insRun) {\n\x20 return { diagLog, insRun };\n}";
+    assert_eq!(js_dead(src), Vec::<String>::new());
+}

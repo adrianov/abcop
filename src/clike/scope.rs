@@ -14,14 +14,23 @@ use tree_sitter::Node;
 use crate::scope_model::walk::{dispatch, Backend, Spec};
 use crate::scope_model::{IntroKind, Model, ScopeKind, Write};
 
+// NOTE: JavaScript functions are closures -- nested functions read outer
+// bindings freely -- so every scope opens as Block and resolution escapes
+// to the root. Rust-style Function boundaries would sever cross-function
+// reads, producing NeverUsed false positives on module-level state.
 static SPEC: Spec = Spec {
     skip_kinds: &["import_statement"],
-    block_scoped: &["statement_block", "switch_body", "match_block"],
-    function_kinds: &[
+    block_scoped: &[
+        "statement_block",
+        "switch_body",
+        "match_block",
         "function_declaration",
         "generator_function_declaration",
         "method_definition",
+        "arrow_function",
+        "function",
     ],
+    function_kinds: &[],
     exclude_fields: &[],
 };
 
@@ -54,13 +63,41 @@ impl Backend for Collector<'_> {
 
     fn custom(&mut self, n: Node, scope: usize) {
         match n.kind() {
-            // const/let/var declarators: `@name` binds, the initializer
-            // sibling links as the inlinable RHS
+            // const/let/var declarators: a plain identifier name binds
+            // with its initializer linked; destructuring patterns bind
+            // every contained element name (no RHS link)
             "variable_declarator" => {
-                if let Some(name) = n.child_by_field_name("name") {
-                    let rhs = n.child_by_field_name("value").map(|v| v.id());
-                    let w = Write::assign(name.start_byte(), name.id(), rhs);
-                    self.bind_var(name, scope, w, IntroKind::Assign);
+                match n.child_by_field_name("name").map(|x| x.kind()) {
+                    Some("identifier") | None => {
+                        if let Some(name) = n.child_by_field_name("name") {
+                            let rhs = n.child_by_field_name("value").map(|v| v.id());
+                            let w = Write::assign(name.start_byte(), name.id(), rhs);
+                            self.bind_var(name, scope, w, IntroKind::Assign);
+                            // initializer subtrees may contain closures
+                            // reading outer bindings -- walk them too
+                            if let Some(value) = n.child_by_field_name("value") {
+                                dispatch(self, value, scope);
+                            }
+                        }
+                    }
+                    _ => {
+                        if let Some(pattern) = n.child_by_field_name("name") {
+                            self.bind_pattern_elements(pattern, scope);
+                        }
+                    }
+                }
+            }
+            // shorthand object literals ({ diagLog }) read the identically
+            // named local; keyed pairs fall through to generic walking
+            "pair" if n.child_by_field_name("value").is_none() => {
+                if let Some(key) = n.child_by_field_name("key") {
+                    if matches!(
+                        key.kind(),
+                        "property_identifier" | "shorthand_property_identifier"
+                    ) {
+                        let name = self.text_of(key).to_string();
+                        self.model.record_read(scope, &name, key.start_byte());
+                    }
                 }
             }
             "assignment_expression" | "augmented_assignment_expression" => {
@@ -98,6 +135,31 @@ impl Backend for Collector<'_> {
 }
 
 impl Collector<'_> {
+    /// Bind every identifier introduced by a destructuring pattern.
+    /// Array patterns contribute their elements; object patterns
+    /// contribute shorthand keys and `key: target` values.
+    fn bind_pattern_elements(&mut self, n: Node, scope: usize) {
+        match n.kind() {
+            "identifier" | "shorthand_property_identifier_pattern" => {
+                let w = Write::assign(n.start_byte(), n.id(), None);
+                self.bind_var(n, scope, w, IntroKind::Assign);
+            }
+            "rest_pattern" | "assignment_pattern" | "object_pattern" | "array_pattern" => {
+                let mut cursor = n.walk();
+                let children: Vec<_> = n.children(&mut cursor).collect();
+                for child in children {
+                    self.bind_pattern_elements(child, scope);
+                }
+            }
+            "pair" => {
+                if let Some(value) = n.child_by_field_name("value") {
+                    self.bind_pattern_elements(value, scope);
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Plain `=` rebinds a visible local; compound operators
     /// rewrite-and-read. Assignments to names no visible binding
     /// introduced create globals -- their operands are reads only.
@@ -109,6 +171,15 @@ impl Collector<'_> {
             .and_then(|o| o.utf8_text(self.src).ok())
             == Some("=");
         if let Some(left) = left {
+            if matches!(left.kind(), "array_pattern" | "object_pattern") {
+                // destructuring reassignment: elements bind, occurrence
+                // sites must not double-register as reads
+                self.bind_pattern_elements(left, scope);
+                if let Some(right) = right {
+                    dispatch(self, right, scope);
+                }
+                return;
+            }
             if left.kind() == "identifier" {
                 let name = self.text_of(left).to_string();
                 if self.model.lookup(scope, left.start_byte(), &name).is_some() {
