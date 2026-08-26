@@ -1,3 +1,4 @@
+use crate::paths::{parse_file_lang, Lang};
 use super::*;
 
 fn scores(lang: Lang, code: &str, max: f64) -> Vec<AbcOffense> {
@@ -135,4 +136,59 @@ Widget* make(int n) {
     // B: throw, new
     // C: if, <= comparison
     assert_eq!(off[0].vector, "<0, 2, 2>");
+}
+
+// ---- UsedOnce / NeverUsed over the JS/TS family ----
+
+fn js_used(src: &'static str) -> Vec<String> {
+    let tree = parse_file_lang(src.as_bytes(), Lang::Js).expect("js parses");
+    let sc = super::collect_scopes(src.as_bytes(), &tree);
+    let mut v: Vec<_> = super::used_once_offenses(&sc)
+        .into_iter()
+        .map(|o| o.name)
+        .collect();
+    v.sort();
+    v
+}
+
+fn js_dead(src: &'static str) -> Vec<String> {
+    let tree = parse_file_lang(src.as_bytes(), Lang::Js).expect("js parses");
+    let sc = super::collect_scopes(src.as_bytes(), &tree);
+    let mut v: Vec<_> = super::never_used_offenses(&sc)
+        .into_iter()
+        .map(|o| o.name)
+        .collect();
+    v.sort();
+    v
+}
+
+#[test]
+fn js_never_used_flags_dead_binding() {
+    let src = "function f(items) {\n  const unused = items.length;\n  return 1;\n}";
+    assert_eq!(js_dead(src), vec!["unused"]);
+}
+
+#[test]
+fn js_member_reads_are_not_variable_reads() {
+    // `it.length` reads `it`, never a binding named `length`
+    let src = "function f(items) {\n  let n = 0;\n  for (const it of items) { n += it.length; }\n  return n;\n}";
+    assert_eq!(js_dead(src), Vec::<String>::new());
+}
+
+#[test]
+fn js_used_once_flags_inline_candidate() {
+    let src = "function f(a, b) {\n  const sum = 2 * 21;\n  return sum;\n}";
+    assert_eq!(js_used(src), vec!["sum"]);
+}
+
+#[test]
+fn js_used_once_rejections() {
+    let src = "function f(items) {\n               \x20 const a = helper();\n               \x20 let b = 1; b = 2;\n               \x20 let c = 1; c += 1;\n               \x20 if (items) { let d = 1; }\n               \x20 return a;\n}";
+    assert_eq!(js_used(src), Vec::<String>::new());
+}
+
+#[test]
+fn js_loop_heads_are_protocol() {
+    let src = "function f(items) {\n  for (const k in items) { items[k]; }\n}";
+    assert_eq!(js_dead(src), Vec::<String>::new());
 }

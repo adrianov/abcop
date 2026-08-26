@@ -131,6 +131,20 @@ fn clike_arm(
             dirs.suppresses_abc(o.line)
         });
     }
+    // Variable rules run on the JS/TS family today; the other C-family
+    // grammars keep ABC-only coverage until their collectors land.
+    if matches!(lang, Lang::Js | Lang::Ts | Lang::Tsx) {
+        let scopes = crate::clike::collect_scopes(src, tree);
+        if checks.want_used {
+            r.used_once =
+                suppressed(crate::clike::used_once_offenses(&scopes), |o| {
+                    dirs.suppresses_all(o.line)
+                });
+        }
+        if checks.want_never {
+            r.never_used = crate::clike::never_used_offenses(&scopes);
+        }
+    }
 }
 
 /// Ruby/Rust backends. False when the Ruby reparse fails (no usable model).

@@ -108,3 +108,15 @@ Feature: C# language support
   Scenario: Protocol and member rules match the other backends
     Then foreach heads and catch declarations never become candidates
     And member name slots are not variable reads
+
+Feature: JavaScript and TypeScript variable rules
+  UsedOnce and NeverUsed run on the JS/TS family on top of AbcSize.
+
+  Scenario: Member slots are not variables
+    Given property accesses like "it.length"
+    When the collector walks declarations and expressions
+    Then only genuine identifiers register as reads or writes
+
+  Scenario: Loop heads are protocol
+    Given for-in/for-of control variables
+    Then they never become UsedOnce candidates or dead-write reports

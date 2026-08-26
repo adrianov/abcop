@@ -18,7 +18,7 @@ use redb::ReadableTableMetadata;
 
 /// Bump whenever counting rules or output shape change so stale entries are
 /// never served.
-pub const RULES_REV: u32 = 5;
+pub const RULES_REV: u32 = 6;
 const MAX_ENTRIES: usize = 20_000;
 const DB_FILE: &str = "cache.redb";
 

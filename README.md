@@ -249,8 +249,8 @@ four rules run everywhere, with one output format and one CI gate.
 | Go | `.go` | all four rules |
 | Go | `.go` | all four rules |
 | Java | `.java` | all four rules |
-| C# | `.cs` | all four rules || JavaScript | `.js .mjs .cjs .jsx` | AbcSize + ModuleSize |
-| TypeScript | `.ts .tsx .mts .cts` | AbcSize + ModuleSize |
+| C# | `.cs` | all four rules || JavaScript | `.js .mjs .cjs .jsx` | all four rules |
+| TypeScript | `.ts .tsx .mts .cts` | all four rules |
 | C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | AbcSize + ModuleSize |
 | Objective-C | `.m .mm` | AbcSize + ModuleSize |
 | Swift | `.swift` | AbcSize + ModuleSize |
