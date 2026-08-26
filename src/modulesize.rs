@@ -113,8 +113,14 @@ pub fn is_production(path: &str) -> bool {
     !is_test_path(path) && !technical
 }
 /// Returns Some(lines) when the module exceeds the budget.
+/// Data files that no supported language parses (Qt Linguist `.ts` XML,
+/// and XML generally): line counts on them are meaningless noise.
+fn is_data_file(src: &str) -> bool {
+    src.trim_start().starts_with("<?xml")
+}
+
 pub fn offense(src: &str, path: &str) -> Option<usize> {
-    if !is_production(path) {
+    if !is_production(path) || is_data_file(src) {
         return None;
     }
     let lines = effective_lines(src, path);
