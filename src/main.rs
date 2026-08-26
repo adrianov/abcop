@@ -7,6 +7,8 @@ mod directives;
 mod diffparse;
 mod dump;
 mod git_changes;
+mod fork_point;
+mod mr_scope;
 mod model;
 mod modulesize;
 mod never_used;
@@ -21,11 +23,14 @@ mod golang;
 mod pipeline;
 mod srcbuf;
 mod run;
+mod scan_scope;
 mod scope_model;
 mod rustlang;
 mod skip;
 mod used_once;
 mod walker;
+#[cfg(test)]
+mod test_repo;
 
 use std::process::ExitCode;
 

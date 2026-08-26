@@ -1,13 +1,14 @@
 //! One configured scan run: scope resolution, file collection, per-file
-//! analysis fan-out and reporting.
+//! analysis fan-out and reporting. Scope decisions themselves live in
+//! [`crate::scan_scope`].
 
 use std::process::ExitCode;
 
 use rayon::prelude::*;
 
 use crate::output::FileResult;
-pub(crate) use crate::walker::collect_files;
-use crate::{git_changes, pipeline};
+use crate::walker::collect_files;
+use crate::{git_changes, pipeline, scan_scope};
 
 /// A single invocation's scan configuration. Built from the parsed CLI;
 /// `execute` owns the whole pipeline from scope resolution to exit code.
@@ -42,10 +43,11 @@ impl ScanRun<'_> {
     /// code: 0 clean, 1 diagnostics reported.
     pub(crate) fn execute(&self) -> ExitCode {
         let explicit_paths = !self.paths.is_empty();
-        let changeset = match self.resolve_scope(explicit_paths) {
-            Ok(v) => v,
-            Err(e) => return scope_error(e),
-        };
+        let changeset =
+            match scan_scope::resolve(self.mr, explicit_paths, self.full, self.everything) {
+                Ok(v) => v,
+                Err(e) => return scan_scope::error(e),
+            };
         let cache = self.open_cache();
         let start = std::time::Instant::now();
         let results = self.scan(explicit_paths, changeset.as_ref(), cache.as_ref());
@@ -63,8 +65,8 @@ impl ScanRun<'_> {
     ) -> Vec<FileResult> {
         // MR/changed scope picks its own files; otherwise walk the targets.
         // Whole-tree modes and the no-repo fallback both start at cwd.
-        let files = self.collect_targets(explicit_paths, changeset);
-        self.note_if_scope_empty(changeset, &files);
+        let files = collect_targets(self, explicit_paths, changeset);
+        scan_scope::note_if_empty(changeset, &files);
 
         // par_iter keeps the walker's (BFS + extension/name) order intact
         files
@@ -86,66 +88,6 @@ impl ScanRun<'_> {
         cache
     }
 
-    /// Files this run analyses: an MR/changed scope picks its own set;
-    /// otherwise walk the named targets, or cwd for whole-tree modes and
-    /// the no-repository fallback.
-    fn collect_targets(
-        &self,
-        explicit_paths: bool,
-        changeset: Option<&git_changes::Changeset>,
-    ) -> Vec<std::path::PathBuf> {
-        match changeset {
-            Some(cs) => cs
-                .code_files()
-                .into_iter()
-                .filter(|p| !crate::modulesize::is_route_table(p))
-                .filter(|p| !crate::modulesize::is_third_party(p))
-                .collect(),
-            None if explicit_paths => collect_files(self.paths, self.everything),
-            None => collect_files(&[String::from(".")], self.everything),
-        }
-    }
-
-    /// Hint when a scoped run matched nothing: likely a stale scope.
-    fn note_if_scope_empty(
-        &self,
-        changeset: Option<&git_changes::Changeset>,
-        files: &[std::path::PathBuf],
-    ) {
-        if changeset.is_some() && files.is_empty() {
-            eprintln!("note: nothing changed in scope; try --full to scan the whole tree");
-        }
-    }
-
-    /// Resolve which git-scope applies. Bare invocations default to the MR
-    /// scope; outside a repository -- or with no detectable base -- they
-    /// fall back to a full-tree scan rather than failing.
-    fn resolve_scope(
-        &self,
-        explicit_paths: bool,
-    ) -> Result<Option<git_changes::Changeset>, String> {
-        if self.mr || (!explicit_paths && !self.full && !self.everything) {
-            // MR mode (explicit or default): review the working state --
-            // uncommitted work against HEAD plus everything the branch
-            // already changed vs its base -- the union CI would gate on.
-            let head = git_changes::Changeset::load("HEAD");
-            return match load_mr_scope() {
-                Ok(mr) => Ok(Some(match head {
-                    Ok(h) => merge_scopes(mr, h),
-                    Err(_) => mr,
-                })),
-                Err(e) => match head {
-                    Ok(h) if !h.files.is_empty() => Ok(Some(h)),
-                    _ => {
-                        eprintln!("note: no MR scope ({e}); scanning the full tree");
-                        Ok(None)
-                    }
-                },
-            };
-        }
-        Ok(None)
-    }
-
     fn render(&self, results: &[FileResult], elapsed: std::time::Duration) {
         match self.format {
             "json" => {
@@ -156,46 +98,24 @@ impl ScanRun<'_> {
     }
 }
 
-/// Union of two change scopes over the same repository: a file present in
-/// either counts, and per-line ranges widen (`All` dominates).
-fn merge_scopes(
-    mut base: git_changes::Changeset,
-    extra: git_changes::Changeset,
-) -> git_changes::Changeset {
-    use std::collections::btree_map::Entry;
-    for (path, lines) in extra.files {
-        match base.files.entry(path) {
-            Entry::Vacant(v) => {
-                v.insert(lines);
-            }
-            Entry::Occupied(mut o) => {
-                let merged = match (o.get(), lines) {
-                    (git_changes::Lines::All, _) | (_, git_changes::Lines::All) => {
-                        git_changes::Lines::All
-                    }
-                    (git_changes::Lines::Ranges(a), git_changes::Lines::Ranges(b)) => {
-                        let mut u = a.clone();
-                        u.extend(b);
-                        git_changes::Lines::Ranges(u)
-                    }
-                };
-                o.insert(merged);
-            }
-        }
+/// Files this run analyses: an MR/changed scope picks its own set;
+/// otherwise walk the named targets, or cwd for whole-tree modes and
+/// the no-repository fallback.
+fn collect_targets(
+    run: &ScanRun<'_>,
+    explicit_paths: bool,
+    changeset: Option<&git_changes::Changeset>,
+) -> Vec<std::path::PathBuf> {
+    match changeset {
+        Some(cs) => cs
+            .code_files()
+            .into_iter()
+            .filter(|p| !crate::modulesize::is_route_table(p))
+            .filter(|p| !crate::modulesize::is_third_party(p))
+            .collect(),
+        None if explicit_paths => collect_files(run.paths, run.everything),
+        None => collect_files(&[String::from(".")], run.everything),
     }
-    base
-}
-
-fn load_mr_scope() -> Result<git_changes::Changeset, String> {
-    let (base, label) = git_changes::mr_base()?;
-    eprintln!("--mr scope: {label} (base {base})");
-    git_changes::Changeset::load(&base)
-}
-
-/// Scope resolution failure: report it and use the scope-error exit code.
-fn scope_error(e: String) -> ExitCode {
-    eprintln!("{e}");
-    ExitCode::from(2)
 }
 
 fn exit_code(results: &[FileResult]) -> ExitCode {
