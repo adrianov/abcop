@@ -27,8 +27,14 @@ vendored dependency and build\-output trees
 .RB ( vendor/, " node_modules/, " target/, " dist/, " build/, " coverage/),
 the
 .I db/migrate
-sequence, and minified bundles
+sequence, framework route tables
+.RB ( config/routes.rb,
+.IR config/routes/*.rb ),
+and minified bundles
 .RB ( *.min.js, " *.bundle.js ).
+MR and changed scopes also drop framework route tables,
+and a bare invocation covers the union of uncommitted work against
+HEAD plus the branch's changes against its base.
 A path named explicitly on the command line is walked in full regardless.
 .SH DESCRIPTION
 .B abcop

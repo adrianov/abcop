@@ -109,8 +109,7 @@ cargo build --release
 
 | Option | Default | Meaning |
 |---|---|---|
-| `[PATH]...` | current MR | files or directories to analyse; **omitted, abcop scans your current merge request** (see `--mr`), falling back to the full tree outside a repository. Given: exactly those targets. All walking modes prune test/fixture trees (`spec/`, `tests/`, `fixtures/`, `testdata/`, …), vendored/build trees (`vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …), Rails `db/migrate/`, and generated files (`*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`) — name such a path explicitly to scan it |
-| `--format text\|json` | `text` | human-readable or machine-readable output |
+| `[PATH]...` | current MR | files or directories to analyse; **omitted, abcop scans your current merge request** (see `--mr`), falling back to the full tree outside a repository. Given: exactly those targets. All walking modes prune test/fixture trees (`spec/`, `tests/`, `fixtures/`, `testdata/`, …), vendored/build trees (`vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …), Rails `db/migrate/`, framework route tables (`config/routes.rb`, `config/routes/*.rb`) and generated files (`*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`) — name such a path explicitly to scan it; `--mr`/`--changed` scopes also drop framework route tables. Bare `abcop` covers the union of uncommitted work vs HEAD and the branch's changes vs its base |
 | `--max-abc N` | `17` | report functions scoring above N |
 | `--only abc\|used-once\|never-used` | all | run a single check |
 | `--changed [--base REF]` | off | scan only git-changed files/functions vs REF (HEAD); hunks widened with `-W`, so a whole touched function counts as changed |

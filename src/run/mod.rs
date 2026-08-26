@@ -99,7 +99,11 @@ impl ScanRun<'_> {
         changeset: Option<&git_changes::Changeset>,
     ) -> Vec<std::path::PathBuf> {
         match changeset {
-            Some(cs) => cs.code_files(),
+            Some(cs) => cs
+                .code_files()
+                .into_iter()
+                .filter(|p| !crate::modulesize::is_route_table(p))
+                .collect(),
             None if explicit_paths => collect_files(self.paths, self.everything),
             None => collect_files(&[String::from(".")], self.everything),
         }
@@ -131,13 +135,22 @@ impl ScanRun<'_> {
             return load_mr_scope().map(Some);
         }
         if !explicit_paths && !self.full && !self.everything {
-            // Default mode: review what changed, like CI would.
+            // Default mode: review the working state -- uncommitted work
+            // against HEAD plus everything the branch already changed vs
+            // its base -- the union CI would gate on.
+            let head = git_changes::Changeset::load("HEAD");
             return match load_mr_scope() {
-                Ok(cs) => Ok(Some(cs)),
-                Err(e) => {
-                    eprintln!("note: no MR scope ({e}); scanning the full tree");
-                    Ok(None)
-                }
+                Ok(mr) => Ok(Some(match head {
+                    Ok(h) => merge_scopes(mr, h),
+                    Err(_) => mr,
+                })),
+                Err(e) => match head {
+                    Ok(h) if !h.files.is_empty() => Ok(Some(h)),
+                    _ => {
+                        eprintln!("note: no MR scope ({e}); scanning the full tree");
+                        Ok(None)
+                    }
+                },
             };
         }
         Ok(None)
@@ -151,6 +164,36 @@ impl ScanRun<'_> {
             _ => crate::output::print_text(results, self.max_abc, elapsed),
         }
     }
+}
+
+/// Union of two change scopes over the same repository: a file present in
+/// either counts, and per-line ranges widen (`All` dominates).
+fn merge_scopes(
+    mut base: git_changes::Changeset,
+    extra: git_changes::Changeset,
+) -> git_changes::Changeset {
+    use std::collections::btree_map::Entry;
+    for (path, lines) in extra.files {
+        match base.files.entry(path) {
+            Entry::Vacant(v) => {
+                v.insert(lines);
+            }
+            Entry::Occupied(mut o) => {
+                let merged = match (o.get(), lines) {
+                    (git_changes::Lines::All, _) | (_, git_changes::Lines::All) => {
+                        git_changes::Lines::All
+                    }
+                    (git_changes::Lines::Ranges(a), git_changes::Lines::Ranges(b)) => {
+                        let mut u = a.clone();
+                        u.extend(b);
+                        git_changes::Lines::Ranges(u)
+                    }
+                };
+                o.insert(merged);
+            }
+        }
+    }
+    base
 }
 
 fn load_mr_scope() -> Result<git_changes::Changeset, String> {

@@ -76,12 +76,44 @@ pub(crate) fn is_generated_name(name: &std::ffi::OsStr) -> bool {
         || GENERATED_FILE_SUFFIXES.iter().any(|s| n.ends_with(s))
 }
 
+/// Framework route tables (Rails `config/routes.rb`, engine
+/// `config/routes/*.rb` and friends): declarative wiring, not review
+/// surface. Matched on the repository-relative path so both the walker's
+/// default prune and MR/changed-scope selection drop them.
+pub(crate) fn is_route_table(rel: &std::path::Path) -> bool {
+    let mut comps = rel.components();
+    let file = match comps.next_back() {
+        Some(c) => c,
+        None => return false,
+    };
+    let under_config = comps.any(|c| c.as_os_str() == "config");
+    if !under_config {
+        return false;
+    }
+    let name = file.as_os_str().to_string_lossy().to_ascii_lowercase();
+    let is_routes_rb = name == "routes.rb";
+    let in_routes_dir = rel
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|d| d == "routes")
+        .unwrap_or(false);
+    is_routes_rb || (in_routes_dir && name.ends_with(".rb"))
+}
+
 fn is_test_path(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
-    if NON_PROD_DIRS.iter().any(|d| p.contains(d)) {
-        return true;
-    }
-    let base = p.rsplit('/').next().unwrap_or(p.as_str());
+    in_non_prod_dir(&p) || is_test_basename(base_name(&p))
+}
+
+fn in_non_prod_dir(p: &str) -> bool {
+    NON_PROD_DIRS.iter().any(|d| p.contains(d))
+}
+
+fn base_name(p: &str) -> &str {
+    p.rsplit('/').next().unwrap_or(p)
+}
+
+fn is_test_basename(base: &str) -> bool {
     base.starts_with("test_")
         || base.starts_with("spec.")
         || base.starts_with("test.")
@@ -125,4 +157,35 @@ pub fn offense(src: &str, path: &str) -> Option<usize> {
     }
     let lines = effective_lines(src, path);
     (lines >= MAX_LINES).then_some(lines)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rails_route_tables_are_route_files() {
+        for p in [
+            "config/routes.rb",
+            "config/routes/api.rb",
+            "engines/billing/config/routes.rb",
+            "engines/billing/config/routes/admin.rb",
+        ] {
+            assert!(is_route_table(std::path::Path::new(p)), "{p}");
+        }
+    }
+
+    #[test]
+    fn ordinary_sources_are_not_route_files() {
+        for p in [
+            "app/models/route.rb",
+            "config/application.rb",
+            "config/routes_helper_spec.rb.rb",
+            "routes.md",
+            "app/routes_loader.rb",
+            "main.rb",
+        ] {
+            assert!(!is_route_table(std::path::Path::new(p)), "{p}");
+        }
+    }
 }
