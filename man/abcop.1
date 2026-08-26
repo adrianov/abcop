@@ -226,7 +226,10 @@ override with
 .BR $ABCOP_CACHE_DIR ).
 Keys hash file contents plus tool version, rule revision, threshold,
 selected checks and path, so stale entries cannot be served and entries
-from different projects never collide. The cache is auto\-pruned to the
+from different projects never collide. Entries live in a single embedded
+database file,
+.IR cache.redb .
+The cache is auto\-pruned to the
 20 000 newest entries.
 .TP
 .B \-\-no\-cache

@@ -26,6 +26,8 @@ sha2 = "0.10"
 memmap2 = "0.9"
 tree-sitter-c = "0.23"
 tree-sitter-swift = "0.7.3"
+tree-sitter-python = "0.25"
+redb = "4.2"
 
 
 [profile.release]
