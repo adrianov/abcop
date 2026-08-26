@@ -12,6 +12,7 @@ mod modulesize;
 mod never_used;
 mod output;
 mod paths;
+mod pylang;
 mod pipeline;
 mod srcbuf;
 mod run;

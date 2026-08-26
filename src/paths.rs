@@ -8,6 +8,7 @@ use tree_sitter::Parser;
 pub enum Lang {
     Ruby,
     Rust,
+    Py,
     Js,
     Ts,
     Tsx,
@@ -37,6 +38,7 @@ pub fn lang_for(path: &std::path::Path) -> Lang {
         Some("cc" | "cpp" | "cxx" | "hpp" | "hxx" | "hh") => Lang::Cpp,
         Some("m" | "mm") => Lang::ObjC,
         Some("swift") => Lang::Swift,
+        Some("py" | "pyi" | "pyw") => Lang::Py,
         // Gemfile-style names and anything else text-shaped stay Ruby,
         // whose scorer is a no-op for non-Ruby content.
         _ => Lang::Ruby,
@@ -53,6 +55,7 @@ pub fn parse_file_lang(src: &[u8], lang: Lang) -> Option<tree_sitter::Tree> {
         Lang::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
         Lang::C => tree_sitter_c::LANGUAGE.into(),
         Lang::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+        Lang::Py => tree_sitter_python::LANGUAGE.into(),
         Lang::ObjC => tree_sitter_objc::LANGUAGE.into(),
         Lang::Swift => tree_sitter_swift::LANGUAGE.into(),
     };
@@ -60,11 +63,12 @@ pub fn parse_file_lang(src: &[u8], lang: Lang) -> Option<tree_sitter::Tree> {
     parser.parse(src, None)
 }
 
-const CODE_EXTS: [&str; 24] = [
+const CODE_EXTS: [&str; 27] = [
     "rb", "rake", "ru", "gemspec", "rs", //
     "js", "mjs", "cjs", "jsx", "ts", "tsx", "mts", "cts", //
     "c", "h", "cc", "cpp", "cxx", "hpp", "hxx", "hh", //
     "m", "mm", "swift",
+    "py", "pyi", "pyw",
 ];
 
 const CODE_NAMES: [&str; 6] = [

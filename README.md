@@ -195,8 +195,9 @@ abcop --no-cache   # force full analysis
 
 Cache keys include file contents, tool version, rule revision, threshold,
 selected checks and path — stale results are impossible, and entries from
-different projects never collide. The store is auto-pruned to the 20 000
-most recent entries; disable entirely with `--no-cache`, relocate with
+different projects never collide. Entries live in a single embedded
+key-value database file (`cache.redb`), auto-pruned to the 20 000 most
+recent entries; disable entirely with `--no-cache`, relocate with
 `ABCOP_CACHE_DIR=/path`. Nothing is ever written inside your project.
 
 ## Supported languages
@@ -210,10 +211,12 @@ most recent entries; disable entirely with `--no-cache`, relocate with
 | C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | AbcSize + directives |
 | Objective-C | `.m .mm` | AbcSize + directives |
 | Swift | `.swift` | AbcSize + directives |
+| Python | `.py .pyi .pyw` | AbcSize + UsedOnce + NeverUsed (spec in `src/pylang/`) |
 
 C-family scoring lives in `src/clike.rs`: named declarations are units,
 anonymous function-likes roll into their enclosing unit, and nested units
-never double-count. UsedOnce/NeverUsed remain Ruby/Rust-only by design --
+never double-count. UsedOnce/NeverUsed are additionally implemented for
+Python (`src/pylang/`); elsewhere they remain Ruby/Rust-only by design --
 their safety proofs are language-specific.
 
 ## Benchmarks
