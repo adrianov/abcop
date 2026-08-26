@@ -542,6 +542,7 @@ static enum ParseDirective eat_comment(
     bool mark_end,
     enum TokenType *symbol_result
 ) {
+    (void)valid_symbols;
     if (lexer->lookahead != '/') {
         return CONTINUE_PARSING_NOTHING_FOUND;
     }
