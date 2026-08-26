@@ -205,11 +205,6 @@ friends: tests are code, dead bindings and inline candidates smell just
 as much there. ModuleSize's test-tree exemption lifts automatically once
 a scoped diff crosses the 100-line threshold above.
 
-**Ruby shorthand hash arguments count as reads.** In
-`create(:order, user:, status: :ok)` the value-less `user:` key reads
-the local variable `user`; UsedOnce/NeverUsed treat it exactly like a
-bare identifier reference.
-
 ### Directives
 
 For Ruby sources (and, text-based, for Rust comments too) abcop honours
@@ -250,20 +245,19 @@ four rules run everywhere, with one output format and one CI gate.
 
 | Language | Files | Status |
 |---|---|---|
-| Ruby | `.rb .rake .ru .gemspec`, `Gemfile`, `Rakefile`, … | AbcSize parity + directives + UsedOnce |
-| Rust | `.rs` | AbcSize + UsedOnce (spec in `src/rustlang.rs`) |
-| JavaScript | `.js .mjs .cjs .jsx` | AbcSize + directives |
-| TypeScript | `.ts .tsx .mts .cts` | AbcSize + directives |
-| C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | AbcSize + directives |
-| Objective-C | `.m .mm` | AbcSize + directives |
-| Swift | `.swift` | AbcSize + directives |
-| Python | `.py .pyi .pyw` | AbcSize + UsedOnce + NeverUsed (spec in `src/pylang/`) |
+| Ruby | `.rb .rake .ru .gemspec`, `Gemfile`, `Rakefile`, … | all four rules, RuboCop-parity counting |
+| Rust | `.rs` | all four rules |
+| Python | `.py .pyi .pyw` | all four rules |
+| Go | `.go` | all four rules |
+| JavaScript | `.js .mjs .cjs .jsx` | AbcSize + ModuleSize |
+| TypeScript | `.ts .tsx .mts .cts` | AbcSize + ModuleSize |
+| C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | AbcSize + ModuleSize |
+| Objective-C | `.m .mm` | AbcSize + ModuleSize |
+| Swift | `.swift` | AbcSize + ModuleSize |
 
-C-family scoring lives in `src/clike.rs`: named declarations are units,
-anonymous function-likes roll into their enclosing unit, and nested units
-never double-count. UsedOnce/NeverUsed are additionally implemented for
-Python (`src/pylang/`); elsewhere they remain Ruby/Rust-only by design --
-their safety proofs are language-specific.
+Scoring semantics stay uniform across languages: named declarations are
+the measured units, anonymous function-likes roll into their enclosing
+unit, and nested units never double-count.
 
 ## Benchmarks
 
