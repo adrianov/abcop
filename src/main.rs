@@ -13,6 +13,7 @@ mod never_used;
 mod output;
 mod paths;
 mod pylang;
+mod golang;
 mod pipeline;
 mod srcbuf;
 mod run;
