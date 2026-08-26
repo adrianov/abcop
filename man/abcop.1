@@ -9,9 +9,17 @@ abcop \- fast multi\-language ABC\-size and used\-once\-variable linter
 .B abcop \-\-dump\-tree
 .IR FILE
 .PP
-If no
-.I PATH
-arguments are given, the current directory is walked gitignore\-aware.
+Bare
+.B abcop
+scans your current merge request: only functions on lines changed since
+branching from the default branch (or the last 36 hours when committing
+directly onto it). Outside a repository \-\- or when no base can be
+detected \-\- it falls back to walking the full current directory.
+Use
+.B \-\-full
+for a deliberate whole\-tree scan, and
+.B \-\-everything
+to lift every filter.
 .PP
 Default walks prune test and fixture trees
 .RB ( spec/, " tests/, " fixtures/, " testdata/),
@@ -180,7 +188,20 @@ Scan your current merge request: changes since branching from master/main
 .RB "last 36 hours" 
 .RB ( default_branch "@{" 36.hours.ago "})."
 The default branch is detected among origin/main, origin/master, main and
-master.
+master. Bare
+.B abcop
+(no PATH, no mode flags) applies this scope automatically.
+.TP
+.B \-\-full
+Scan the whole production tree instead of the current MR; the default
+pruning of vendored/generated/test material stays active. Bare
+.B \-\-full
+targets the current directory.
+.TP
+.B \-\-everything
+Scan literally everything below the target: gitignore files are not
+honoured, hidden directories are entered, and vendored/generated/test
+pruning is disabled. The escape hatch for auditing what the defaults hide.
 .TP
 .B \-\-dump\-tree
 Debug aid: print the tree\-sitter syntax tree of a single file and exit.

@@ -30,7 +30,7 @@ use walker::collect_files;
 #[derive(ClapParser)]
 #[command(name = "abcop", version, about = "Fast multi-language ABC-size + used-once-variable linter")]
 struct Cli {
-    /// Files or directories to analyse (default: current directory)
+    /// Files or directories to analyse; omitted means current-MR scope
     paths: Vec<String>,
     /// Output format
     #[arg(long, value_parser = ["text", "json"], default_value = "text")]
@@ -48,8 +48,16 @@ struct Cli {
     /// last 36 hours when committing directly onto it
     #[arg(long, conflicts_with = "changed")]
     mr: bool,
+    /// Scan the whole production tree instead of the current MR (default
+    /// skips for vendored/generated/test trees stay active)
+    #[arg(long, conflicts_with_all = ["changed", "mr", "everything"])]
+    full: bool,
+    /// Scan literally everything below the target: no gitignore, no hidden
+    /// skipping, no vendored/generated/test pruning
+    #[arg(long, conflicts_with_all = ["changed", "mr", "full", "base"])]
+    everything: bool,
     /// Git base ref for --changed (default HEAD)
-    #[arg(long)]
+    #[arg(long, requires = "changed")]
     base: Option<String>,
     /// Disable the on-disk result cache
     #[arg(long)]
@@ -69,8 +77,8 @@ fn main() -> ExitCode {
     if cli.dump_tree {
         return run_dump_tree(&cli.paths);
     }
-    // No paths given: walk the current directory
-    if cli.paths.is_empty() {
+    // Whole-tree modes need a target; bare `--full`/`--everything` scan cwd.
+    if cli.paths.is_empty() && (cli.full || cli.everything) {
         cli.paths.push(String::from("."));
     }
     run_scan(&cli)
@@ -91,7 +99,8 @@ fn run_dump_tree(paths: &[String]) -> ExitCode {
 }
 
 fn run_scan(cli: &Cli) -> ExitCode {
-    let changeset = match resolve_scope(cli) {
+    let explicit_paths = !cli.paths.is_empty();
+    let changeset = match resolve_scope(cli, explicit_paths) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("{e}");
@@ -109,25 +118,43 @@ fn run_scan(cli: &Cli) -> ExitCode {
         cli.max_abc,
         changeset.as_ref(),
         cache.as_ref(),
+        cli.everything,
     );
     render(&results, &cli.format, cli.max_abc, start.elapsed());
     exit_code(&results)
 }
 
-/// Resolve which git-scope (if any) the user selected.
+/// Resolve which git-scope applies. Bare invocations default to the MR
+/// scope; outside a repository -- or with no detectable base -- they fall
+/// back to a full-tree scan rather than failing.
 fn resolve_scope(
     cli: &Cli,
+    explicit_paths: bool,
 ) -> Result<Option<git_changes::Changeset>, String> {
-    if cli.mr {
-        let (base, label) = git_changes::mr_base()?;
-        eprintln!("--mr scope: {label} (base {base})");
-        return git_changes::Changeset::load(&base).map(Some);
-    }
     if cli.changed {
         let base = cli.base.as_deref().unwrap_or("HEAD");
         return git_changes::Changeset::load(base).map(Some);
     }
+    if cli.mr {
+        return load_mr_scope().map(Some);
+    }
+    if !explicit_paths && !cli.full && !cli.everything {
+        // Default mode: review what changed, like CI would.
+        return match load_mr_scope() {
+            Ok(cs) => Ok(Some(cs)),
+            Err(e) => {
+                eprintln!("note: no MR scope ({e}); scanning the full tree");
+                Ok(None)
+            }
+        };
+    }
     Ok(None)
+}
+
+fn load_mr_scope() -> Result<git_changes::Changeset, String> {
+    let (base, label) = git_changes::mr_base()?;
+    eprintln!("--mr scope: {label} (base {base})");
+    git_changes::Changeset::load(&base)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -137,10 +164,11 @@ fn scan_paths(
     max: f64,
     changeset: Option<&git_changes::Changeset>,
     cache: Option<&crate::cache::Cache>,
+    everything: bool,
 ) -> Vec<FileResult> {
     let files: Vec<std::path::PathBuf> = match changeset {
         Some(cs) => cs.code_files(),
-        None => collect_files(paths),
+        None => collect_files(paths, everything),
     };
     // par_iter keeps the caller's (BFS + extension/name) order intact
     let results: Vec<FileResult> = files

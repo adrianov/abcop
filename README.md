@@ -109,12 +109,13 @@ cargo build --release
 
 | Option | Default | Meaning |
 |---|---|---|
-| `[PATH]...` | `.` | files or directories (walked gitignore-aware); omitted = current directory. Default walks prune test/fixture trees (`spec/`, `tests/`, `fixtures/`, `testdata/`, …), vendored/build trees (`vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …), Rails `db/migrate/`, and generated files (`*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`) — name such a path explicitly to scan it |
+| `[PATH]...` | current MR | files or directories to analyse; **omitted, abcop scans your current merge request** (see `--mr`), falling back to the full tree outside a repository. Given: exactly those targets. All walking modes prune test/fixture trees (`spec/`, `tests/`, `fixtures/`, `testdata/`, …), vendored/build trees (`vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …), Rails `db/migrate/`, and generated files (`*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`) — name such a path explicitly to scan it |
 | `--format text\|json` | `text` | human-readable or machine-readable output |
 | `--max-abc N` | `17` | report functions scoring above N |
 | `--only abc\|used-once\|never-used` | all | run a single check |
 | `--changed [--base REF]` | off | scan only git-changed files/functions vs REF (HEAD); hunks widened with `-W`, so a whole touched function counts as changed |
-| `--mr` | off | scan your current MR: since branching from master/main (merge-base), or the last 36 hours when committing directly onto it. Auto-detects origin/main, origin/master, main, master |
+| `--full` | off | scan the whole production tree instead of the current MR (default skips stay active); bare `--full` targets the current directory |
+| `--everything` | off | scan literally everything below the target: no gitignore, no hidden-file skipping, no vendored/generated/test pruning |
 | `--dump-tree FILE` | — | debug: print the syntax tree of one file |
 
 Exit codes: `0` clean, `1` diagnostics reported, `2` usage error.

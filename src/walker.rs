@@ -19,10 +19,14 @@ struct Found {
 /// name. Explicit file arguments come first at depth 0.
 ///
 /// The parallel walk itself is unordered; the deterministic order is
-/// produced by the final multi-key sort over the recorded depths.
-/// Entries below a root are filtered through `skipped_by_default`; the
-/// roots themselves are always scanned in full.
-pub(crate) fn collect_files(paths: &[String]) -> Vec<std::path::PathBuf> {
+/// produced by the final multi-key sort over the recorded depths. Entries
+/// below a root are filtered through `skipped_by_default` and the walker's
+/// ignore rules -- unless `everything` is set (`--everything`), which lifts
+/// every filter: gitignore, hidden files, vendored/generated pruning.
+pub(crate) fn collect_files(
+    paths: &[String],
+    everything: bool,
+) -> Vec<std::path::PathBuf> {
     let mut found = Vec::new();
     let mut roots = Vec::new();
     for raw in paths {
@@ -47,8 +51,21 @@ pub(crate) fn collect_files(paths: &[String]) -> Vec<std::path::PathBuf> {
             builder.add(r);
         }
         builder.threads(threads);
+        if everything {
+            // `--everything`: no ignore files, no hidden skipping --
+            // literally every code file below the target.
+            builder
+                .hidden(false)
+                .ignore(false)
+                .git_ignore(false)
+                .git_global(false)
+                .git_exclude(false)
+                .parents(false)
+                .require_git(false);
+        }
         let sink = &discovered;
-        let mut collector = CollectorBuilder { sink, roots: &roots };
+        let mut collector =
+            CollectorBuilder { sink, roots: &roots, no_skip: everything };
         builder.build_parallel().visit(&mut collector);
     }
 
@@ -104,6 +121,8 @@ impl PathKey for Found {
 struct CollectorBuilder<'s> {
     sink: &'s std::sync::Mutex<Vec<Found>>,
     roots: &'s [std::path::PathBuf],
+    /// `--everything`: bypass default-skip pruning entirely.
+    no_skip: bool,
 }
 
 impl<'s> ignore::ParallelVisitorBuilder<'s> for CollectorBuilder<'s> {
@@ -111,6 +130,7 @@ impl<'s> ignore::ParallelVisitorBuilder<'s> for CollectorBuilder<'s> {
         Box::new(Collector {
             sink: self.sink,
             roots: self.roots,
+            no_skip: self.no_skip,
         })
     }
 }
@@ -118,6 +138,7 @@ impl<'s> ignore::ParallelVisitorBuilder<'s> for CollectorBuilder<'s> {
 struct Collector<'s> {
     sink: &'s std::sync::Mutex<Vec<Found>>,
     roots: &'s [std::path::PathBuf],
+    no_skip: bool,
 }
 
 impl ignore::ParallelVisitor for Collector<'_> {
@@ -128,7 +149,7 @@ impl ignore::ParallelVisitor for Collector<'_> {
         let Ok(entry) = entry else {
             return ignore::WalkState::Continue;
         };
-        if let Some(state) = prune_state(&entry, self.roots) {
+        if !self.no_skip && let Some(state) = prune_state(&entry, self.roots) {
             return state;
         }
         if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
