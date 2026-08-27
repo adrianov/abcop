@@ -352,10 +352,11 @@ static bool scan_encapsed_part_string(Scanner *scanner, TSLexer *lexer, bool is_
                         if (is_valid_name_char(lexer)) {
                             return has_content;
                         }
-                        break;
                     }
                     break;
                 }
+                advance(lexer);
+                break;
             case '[':
                 if (is_after_variable) {
                     return has_content;

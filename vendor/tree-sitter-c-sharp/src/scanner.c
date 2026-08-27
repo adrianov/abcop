@@ -273,7 +273,7 @@ bool tree_sitter_c_sharp_external_scanner_scan(void *payload, TSLexer *lexer, co
 
         if (quote_count == current_interpolation->quote_count) {
             lexer->result_symbol = INTERPOLATION_END_QUOTE;
-            array_pop(&scanner->interpolation_stack);
+            (void)array_pop(&scanner->interpolation_stack);
             return true;
         }
 
