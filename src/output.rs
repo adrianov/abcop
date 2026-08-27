@@ -179,9 +179,18 @@ mod tests {
 
     #[test]
     fn summary_time_keeps_a_significant_fraction_digit() {
-        assert_eq!(summary_secs(std::time::Duration::from_secs_f64(41.67)), "41.67s");
-        assert_eq!(summary_secs(std::time::Duration::from_secs_f64(0.09)), "0.09s");
-        assert_eq!(summary_secs(std::time::Duration::from_secs_f64(0.0031)), "0.003s");
+        assert_eq!(
+            summary_secs(std::time::Duration::from_secs_f64(41.67)),
+            "41.67s"
+        );
+        assert_eq!(
+            summary_secs(std::time::Duration::from_secs_f64(0.09)),
+            "0.09s"
+        );
+        assert_eq!(
+            summary_secs(std::time::Duration::from_secs_f64(0.0031)),
+            "0.003s"
+        );
         assert_eq!(
             summary_secs(std::time::Duration::from_secs_f64(0.000_512)),
             "0.0005s"

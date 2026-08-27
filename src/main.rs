@@ -28,6 +28,8 @@ mod repo_state;
 mod run;
 mod rustlang;
 mod scan_scope;
+#[cfg(test)]
+mod scan_scope_tests;
 mod scope_model;
 mod skip;
 mod sollang;
@@ -67,6 +69,10 @@ pub(crate) struct Cli {
     /// path is given)
     #[arg(long)]
     pub(crate) mr: bool,
+    /// Scan only uncommitted work: working-tree and index edits vs
+    /// HEAD plus untracked files -- no branch/base diff
+    #[arg(long, conflicts_with_all = ["mr", "full", "everything"])]
+    pub(crate) uncommitted: bool,
     /// Scan the whole production tree instead of the current MR (default
     /// skips for vendored/generated/test trees stay active)
     #[arg(long, conflicts_with_all = ["mr", "everything"])]

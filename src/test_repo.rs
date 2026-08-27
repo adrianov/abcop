@@ -68,6 +68,12 @@ pub(crate) fn seed_repo_with_base_commit(dir: &Path) {
     run_git(dir, &["branch", "-M", "main"]);
 }
 
+/// Stages everything and commits on the current branch.
+pub(crate) fn commit_all(dir: &Path, msg: &str) {
+    run_git(dir, &["add", "-A"]);
+    run_git(dir, &["commit", "-qm", msg]);
+}
+
 /// One file edited (unstaged), one added (staged), one untracked.
 pub(crate) fn stage_three_kinds_of_uncommitted_work(dir: &Path) {
     std::fs::write(dir.join("a.rb"), "def base\n  x = 1\nend\n").unwrap();

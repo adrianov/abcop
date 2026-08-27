@@ -18,6 +18,7 @@ pub(crate) struct ScanRun<'a> {
     max_abc: f64,
     format: &'a str,
     mr: bool,
+    uncommitted: bool,
     full: bool,
     everything: bool,
     no_cache: bool,
@@ -31,6 +32,7 @@ impl<'a> From<&'a super::Cli> for ScanRun<'a> {
             max_abc: cli.max_abc,
             format: &cli.format,
             mr: cli.mr,
+            uncommitted: cli.uncommitted,
             full: cli.full,
             everything: cli.everything,
             no_cache: cli.no_cache,
@@ -43,11 +45,16 @@ impl ScanRun<'_> {
     /// code: 0 clean, 1 diagnostics reported.
     pub(crate) fn execute(&self) -> ExitCode {
         let explicit_paths = !self.paths.is_empty();
-        let changeset =
-            match scan_scope::resolve(self.mr, explicit_paths, self.full, self.everything) {
-                Ok(v) => v,
-                Err(e) => return scan_scope::error(e),
-            };
+        let changeset = match scan_scope::resolve(
+            self.mr,
+            self.uncommitted,
+            explicit_paths,
+            self.full,
+            self.everything,
+        ) {
+            Ok(v) => v,
+            Err(e) => return scan_scope::error(e),
+        };
         let cache = self.open_cache();
         let start = std::time::Instant::now();
         let results = self.scan(explicit_paths, changeset.as_ref(), cache.as_ref());

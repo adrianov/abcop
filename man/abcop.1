@@ -17,7 +17,9 @@ directly onto it). Outside a repository \-\- or when no base can be
 detected \-\- it falls back to walking the full current directory.
 Use
 .B \-\-full
-for a deliberate whole\-tree scan, and
+for a deliberate whole\-tree scan,
+.B \-\-uncommitted
+for only your working\-tree edits, and
 .B \-\-everything
 to lift every filter.
 .PP
@@ -202,6 +204,12 @@ The default branch is detected among origin/main, origin/master, main and
 master. Bare
 .B abcop
 (no PATH, no mode flags) applies this scope automatically.
+.TP
+.B \-\-uncommitted
+Scan only uncommitted work: working\-tree and index edits against HEAD
+plus untracked files. No branch/base diff is computed, so the scope is
+exactly what would be staged or committed next. Fails outside a
+repository instead of widening to a full\-tree scan.
 .TP
 .B \-\-full
 Scan the whole production tree instead of the current MR; the default

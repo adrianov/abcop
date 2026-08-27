@@ -124,6 +124,7 @@ cargo build --release
 | `--everything` | off | scan literally everything below the target: no gitignore, no hidden-file skipping, no vendored/generated/test pruning |
 | `--format text\|json` | `text` | machine-readable JSON for CI dashboards |
 | `--mr` | off | select the current-MR scope explicitly (uncommitted plus branch commits vs base); same as the bare default |
+| `--uncommitted` | off | scan only uncommitted work: working-tree and index edits vs `HEAD` plus untracked files — no branch/base diff; requires a repository |
 | `--no-cache` | off | skip the on-disk result cache for this run |
 | `--dump-tree FILE` | — | debug: print the syntax tree of a single file
 
@@ -168,12 +169,16 @@ Review what you just wrote instead of a decade of legacy:
 git checkout -b feature/x     # branch off main
 # ... work ...
 abcop --mr --only abc src     # only functions you touched on this branch
+abcop --uncommitted          # pre-commit check: just your working-tree edits
 ```
 
 Committing straight to main? The same scope switches to a 36-hour window
 automatically (`<default-branch>@{36.hours.ago}`) — enough to cover work
 resumed from the previous morning. Uncommitted edits are always part of
-the scan; there is no separate working-tree-diff flag to remember.
+the scan; when the committed branch work is not under review,
+`--uncommitted` narrows the run to just those working-tree edits (plus
+untracked files) — and fails loudly outside a repository rather than
+silently widening to the full tree.
 
 ### Scope rules and why they exist
 

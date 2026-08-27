@@ -1,9 +1,9 @@
 //! Scan-scope resolution: decides which repository state an invocation
 //! reviews. Bare invocations default to the MR scope -- uncommitted work
 //! against HEAD plus everything the branch already changed vs its base,
-//! the union CI would gate on. Outside a repository, or with no
-//! detectable base, they fall back to a full-tree scan rather than
-//! failing.
+//! the union CI would gate on. `--uncommitted` narrows that to the
+//! working tree only. Outside a repository, or with no detectable base,
+//! the bare default falls back to a full-tree scan rather than failing.
 //!
 //! Diff selection itself lives in [`crate::git_changes`]; base-ref choice
 //! lives in [`crate::mr_scope`].
@@ -14,14 +14,21 @@ use crate::git_changes::{Changeset, Lines};
 
 /// Resolve which git-scope applies to this invocation. `Ok(None)` means
 /// no repository scoping: analyse explicit targets or the whole tree.
+/// `uncommitted` selects working-tree work vs HEAD only, and fails
+/// loudly outside a repository -- an explicitly narrowed scope must not
+/// silently widen.
 pub(crate) fn resolve(
     mr: bool,
+    uncommitted: bool,
     explicit_paths: bool,
     full: bool,
     everything: bool,
 ) -> Result<Option<Changeset>, String> {
-    if !(mr || (!explicit_paths && !full && !everything)) {
+    if !(mr || uncommitted || (!explicit_paths && !full && !everything)) {
         return Ok(None);
+    }
+    if uncommitted {
+        return Changeset::load("HEAD").map(Some);
     }
     let head = Changeset::load("HEAD");
     match load_mr_scope() {
