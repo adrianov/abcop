@@ -6,6 +6,9 @@
 //! before the binding's introduction position never count -- Python
 //! raises UnboundLocalError for exactly that pattern.
 
+mod collector;
+mod purity;
+
 use std::collections::HashMap;
 
 use tree_sitter::Node;
@@ -13,6 +16,9 @@ use tree_sitter::Node;
 use super::PyFile;
 use crate::never_used::NeverUsedOffense;
 use crate::used_once::UsedOnceOffense;
+use purity::{pure, unconditionally_executed};
+
+pub(super) use collector::collect;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum IntroKind {
@@ -112,25 +118,32 @@ pub(crate) fn never_used_offenses(fm: &PyFile) -> Vec<NeverUsedOffense> {
     out
 }
 
+/// An entry is an inline candidate when it holds one plain
+/// non-augmented write carrying an RHS, followed by exactly one later
+/// read.
+fn inline_candidate(e: &Entry) -> bool {
+    e.intro_kind == IntroKind::Assign
+        && e.writes.len() == 1
+        && e.reads.len() == 1
+        && e.writes[0].plain
+        && e.writes[0].rhs.is_some()
+        && e.reads[0] > e.writes[0].byte
+}
+
 fn single_use<'t>(
     fm: &'t PyFile<'t>,
     nodes: &HashMap<usize, Node<'t>>,
     name: &str,
     e: &Entry,
 ) -> Option<UsedOnceOffense> {
-    if e.intro_kind != IntroKind::Assign || e.writes.len() != 1 || e.reads.len() != 1 {
+    if !inline_candidate(e) {
         return None;
     }
-    let w = &e.writes[0];
-    if !w.plain || w.rhs.is_none() || e.reads[0] <= w.byte {
+    let (rhs, write_node) = inline_nodes(nodes, e)?;
+    if !pure(rhs) || !unconditionally_executed(write_node) {
         return None;
     }
-    let rhs = nodes.get(&w.rhs?)?;
-    let write_node = nodes.get(&w.node_id)?;
-    if !pure(*rhs) || !unconditionally_executed(*write_node) {
-        return None;
-    }
-    let (line, column) = fm.line_col(w.byte);
+    let (line, column) = fm.line_col(e.writes[0].byte);
     Some(UsedOnceOffense {
         line,
         column,
@@ -138,47 +151,12 @@ fn single_use<'t>(
     })
 }
 
-/// Conservative RHS purity: literals and operator compositions over them.
-/// References to other locals are rejected, mirroring the Rust backend.
-fn pure(n: Node) -> bool {
-    match n.kind() {
-        "integer" | "float" | "true" | "false" | "none" => true,
-        "string" => children_pure(n),
-        "string_content" | "escape_sequence" => true,
-        "list"
-        | "tuple"
-        | "set"
-        | "dictionary"
-        | "pair"
-        | "unary_operator"
-        | "binary_operator"
-        | "boolean_operator"
-        | "parenthesized_expression" => children_pure(n),
-        _ => false,
-    }
-}
-
-fn children_pure(n: Node) -> bool {
-    let mut c = n.walk();
-    n.children(&mut c)
-        .filter(|ch| ch.is_named())
-        .all(|ch| pure(ch))
-}
-
-/// Straight-line execution check up to the nearest scope boundary.
-fn unconditionally_executed(write_node: Node) -> bool {
-    const OWNERS: [&str; 3] = ["function_definition", "class_definition", "lambda"];
-    let mut cur = Some(write_node);
-    while let Some(n) = cur {
-        if VETO_KINDS.contains(&n.kind()) {
-            return false;
-        }
-        if OWNERS.contains(&n.kind()) {
-            return true;
-        }
-        cur = n.parent();
-    }
-    true
+/// RHS and written-identifier nodes of an entry's first write.
+fn inline_nodes<'t>(nodes: &HashMap<usize, Node<'t>>, e: &Entry) -> Option<(Node<'t>, Node<'t>)> {
+    let w = &e.writes[0];
+    let rhs = *nodes.get(&w.rhs?)?;
+    let write_node = *nodes.get(&w.node_id)?;
+    Some((rhs, write_node))
 }
 
 fn index_nodes<'t>(root: Node<'t>) -> HashMap<usize, Node<'t>> {
@@ -192,324 +170,5 @@ fn rec<'t>(n: Node<'t>, map: &mut HashMap<usize, Node<'t>>) {
     let mut cursor = n.walk();
     for child in n.children(&mut cursor) {
         rec(child, map);
-    }
-}
-
-// ---------------------------------------------------------------------
-// Scope-model collection
-
-/// Build the scope tree and per-identifier bookkeeping for a parsed file.
-pub(super) fn collect(root: Node, src: &[u8]) -> Vec<Scope> {
-    let mut c = Collector {
-        src,
-        scopes: vec![Scope {
-            parent: None,
-            kind: ScopeKind::Root,
-            entries: HashMap::new(),
-        }],
-    };
-    c.walk(root, 0);
-    c.scopes
-}
-
-struct Collector<'a> {
-    src: &'a [u8],
-    scopes: Vec<Scope>,
-}
-
-impl Collector<'_> {
-    fn open_scope(&mut self, kind: ScopeKind, parent: usize) -> usize {
-        self.scopes.push(Scope {
-            parent: Some(parent),
-            kind,
-            entries: HashMap::new(),
-        });
-        self.scopes.len() - 1
-    }
-
-    /// Name exists in this scope (Python locals are scope-wide, so a
-    /// same-scope name always shadows outer scopes regardless of
-    /// position); the read only counts when the binding was already
-    /// introduced at the read position.
-    fn lookup(&self, scope: usize, pos: usize, name: &str) -> Option<usize> {
-        let data = &self.scopes[scope];
-        if let Some(e) = data.entries.get(name) {
-            return if e.intro_byte <= pos {
-                Some(scope)
-            } else {
-                None
-            };
-        }
-        match data.kind {
-            ScopeKind::Block => self.lookup(data.parent?, pos, name),
-            _ => None,
-        }
-    }
-
-    fn bind(&mut self, scope: usize, name: &str, w: Write, intro: IntroKind) {
-        if name.starts_with('_') {
-            return;
-        }
-        match self.lookup(scope, w.byte, name) {
-            Some(s) => {
-                self.scopes[s]
-                    .entries
-                    .get_mut(name)
-                    .expect("looked-up entry")
-                    .writes
-                    .push(w);
-            }
-            None => {
-                self.scopes[scope].entries.insert(
-                    Box::from(name),
-                    Entry {
-                        intro_byte: w.byte,
-                        intro_kind: intro,
-                        writes: vec![w],
-                        reads: Vec::new(),
-                    },
-                );
-            }
-        }
-    }
-
-    fn record_read(&mut self, scope: usize, name: &str, byte: usize) {
-        if name.starts_with('_') {
-            return;
-        }
-        if let Some(s) = self.lookup(scope, byte, name) {
-            self.scopes[s]
-                .entries
-                .get_mut(name)
-                .expect("looked-up entry")
-                .reads
-                .push(byte);
-        }
-    }
-
-    fn text(&self, n: Node) -> &str {
-        n.utf8_text(self.src).unwrap_or("")
-    }
-
-    fn walk_children(&mut self, n: Node, scope: usize) {
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
-            self.walk(child, scope);
-        }
-    }
-
-    /// Walk every child except the given field's subtree.
-    fn walk_except(&mut self, n: Node, scope: usize, skip_field: &str) {
-        let skipped = n.child_by_field_name(skip_field).map(|s| s.id());
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
-            if Some(child.id()) == skipped {
-                continue;
-            }
-            self.walk(child, scope);
-        }
-    }
-
-    /// Bind every name *written* by an assignment target expression.
-    /// Pattern lists expand per bound name; attribute (`obj.attr =`) and
-    /// subscript (`obj[k] =`) targets merely reference their operands --
-    /// those operands become ordinary reads instead.
-    fn bind_targets(&mut self, n: Node, scope: usize) {
-        match n.kind() {
-            "identifier" => {
-                let w = Write {
-                    byte: n.start_byte(),
-                    node_id: n.id(),
-                    plain: true,
-                    rhs: None,
-                };
-                let name = self.text(n).to_string();
-                self.bind(scope, &name, w, IntroKind::Assign);
-            }
-            // expand pattern lists per bound name; must NOT recurse
-            // through walk(), which would treat names as reads
-            "pattern_list" | "tuple_pattern" | "list_pattern" | "list_splat"
-            | "dictionary_splat" => {
-                let mut cursor = n.walk();
-                let children: Vec<_> = n.children(&mut cursor).collect();
-                for child in children {
-                    self.bind_targets(child, scope);
-                }
-            }
-            // reference-style targets (obj.attr / obj[k]): operands are reads
-            _ => self.walk_children(n, scope),
-        }
-    }
-
-    /// Track an `as <name>` protocol binding (with/except/match aliases)
-    /// as a non-candidate write.
-    fn bind_alias(&mut self, n: Node, scope: usize) {
-        if n.kind() == "identifier" {
-            let w = Write {
-                byte: n.start_byte(),
-                node_id: n.id(),
-                plain: false,
-                rhs: None,
-            };
-            let name = self.text(n).to_string();
-            self.bind(scope, &name, w, IntroKind::Binding);
-            return;
-        }
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
-            self.bind_alias(child, scope);
-        }
-    }
-
-    /// Bind every identifier inside a match `case` pattern as a capture
-    /// (never an inline candidate).
-    fn bind_captures(&mut self, n: Node, scope: usize) {
-        if n.kind() == "identifier" {
-            let w = Write {
-                byte: n.start_byte(),
-                node_id: n.id(),
-                plain: false,
-                rhs: None,
-            };
-            let name = self.text(n).to_string();
-            self.bind(scope, &name, w, IntroKind::Binding);
-            return;
-        }
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
-            self.bind_captures(child, scope);
-        }
-    }
-
-    fn walk(&mut self, n: Node, scope: usize) {
-        let kind = n.kind();
-        if SKIP_KINDS.contains(&kind) {
-            return;
-        }
-        match kind {
-            "function_definition" => {
-                let s = self.open_scope(ScopeKind::Function, scope);
-                self.walk_except(n, s, "name");
-            }
-            "class_definition" => {
-                let s = self.open_scope(ScopeKind::Class, scope);
-                self.walk_except(n, s, "name");
-            }
-            "lambda" => {
-                // Lambda bodies roll up like Rust closures: reads inside
-                // still resolve outward through the Block scope.
-                let s = self.open_scope(ScopeKind::Block, scope);
-                self.walk_except(n, s, "parameters");
-            }
-            "assignment" => {
-                let left = n.child_by_field_name("left");
-                let right = n.child_by_field_name("right");
-                if let Some(left) = left {
-                    if left.kind() == "identifier" {
-                        let w = Write {
-                            byte: left.start_byte(),
-                            node_id: left.id(),
-                            plain: true,
-                            rhs: right.map(|r| r.id()),
-                        };
-                        let name = self.text(left).to_string();
-                        self.bind(scope, &name, w, IntroKind::Assign);
-                    } else {
-                        self.bind_targets(left, scope);
-                    }
-                }
-                if let Some(right) = right {
-                    self.walk(right, scope);
-                }
-            }
-            "augmented_assignment" => {
-                // reads the previous value and rewrites: neither candidate
-                if let Some(left) = n.child_by_field_name("left") {
-                    if left.kind() == "identifier" {
-                        let byte = left.start_byte();
-                        let w = Write {
-                            byte,
-                            node_id: left.id(),
-                            plain: false,
-                            rhs: None,
-                        };
-                        let name = self.text(left).to_string();
-                        self.bind(scope, &name, w, IntroKind::Binding);
-                        self.record_read(scope, &name, byte + 1);
-                    } else {
-                        // obj.x += 1 / d[k] += 1: operands are reads only
-                        self.walk_children(left, scope);
-                    }
-                }
-                if let Some(right) = n.child_by_field_name("right") {
-                    self.walk(right, scope);
-                }
-            }
-            "named_expression" => {
-                if let (Some(name_node), Some(value)) = (
-                    n.child_by_field_name("name"),
-                    n.child_by_field_name("value"),
-                ) {
-                    let w = Write {
-                        byte: name_node.start_byte(),
-                        node_id: name_node.id(),
-                        plain: true,
-                        rhs: Some(value.id()),
-                    };
-                    let name = self.text(name_node).to_string();
-                    self.bind(scope, &name, w, IntroKind::Assign);
-                    self.walk(value, scope);
-                }
-            }
-            "for_statement" | "for_in_clause" => {
-                // loop targets are protocol bindings, never tracked
-                self.walk_except(n, scope, "left");
-            }
-            "keyword_argument" => {
-                // the label is not a variable reference
-                if let Some(value) = n.child_by_field_name("value") {
-                    self.walk(value, scope);
-                }
-            }
-            "attribute" => {
-                // the member name after the dot is not a variable read
-                if let Some(obj) = n.child_by_field_name("object") {
-                    self.walk(obj, scope);
-                }
-            }
-            "as_pattern" => {
-                // value part walks normally; everything after the `as`
-                // token is the alias binding
-                let mut cursor = n.walk();
-                let children: Vec<_> = n.children(&mut cursor).collect();
-                let mut after_as = false;
-                for child in children {
-                    if child.kind() == "as" {
-                        after_as = true;
-                    } else if after_as {
-                        self.bind_alias(child, scope);
-                    } else {
-                        self.walk(child, scope);
-                    }
-                }
-            }
-            "case_clause" => {
-                // pattern captures bind names; guard and body are code
-                let mut cursor = n.walk();
-                let children: Vec<_> = n.children(&mut cursor).collect();
-                for child in children {
-                    if child.kind() == "case_pattern" {
-                        self.bind_captures(child, scope);
-                    } else {
-                        self.walk(child, scope);
-                    }
-                }
-            }
-            "identifier" => {
-                let name = self.text(n).to_string();
-                self.record_read(scope, &name, n.start_byte());
-            }
-            _ => self.walk_children(n, scope),
-        }
     }
 }

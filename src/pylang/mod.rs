@@ -27,6 +27,9 @@ mod vars;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod tests_usage;
+
 use tree_sitter::Tree;
 
 pub struct PyFile<'t> {
