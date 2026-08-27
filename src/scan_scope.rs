@@ -32,12 +32,17 @@ pub(crate) fn resolve(
 
 /// When the base cannot be resolved: fall back to uncommitted HEAD work
 /// alone, or to the whole tree when even that is empty or unavailable.
+/// Either way the reason is printed -- a silently narrowed scope looks
+/// identical to the requested one, which is exactly what misleads.
 fn head_fallback(
     head: Result<Changeset, String>,
     reason: &str,
 ) -> Result<Option<Changeset>, String> {
     match head {
-        Ok(h) if !h.files.is_empty() => Ok(Some(h)),
+        Ok(h) if !h.files.is_empty() => {
+            eprintln!("note: no MR scope ({reason}); scanning uncommitted HEAD work only");
+            Ok(Some(h))
+        }
         _ => {
             eprintln!("note: no MR scope ({reason}); scanning the full tree");
             Ok(None)

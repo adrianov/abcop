@@ -5,22 +5,26 @@ mod cache;
 mod clike;
 mod csharp;
 mod dart;
-mod diffparse;
 mod directives;
 mod dump;
 mod fork_point;
 mod git_changes;
+#[cfg(test)]
+mod git_changes_tests;
 mod golang;
 mod javalang;
 mod model;
 mod modulesize;
 mod mr_scope;
+#[cfg(test)]
+mod mr_scope_tests;
 mod never_used;
 mod output;
 mod paths;
 mod phplang;
 mod pipeline;
 mod pylang;
+mod repo_state;
 mod run;
 mod rustlang;
 mod scan_scope;
@@ -28,6 +32,8 @@ mod scope_model;
 mod skip;
 mod sollang;
 mod srcbuf;
+mod untracked_scan;
+
 #[cfg(test)]
 mod test_repo;
 mod used_once;

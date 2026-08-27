@@ -1,31 +1,50 @@
 //! Fork-point detection: where the current branch last shared history
-//! with a sibling. One `rev-list --boundary` pass replaces a
-//! merge-base subprocess per branch, so detection cost stays flat no
-//! matter how many branches the repository carries.
+//! with a sibling. One multi-base merge pass replaces per-branch probes,
+//! so detection cost stays flat no matter how many branches the
+//! repository carries. All repository access goes through the built-in
+//! `git2` binding; no external git process is spawned.
 
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::git_changes::{current_branch_in, git_in, is_ancestor_in};
+use crate::repo_state::{commit_oid, current_branch_in, is_ancestor_in, open_repo};
 
 /// Newest commit shared by HEAD and any sibling branch tip -- the
-/// parent/fork point. One `rev-list --boundary` pass replaces a
-/// merge-base subprocess per branch, so detection cost stays flat no
-/// matter how many branches the repository carries.
+/// parent/fork point.
 pub(super) fn fork_point_in(dir: Option<&Path>) -> Result<Option<(String, String)>, String> {
-    let head = head_sha_in(dir)?;
+    let repo = open_repo(dir)?;
+    let head = commit_oid(&repo, "HEAD")?;
     let branch = current_branch_in(dir);
-    let Some((tips, names)) = sibling_tips_in(dir, &head, branch.as_deref())? else {
+    let Some((tips, names)) = sibling_tips_in(&repo, &head.to_string(), branch.as_deref())? else {
         return Ok(None);
     };
-
-    let bases = boundary_bases_in(dir, &tips)?;
-    let best = newest_by_commit_time_in(dir, &bases);
-    Ok(best.map(|b| fork_label(&b, &names)))
+    pick_fork_point(&repo, &head.to_string(), &tips)
+        .map(|best| best.map(|b| fork_label(&b, &names)))
 }
 
-fn head_sha_in(dir: Option<&Path>) -> Result<String, String> {
-    Ok(git_in(dir, &["rev-parse", "HEAD"])?.trim().to_string())
+/// Deepest shared ancestor of HEAD across `tips` by committer date.
+fn pick_fork_point(
+    repo: &git2::Repository,
+    head: &str,
+    tips: &[String],
+) -> Result<Option<String>, String> {
+    let mut best: Option<(i64, String)> = None;
+    for b in boundary_bases_in(repo, head, tips)? {
+        let ts = commit_ts(repo, &b);
+        if best.as_ref().is_none_or(|(t, _)| ts > *t) {
+            best = Some((ts, b));
+        }
+    }
+    Ok(best.map(|(_, b)| b))
+}
+
+/// Committer epoch of a hex sha, smallest representable when unresolvable.
+fn commit_ts(repo: &git2::Repository, sha: &str) -> i64 {
+    git2::Oid::from_str(sha)
+        .ok()
+        .and_then(|oid| repo.find_commit(oid).ok())
+        .map(|c| c.time().seconds())
+        .unwrap_or(i64::MIN)
 }
 
 /// Scan label for the chosen fork point, naming the sibling branch that
@@ -40,28 +59,49 @@ fn fork_label(sha: &str, names: &HashMap<String, String>) -> (String, String) {
     }
 }
 
-/// Parse `for-each-ref` output into distinct sibling tips (own branch
-/// excluded, one entry per sha) plus a display-name per sha, preferring
-/// the `heads/` spelling over the `remotes/` alias. `None` when no other
-/// branch exists.
+/// Distinct sibling tips (own branch excluded, one entry per sha) plus
+fn ref_tips(repo: &git2::Repository) -> Result<Vec<(String, String)>, String> {
+    let mut out = Vec::new();
+    for glob in ["refs/heads/*", "refs/remotes/*"] {
+        collect_glob(repo, glob, &mut out)?;
+    }
+    Ok(out)
+}
+
+/// Appends `(oid hex, refname)` for every reference matching `glob`.
+fn collect_glob(
+    repo: &git2::Repository,
+    glob: &str,
+    out: &mut Vec<(String, String)>,
+) -> Result<(), String> {
+    for r in repo.references_glob(glob).map_err(|e| e.to_string())? {
+        if let Some(tip) = tip_of(r.map_err(|e| e.to_string())?)? {
+            out.push(tip);
+        }
+    }
+    Ok(())
+}
+
+/// `(oid hex, refname)` of a direct reference, skipping unnamed ones.
+fn tip_of(r: git2::Reference<'_>) -> Result<Option<(String, String)>, String> {
+    let Some(name) = r.name().map(str::to_string) else {
+        return Ok(None);
+    };
+    let oid = r.resolve().map_err(|e| e.to_string())?.target();
+    Ok(oid.map(|o| (o.to_string(), name)))
+}
+
+/// Distinct sibling tips (own branch excluded, one entry per sha) plus
+/// a display-name per sha, preferring the `heads/` spelling over the
+/// `remotes/` alias. `None` when no other branch exists.
 fn sibling_tips_in(
-    dir: Option<&Path>,
+    repo: &git2::Repository,
     head: &str,
     branch: Option<&str>,
 ) -> Result<Option<(Vec<String>, HashMap<String, String>)>, String> {
-    let listing = git_in(
-        dir,
-        &[
-            "for-each-ref",
-            "--format=%(objectname) %(refname)",
-            "refs/heads",
-            "refs/remotes",
-        ],
-    )?;
-
     let mut tips: Vec<String> = Vec::new();
     let mut names_by_sha: HashMap<String, String> = HashMap::new();
-    for (sha, refname) in listing.lines().filter_map(parse_tip_line) {
+    for (sha, refname) in ref_tips(repo)? {
         if excluded_tip(&sha, head, branch, &refname) {
             continue;
         }
@@ -95,12 +135,6 @@ fn record_tip(
         .or_insert_with(|| display.to_string());
 }
 
-/// `(sha, refname)` from one `%H %(refname)` output line.
-fn parse_tip_line(line: &str) -> Option<(String, String)> {
-    let (sha, refname) = line.split_once(' ')?;
-    Some((sha.to_string(), refname.to_string()))
-}
-
 fn is_own_ref(branch: Option<&str>, refname: &str) -> bool {
     match branch {
         Some(b) => refname == format!("refs/heads/{b}") || refname == format!("refs/remotes/{b}"),
@@ -108,33 +142,29 @@ fn is_own_ref(branch: Option<&str>, refname: &str) -> bool {
     }
 }
 
-/// Boundary commits of `HEAD ^tips` are exactly the shared-ancestor
-/// frontier -- candidate fork points, collected in one pass. Bases that
-/// are proper ancestors of another base are dropped so the deepest fork
-/// point wins.
-fn boundary_bases_in(dir: Option<&Path>, tips: &[String]) -> Result<Vec<String>, String> {
-    let mut args: Vec<&str> = vec!["rev-list", "--boundary", "HEAD"];
-    let negated = negations(tips);
-    args.extend(negated.iter().map(String::as_str));
-    let bases = boundary_shas(&git_in(dir, &args)?);
-    Ok(drop_ancestor_bases(dir, bases))
+/// Shared-ancestor frontier of HEAD across all tips -- candidate fork
+/// points from one merge-bases query. Bases that are proper ancestors
+/// of another base are dropped so the deepest fork point wins.
+fn boundary_bases_in(
+    repo: &git2::Repository,
+    head: &str,
+    tips: &[String],
+) -> Result<Vec<String>, String> {
+    let mut set = Vec::with_capacity(tips.len() + 1);
+    for rev in std::iter::once(head).chain(tips.iter().map(String::as_str)) {
+        set.push(commit_oid(repo, rev)?);
+    }
+    let bases = merge_base_shas(repo, &set);
+    Ok(drop_ancestor_bases(repo.workdir(), bases))
 }
 
-fn negations(tips: &[String]) -> Vec<String> {
-    tips.iter().map(|t| format!("^{t}")).collect()
-}
-
-/// Boundary-commit shas (`-`-prefixed lines) from `rev-list` output.
-fn boundary_shas(out: &str) -> Vec<String> {
-    let mut bases: Vec<String> = out
-        .lines()
-        .filter_map(|l| l.strip_prefix('-'))
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
-    bases.sort();
-    bases.dedup();
-    bases
+/// Common-ancestor oids of every participant, hex-encoded; empty when
+/// they share no history.
+fn merge_base_shas(repo: &git2::Repository, set: &[git2::Oid]) -> Vec<String> {
+    match repo.merge_bases_many(set) {
+        Ok(arr) => arr.iter().map(|o| o.to_string()).collect(),
+        Err(_) => Vec::new(),
+    }
 }
 
 /// Remove every base that is a proper ancestor of another base: the
@@ -147,17 +177,4 @@ fn drop_ancestor_bases(dir: Option<&Path>, mut bases: Vec<String>) -> Vec<String
         bases.remove(i);
     }
     bases
-}
-
-/// The boundary base with the newest committer date.
-fn newest_by_commit_time_in(dir: Option<&Path>, bases: &[String]) -> Option<String> {
-    bases
-        .iter()
-        .max_by_key(|b| {
-            git_in(dir, &["show", "-s", "--format=%ct", b])
-                .ok()
-                .and_then(|s| s.trim().parse::<i64>().ok())
-                .unwrap_or(0)
-        })
-        .cloned()
 }
