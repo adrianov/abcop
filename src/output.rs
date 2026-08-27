@@ -68,14 +68,26 @@ pub fn print_text(results: &[FileResult], max: f64, elapsed: std::time::Duration
         print_module_size(r);
     }
     println!(
-        "{} files analysed in {:.2}s, {} abc offenses, {} used-once offenses, {} never-used warnings, {} module-size warnings",
+        "{} files analysed in {}, {} abc offenses, {} used-once offenses, {} never-used warnings, {} module-size warnings",
         results.len(),
-        elapsed.as_secs_f64(),
+        summary_secs(elapsed),
         results.iter().map(|r| r.abc.len()).sum::<usize>(),
         results.iter().map(|r| r.used_once.len()).sum::<usize>(),
         results.iter().map(|r| r.never_used.len()).sum::<usize>(),
         results.iter().filter_map(|r| r.oversize).count()
     );
+}
+
+/// Seconds with enough decimals that the fraction always carries a nonzero
+/// digit (`0.003s` instead of `0.00s`); two decimals once measurable there.
+fn summary_secs(elapsed: std::time::Duration) -> String {
+    let s = elapsed.as_secs_f64();
+    let d = if s > 0.0 {
+        ((-s.log10()).ceil() as usize).max(2)
+    } else {
+        2
+    };
+    format!("{:.*}s", d, s)
 }
 
 pub fn print_json(file_count: &usize, results: &[FileResult], elapsed: std::time::Duration) {
@@ -159,4 +171,20 @@ struct JsonOut<'a> {
     files: usize,
     elapsed_ms: u128,
     diagnostics: &'a Vec<Diagnostic>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::summary_secs;
+
+    #[test]
+    fn summary_time_keeps_a_significant_fraction_digit() {
+        assert_eq!(summary_secs(std::time::Duration::from_secs_f64(41.67)), "41.67s");
+        assert_eq!(summary_secs(std::time::Duration::from_secs_f64(0.09)), "0.09s");
+        assert_eq!(summary_secs(std::time::Duration::from_secs_f64(0.0031)), "0.003s");
+        assert_eq!(
+            summary_secs(std::time::Duration::from_secs_f64(0.000_512)),
+            "0.0005s"
+        );
+    }
 }
