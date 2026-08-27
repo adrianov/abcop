@@ -1,6 +1,7 @@
 //! End-to-end assertions over the Dart backend: AbcSize vectors,
 
 use super::{build, never_used_offenses, used_once_offenses};
+use crate::abc::parse_vector;
 use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::dart::DartFile<'static> {
@@ -12,21 +13,10 @@ fn scores(src: &'static str) -> Vec<(String, u32, u32, u32)> {
     super::abc::all_scores(&parse(src))
         .into_iter()
         .map(|o| {
-            let (a, b, c) = vector_nums(&o.vector);
+            let (a, b, c) = parse_vector(&o.vector);
             (o.name, a, b, c)
         })
         .collect()
-}
-
-/// Parse the `"<A, B, C>"` vector field back into numbers.
-fn vector_nums(vector: &str) -> (u32, u32, u32) {
-    let nums = vector.trim_matches(|c| c == '<' || c == '>');
-    let mut it = nums.split(", ");
-    (
-        it.next().unwrap().parse().unwrap(),
-        it.next().unwrap().parse().unwrap(),
-        it.next().unwrap().parse().unwrap(),
-    )
 }
 
 fn used(src: &'static str) -> Vec<String> {

@@ -2,6 +2,7 @@
 //! UsedOnce candidacy and NeverUsed reporting.
 
 use super::{build, never_used_offenses, used_once_offenses};
+use crate::abc::parse_vector;
 use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::phplang::PhpFile<'static> {
@@ -14,14 +15,8 @@ fn scores(src: &'static str) -> Vec<(String, u32, u32, u32)> {
     super::abc::all_scores(&fm)
         .into_iter()
         .map(|o| {
-            let nums = o.vector.trim_matches(|c| c == '<' || c == '>');
-            let mut it = nums.split(", ");
-            (
-                o.name,
-                it.next().unwrap().parse().unwrap(),
-                it.next().unwrap().parse().unwrap(),
-                it.next().unwrap().parse().unwrap(),
-            )
+            let (a, b, c) = parse_vector(&o.vector);
+            (o.name, a, b, c)
         })
         .collect()
 }

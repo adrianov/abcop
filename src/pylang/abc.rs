@@ -3,7 +3,7 @@
 use tree_sitter::Node;
 
 use super::PyFile;
-use crate::abc::{AbcOffense, fmt_vector};
+use crate::abc::{AbcOffense, offense_at};
 
 /// Subtrees that belong to another unit (nested defs/classes score
 /// themselves). Lambdas are NOT boundaries: their single expression rolls
@@ -42,24 +42,25 @@ const C_KINDS: &[&str] = &[
 pub(crate) fn all_scores(fm: &PyFile) -> Vec<AbcOffense> {
     let mut offenses = Vec::new();
     visit_units(fm.tree.root_node(), fm.src, &mut |unit, name| {
-        let Some(body) = unit.child_by_field_name("body") else {
-            return;
-        };
-        let mut t = Tally::default();
-        t.walk(body);
-        let pos = unit.start_position();
-        let raw = ((t.a * t.a + t.b * t.b + t.c * t.c) as f64).sqrt();
-        offenses.push(AbcOffense {
-            line: pos.row + 1,
-            end_line: unit.end_position().row + 1,
-            column: pos.column,
-            name: name.to_string(),
-            score: (raw * 100.0).round() / 100.0,
-            vector: fmt_vector(t.a, t.b, t.c),
-        });
+        if let Some(o) = unit_score(unit, name) {
+            offenses.push(o);
+        }
     });
     offenses.sort_by_key(|o| (o.line, o.column));
     offenses
+}
+
+/// Tally one named unit into its finished offense report.
+fn unit_score(unit: Node, name: &str) -> Option<AbcOffense> {
+    let t = tally_body(unit)?;
+    Some(offense_at(unit, name, t.a, t.b, t.c))
+}
+
+/// Walk a unit's `body` subtree through the accumulator.
+fn tally_body(unit: Node) -> Option<Tally> {
+    let mut t = Tally::default();
+    t.walk(unit.child_by_field_name("body")?);
+    Some(t)
 }
 
 /// Find every named `function_definition` at any depth, including inside
@@ -91,27 +92,39 @@ impl Tally {
             return;
         }
         match n.kind() {
-            "assignment" => {
-                if let Some(left) = n.child_by_field_name("left") {
-                    self.a += count_identifiers(left);
-                }
-            }
+            "assignment" => self.left_targets(n),
             "augmented_assignment" | "named_expression" => self.a += 1,
-            "for_statement" | "for_in_clause" => {
-                self.c += 1;
-                if let Some(left) = n.child_by_field_name("left") {
-                    self.a += count_identifiers(left);
-                }
-            }
-            k => {
-                if B_KINDS.contains(&k) {
-                    self.b += 1;
-                }
-                if C_KINDS.contains(&k) {
-                    self.c += 1;
-                }
-            }
+            "for_statement" | "for_in_clause" => self.loop_head(n),
+            k => self.kind_tally(k),
         }
+        self.descend(n);
+    }
+
+    /// Assignment and loop heads share the left side: every plain
+    /// identifier target written there contributes one A.
+    fn left_targets(&mut self, n: Node) {
+        if let Some(left) = n.child_by_field_name("left") {
+            self.a += count_identifiers(left);
+        }
+    }
+
+    /// Loop heads contribute one C condition on top of their targets.
+    fn loop_head(&mut self, n: Node) {
+        self.c += 1;
+        self.left_targets(n);
+    }
+
+    /// Every other kind buckets into B/C according to the kind tables.
+    fn kind_tally(&mut self, k: &str) {
+        if B_KINDS.contains(&k) {
+            self.b += 1;
+        }
+        if C_KINDS.contains(&k) {
+            self.c += 1;
+        }
+    }
+
+    fn descend(&mut self, n: Node) {
         let mut cursor = n.walk();
         for child in n.children(&mut cursor) {
             self.walk(child);

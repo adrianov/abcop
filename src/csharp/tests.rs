@@ -2,6 +2,7 @@
 //! UsedOnce candidacy and NeverUsed reporting.
 
 use super::{build, never_used_offenses, used_once_offenses};
+use crate::abc::parse_vector;
 use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::csharp::CSharpFile<'static> {
@@ -14,14 +15,8 @@ fn scores(src: &'static str) -> Vec<(String, u32, u32, u32)> {
     super::abc::all_scores(&fm)
         .into_iter()
         .map(|o| {
-            let nums = o.vector.trim_matches(|c| c == '<' || c == '>');
-            let mut it = nums.split(", ");
-            (
-                o.name,
-                it.next().unwrap().parse().unwrap(),
-                it.next().unwrap().parse().unwrap(),
-                it.next().unwrap().parse().unwrap(),
-            )
+            let (a, b, c) = parse_vector(&o.vector);
+            (o.name, a, b, c)
         })
         .collect()
 }
@@ -91,12 +86,13 @@ fn branches_loops_sections_tally_c() {
 
 #[test]
 fn constructors_are_units_and_lambdas_roll_in() {
-    let src = "class K {\n  int seed;\n  K(int seed) {\n\
+    let got = scores(
+        "class K {\n  int seed;\n  K(int seed) {\n\
                \x20   this.seed = seed;\n\
                \x20   System.Func<int,int> s = v => v * 2;\n\
                \x20   Use(s);\n\
-               \x20 }\n}";
-    let got = scores(src);
+               \x20 }\n}",
+    );
     assert_eq!(got.len(), 1);
     // A: the local `s` declarator (`this.seed` is a field target)
     // B: * inside the lambda and the Use(...) invocation

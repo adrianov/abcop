@@ -3,7 +3,7 @@
 use tree_sitter::Node;
 
 use super::GoFile;
-use crate::abc::{AbcOffense, fmt_vector};
+use crate::abc::{AbcOffense, offense_at};
 
 fn node_text<'s>(src: &'s [u8], n: Node<'s>) -> &'s str {
     n.utf8_text(src).unwrap_or("")
@@ -25,46 +25,48 @@ const C_OPERATORS: &[&str] = &["&&", "||", "==", "!=", "<", ">", "<=", ">="];
 /// consistent with other backends' compound assignments.
 const PLAIN_ASSIGN_OPS: &[&str] = &["="];
 
+/// Node kinds that name a scoreable unit.
+const UNIT_KINDS: &[&str] = &["function_declaration", "method_declaration"];
+
 pub(crate) fn all_scores(fm: &GoFile) -> Vec<AbcOffense> {
     let mut offenses = Vec::new();
     visit_units(fm.tree.root_node(), fm.src, &mut |unit, name| {
-        let Some(body) = unit.child_by_field_name("body") else {
-            return;
-        };
-        let mut t = Tally {
-            src: fm.src,
-            ..Default::default()
-        };
-        t.walk(body);
-        let pos = unit.start_position();
-        let raw = ((t.a * t.a + t.b * t.b + t.c * t.c) as f64).sqrt();
-        offenses.push(AbcOffense {
-            line: pos.row + 1,
-            end_line: unit.end_position().row + 1,
-            column: pos.column,
-            name: name.to_string(),
-            score: (raw * 100.0).round() / 100.0,
-            vector: fmt_vector(t.a, t.b, t.c),
-        });
+        push_unit(&mut offenses, fm.src, unit, name);
     });
     offenses.sort_by_key(|o| (o.line, o.column));
     offenses
 }
 
+/// Tally one unit subtree and record its offense entry.
+fn push_unit(out: &mut Vec<AbcOffense>, src: &[u8], unit: Node<'_>, name: &str) {
+    let Some(body) = unit.child_by_field_name("body") else {
+        return;
+    };
+    let mut t = Tally {
+        src,
+        ..Default::default()
+    };
+    t.walk(body);
+    out.push(offense_at(unit, name, t.a, t.b, t.c));
+}
+
 /// Find every named function/method declaration at any depth, including
 /// inside other units' bodies.
 fn visit_units<'t>(n: Node<'t>, src: &'t [u8], f: &mut impl FnMut(Node<'t>, &'t str)) {
-    if matches!(n.kind(), "function_declaration" | "method_declaration") {
-        if let Some(name) = n.child_by_field_name("name") {
-            if let Ok(text) = name.utf8_text(src) {
-                f(n, text);
-            }
+    if UNIT_KINDS.contains(&n.kind()) {
+        if let Some(name) = unit_name(n, src) {
+            f(n, name);
         }
     }
     let mut cursor = n.walk();
     for child in n.children(&mut cursor) {
         visit_units(child, src, f);
     }
+}
+
+/// The declared identifier of a unit node, if its text decodes.
+fn unit_name<'t>(n: Node<'t>, src: &'t [u8]) -> Option<&'t str> {
+    n.child_by_field_name("name")?.utf8_text(src).ok()
 }
 
 #[derive(Default)]
@@ -92,55 +94,62 @@ impl Tally<'_> {
         if is_boundary(n.kind()) {
             return;
         }
+        self.tally(n);
+        let mut cursor = n.walk();
+        for child in n.children(&mut cursor) {
+            self.walk(child);
+        }
+    }
+
+    /// One node's contribution to A/B/C.
+    fn tally(&mut self, n: Node) {
         match n.kind() {
-            // `x := ...` / `x = ...`: one A per written identifier target
-            "short_var_declaration" => {
+            // `x := ...`, `x = ...` and range heads: one A per written
+            // identifier target
+            "short_var_declaration" | "range_clause" => {
                 self.a += count_identifiers(n.child_by_field_name("left"));
             }
-            "assignment_statement" => {
-                let plain =
-                    Self::op_of(self.src, n).is_some_and(|op| PLAIN_ASSIGN_OPS.contains(&op));
-                if plain {
-                    self.a += count_identifiers(n.child_by_field_name("left"));
-                } else {
-                    self.a += 1;
-                }
-            }
+            "assignment_statement" => self.tally_assignment(n),
             "inc_statement" | "dec_statement" => self.a += 1,
             // Declared names are the identifier children before the `=`;
             // everything after it is the value expression.
-            "var_spec" => {
-                let mut c = n.walk();
-                for child in n.children(&mut c) {
-                    let is_named = child.is_named();
-                    let text = node_text(self.src, child);
-                    if !is_named && text == "=" {
-                        break;
-                    }
-                    if is_named && child.kind() == "identifier" {
-                        self.a += 1;
-                    }
-                }
-            }
-            "binary_expression" => {
-                if Self::op_of(self.src, n).is_some_and(|op| C_OPERATORS.contains(&op)) {
-                    self.c += 1;
-                } else {
-                    self.b += 1;
-                }
-            }
+            "var_spec" => self.tally_var_spec(n),
+            "binary_expression" => self.tally_binary(n),
             "if_statement" | "for_statement" => self.c += 1,
-            // range heads bind loop variables exactly like := assignments
-            "range_clause" => {
-                self.a += count_identifiers(n.child_by_field_name("left"));
-            }
             k if k.ends_with("_case") => self.c += 1,
             "call_expression" | "unary_expression" => self.b += 1,
             _ => {}
         }
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
-            self.walk(child);
+    }
+
+    /// Plain `=`/`:=` writes each target once; every other operator is
+    /// a single rewrite regardless of target count.
+    fn tally_assignment(&mut self, n: Node) {
+        if Self::op_of(self.src, n).is_some_and(|op| PLAIN_ASSIGN_OPS.contains(&op)) {
+            self.a += count_identifiers(n.child_by_field_name("left"));
+        } else {
+            self.a += 1;
+        }
+    }
+
+    fn tally_var_spec(&mut self, n: Node) {
+        let mut c = n.walk();
+        for child in n.children(&mut c) {
+            if !child.is_named() && node_text(self.src, child) == "=" {
+                break;
+            }
+            if child.is_named() && child.kind() == "identifier" {
+                self.a += 1;
+            }
+        }
+    }
+
+    /// `&&`/`||`/comparisons branch; remaining binaries just compute.
+    fn tally_binary(&mut self, n: Node) {
+        if Self::op_of(self.src, n).is_some_and(|op| C_OPERATORS.contains(&op)) {
+            self.c += 1;
+        } else {
+            self.b += 1;
         }
     }
 }

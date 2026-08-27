@@ -3,7 +3,7 @@
 use tree_sitter::Node;
 
 use super::SolFile;
-use crate::abc::{AbcOffense, fmt_vector};
+use crate::abc::{AbcOffense, offense_at};
 
 const UNIT_KINDS: &[&str] = &[
     "function_definition",
@@ -22,58 +22,59 @@ const C_OPERATORS: &[&str] = &["&&", "||", "==", "!=", "<", ">", "<=", ">="];
 pub(crate) fn all_scores(fm: &SolFile) -> Vec<AbcOffense> {
     let mut offenses = Vec::new();
     visit_units(fm.tree.root_node(), fm.src, &mut |unit, name| {
-        let Some(body) = unit.child_by_field_name("body") else {
-            return;
-        };
-        let mut t = Tally {
-            src: fm.src,
-            ..Default::default()
-        };
-        t.walk(body);
-        let pos = unit.start_position();
-        let raw = ((t.a * t.a + t.b * t.b + t.c * t.c) as f64).sqrt();
-        offenses.push(AbcOffense {
-            line: pos.row + 1,
-            end_line: unit.end_position().row + 1,
-            column: pos.column,
-            name: name.to_string(),
-            score: (raw * 100.0).round() / 100.0,
-            vector: fmt_vector(t.a, t.b, t.c),
-        });
+        if let Some(o) = unit_offense(fm, unit, name) {
+            offenses.push(o);
+        }
     });
     offenses.sort_by_key(|o| (o.line, o.column));
     offenses
 }
 
+/// Score one unit body and build its offense record; units without a
+/// body yield nothing.
+fn unit_offense(fm: &SolFile, unit: Node, name: &str) -> Option<AbcOffense> {
+    let body = unit.child_by_field_name("body")?;
+    let mut t = Tally {
+        src: fm.src,
+        ..Default::default()
+    };
+    t.walk(body);
+    Some(offense_at(unit, name, t.a, t.b, t.c))
+}
+
 fn visit_units<'t>(n: Node<'t>, src: &'t [u8], f: &mut impl FnMut(Node<'t>, &'t str)) {
     if is_boundary(n.kind()) {
-        let name = match n.child_by_field_name("name") {
-            Some(name) => Some(name),
-            // constructors are anonymous: report them under the
-            // enclosing contract's name
-            None => {
-                let mut anc = n.parent();
-                let mut found = None;
-                while let Some(a) = anc {
-                    if a.kind() == "contract_declaration" {
-                        found = a.child_by_field_name("name");
-                        break;
-                    }
-                    anc = a.parent();
-                }
-                found
-            }
-        };
-        if let Some(name) = name {
-            if let Ok(text) = name.utf8_text(src) {
-                f(n, text);
-            }
+        if let Some(text) = unit_name(n, src) {
+            f(n, text);
         }
     }
     let mut cursor = n.walk();
     for child in n.children(&mut cursor) {
         visit_units(child, src, f);
     }
+}
+
+/// Resolve a unit's display name; constructors are anonymous and
+/// report under the enclosing contract's name.
+fn unit_name<'t>(n: Node<'t>, src: &'t [u8]) -> Option<&'t str> {
+    let name = match n.child_by_field_name("name") {
+        Some(name) => name,
+        // constructors are anonymous: report them under the
+        // enclosing contract's name
+        None => {
+            let mut anc = n.parent();
+            let mut found = None;
+            while let Some(a) = anc {
+                if a.kind() == "contract_declaration" {
+                    found = a.child_by_field_name("name");
+                    break;
+                }
+                anc = a.parent();
+            }
+            found?
+        }
+    };
+    name.utf8_text(src).ok()
 }
 
 #[derive(Default)]
@@ -101,18 +102,19 @@ impl Tally<'_> {
         if is_boundary(n.kind()) {
             return;
         }
+        self.tally_node(n);
+        let mut cursor = n.walk();
+        for child in n.children(&mut cursor) {
+            self.walk(child);
+        }
+    }
+
+    fn tally_node(&mut self, n: Node) {
         match n.kind() {
             // one A per declared local (tuple heads expand naturally --
             // each element is its own variable_declaration)
             "variable_declaration" => self.a += 1,
-            "assignment_expression" => {
-                // only plain-variable targets count; state mappings and
-                // member writes contribute nothing here (their operands
-                // are walked separately)
-                if let Some(left) = n.child_by_field_name("left") {
-                    self.a += count_plain_identifiers(left);
-                }
-            }
+            "assignment_expression" => self.tally_assignment(n),
             "augmented_assignment_expression" | "update_expression" => self.a += 1,
             "if_statement"
             | "for_statement"
@@ -120,31 +122,42 @@ impl Tally<'_> {
             | "do_while_statement"
             | "catch_clause"
             | "conditional_expression" => self.c += 1,
-            "binary_expression" => {
-                let is_c = self
-                    .op_of(n)
-                    .or_else(|| self.anon_op(n))
-                    .is_some_and(|op| C_OPERATORS.contains(&op));
-                if is_c {
-                    self.c += 1;
-                } else {
-                    self.b += 1;
-                }
-            }
-            k if k.contains("call_expression")
-                || k == "new_expression"
-                || k == "emit_statement"
-                || k.ends_with("unary_op_expression")
-                || k == "unary_expression" =>
-            {
-                self.b += 1
-            }
+            "binary_expression" => self.tally_binary(n),
+            k if Self::counts_as_b(k) => self.b += 1,
             _ => {}
         }
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
-            self.walk(child);
+    }
+
+    /// Only plain-variable targets count; state mappings and member
+    /// writes contribute nothing here (their operands are walked
+    /// separately).
+    fn tally_assignment(&mut self, n: Node) {
+        if let Some(left) = n.child_by_field_name("left") {
+            self.a += count_plain_identifiers(left);
         }
+    }
+
+    /// Binary operators split between B and C depending on the
+    /// operator.
+    fn tally_binary(&mut self, n: Node) {
+        let is_c = self
+            .op_of(n)
+            .or_else(|| self.anon_op(n))
+            .is_some_and(|op| C_OPERATORS.contains(&op));
+        if is_c {
+            self.c += 1;
+        } else {
+            self.b += 1;
+        }
+    }
+
+    /// Calls, constructor calls, emits and unary operations all count a B.
+    fn counts_as_b(k: &str) -> bool {
+        k.contains("call_expression")
+            || k == "new_expression"
+            || k == "emit_statement"
+            || k.ends_with("unary_op_expression")
+            || k == "unary_expression"
     }
 }
 

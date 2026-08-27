@@ -3,7 +3,7 @@
 use tree_sitter::Node;
 
 use super::PhpFile;
-use crate::abc::{AbcOffense, fmt_vector};
+use crate::abc::{AbcOffense, offense_at};
 
 /// Subtrees that belong to another unit. Anonymous and arrow functions
 /// roll into the enclosing unit like Ruby blocks / Rust closures.
@@ -23,27 +23,23 @@ const C_OPERATORS: &[&str] = &[
 pub(crate) fn all_scores(fm: &PhpFile) -> Vec<AbcOffense> {
     let mut offenses = Vec::new();
     visit_units(fm.tree.root_node(), fm.src, &mut |unit, name| {
-        let Some(body) = unit.child_by_field_name("body") else {
-            return;
-        };
-        let mut t = Tally {
-            src: fm.src,
-            ..Default::default()
-        };
-        t.walk(body);
-        let pos = unit.start_position();
-        let raw = ((t.a * t.a + t.b * t.b + t.c * t.c) as f64).sqrt();
-        offenses.push(AbcOffense {
-            line: pos.row + 1,
-            end_line: unit.end_position().row + 1,
-            column: pos.column,
-            name: name.to_string(),
-            score: (raw * 100.0).round() / 100.0,
-            vector: fmt_vector(t.a, t.b, t.c),
-        });
+        if let Some(offense) = score_unit(unit, name, fm.src) {
+            offenses.push(offense);
+        }
     });
     offenses.sort_by_key(|o| (o.line, o.column));
     offenses
+}
+
+/// Tally one unit's body; a unit without a body yields no offense.
+fn score_unit(unit: Node, name: &str, src: &[u8]) -> Option<AbcOffense> {
+    let body = unit.child_by_field_name("body")?;
+    let mut t = Tally {
+        src,
+        ..Default::default()
+    };
+    t.walk(body);
+    Some(offense_at(unit, name, t.a, t.b, t.c))
 }
 
 fn visit_units<'t>(n: Node<'t>, src: &'t [u8], f: &mut impl FnMut(Node<'t>, &'t str)) {
@@ -79,22 +75,9 @@ impl Tally<'_> {
             return;
         }
         match n.kind() {
-            // plain `=`: one A per written identifier target
-            "assignment_expression" => {
-                if let Some(left) = n.child_by_field_name("left")
-                    && left.kind() != "member_access_expression"
-                {
-                    self.a += count_identifiers(left);
-                }
-            }
+            "assignment_expression" => self.tally_assignment(n),
             "augmented_assignment_expression" => self.a += 1,
-            // foreach heads bind loop variables exactly like assignments
-            "foreach_statement" => {
-                self.c += 1;
-                if let Some(pair) = child_of_kind(n, "pair") {
-                    self.a += count_identifiers(pair);
-                }
-            }
+            "foreach_statement" => self.tally_foreach(n),
             "if_statement"
             | "else_if_clause"
             | "while_statement"
@@ -106,14 +89,7 @@ impl Tally<'_> {
             | "match_default_expression"
             | "catch_clause"
             | "conditional_expression" => self.c += 1,
-            "binary_expression" => {
-                let is_c = self.op_of(n).is_some_and(|op| C_OPERATORS.contains(&op));
-                if is_c {
-                    self.c += 1;
-                } else {
-                    self.b += 1;
-                }
-            }
+            "binary_expression" => self.tally_binary(n),
             k if k.contains("call_expression")
                 || matches!(
                     k,
@@ -132,6 +108,32 @@ impl Tally<'_> {
         let mut cursor = n.walk();
         for child in n.children(&mut cursor) {
             self.walk(child);
+        }
+    }
+
+    /// plain `=`: one A per written identifier target
+    fn tally_assignment(&mut self, n: Node) {
+        if let Some(left) = n.child_by_field_name("left")
+            && left.kind() != "member_access_expression"
+        {
+            self.a += count_identifiers(left);
+        }
+    }
+
+    /// foreach heads bind loop variables exactly like assignments
+    fn tally_foreach(&mut self, n: Node) {
+        self.c += 1;
+        if let Some(pair) = child_of_kind(n, "pair") {
+            self.a += count_identifiers(pair);
+        }
+    }
+
+    /// comparison/logical operators count toward C; the rest toward B
+    fn tally_binary(&mut self, n: Node) {
+        if self.op_of(n).is_some_and(|op| C_OPERATORS.contains(&op)) {
+            self.c += 1;
+        } else {
+            self.b += 1;
         }
     }
 }

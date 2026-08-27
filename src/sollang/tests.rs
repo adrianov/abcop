@@ -2,6 +2,7 @@
 //! UsedOnce candidacy and NeverUsed reporting.
 
 use super::{build, never_used_offenses, used_once_offenses};
+use crate::abc::parse_vector;
 use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::sollang::SolFile<'static> {
@@ -10,18 +11,11 @@ fn parse(src: &'static str) -> crate::sollang::SolFile<'static> {
 }
 
 fn scores(src: &'static str) -> Vec<(String, u32, u32, u32)> {
-    let fm = parse(src);
-    super::abc::all_scores(&fm)
+    super::abc::all_scores(&parse(src))
         .into_iter()
         .map(|o| {
-            let nums = o.vector.trim_matches(|c| c == '<' || c == '>');
-            let mut it = nums.split(", ");
-            (
-                o.name,
-                it.next().unwrap().parse().unwrap(),
-                it.next().unwrap().parse().unwrap(),
-                it.next().unwrap().parse().unwrap(),
-            )
+            let (a, b, c) = parse_vector(&o.vector);
+            (o.name, a, b, c)
         })
         .collect()
 }
@@ -86,8 +80,7 @@ fn state_writes_bind_nothing() {
 
 #[test]
 fn constructors_are_units() {
-    let src = "contract T {\n  constructor() {\n    uint256 x = 1 + 2;\n    x;\n  }\n}";
-    let got = scores(src);
+    let got = scores("contract T {\n  constructor() {\n    uint256 x = 1 + 2;\n    x;\n  }\n}");
     assert_eq!(got.len(), 1);
     assert_eq!(got[0], ("T".to_string(), 1, 1, 0));
 }

@@ -13,7 +13,7 @@ use tree_sitter::Node;
 
 use super::DartFile;
 use super::tally::{Tally, UNIT_KINDS};
-use crate::abc::{AbcOffense, fmt_vector};
+use crate::abc::{AbcOffense, offense_at};
 
 pub(crate) fn all_scores(fm: &DartFile) -> Vec<AbcOffense> {
     let mut offenses = Vec::new();
@@ -26,24 +26,10 @@ pub(crate) fn all_scores(fm: &DartFile) -> Vec<AbcOffense> {
             ..Default::default()
         };
         t.walk(body);
-        offenses.push(offense(unit, name, &t));
+        offenses.push(offense_at(unit, name, t.a, t.b, t.c));
     });
     offenses.sort_by_key(|o| (o.line, o.column));
     offenses
-}
-
-/// Assemble one finished offense, positioned at its unit root.
-fn offense(unit: Node<'_>, name: &str, t: &Tally<'_>) -> AbcOffense {
-    let pos = unit.start_position();
-    let raw = ((t.a * t.a + t.b * t.b + t.c * t.c) as f64).sqrt();
-    AbcOffense {
-        line: pos.row + 1,
-        end_line: unit.end_position().row + 1,
-        column: pos.column,
-        name: name.to_string(),
-        score: (raw * 100.0).round() / 100.0,
-        vector: fmt_vector(t.a, t.b, t.c),
-    }
 }
 
 fn visit_units<'t>(n: Node<'t>, src: &'t [u8], f: &mut impl FnMut(Node<'t>, &str)) {

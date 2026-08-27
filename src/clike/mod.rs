@@ -29,7 +29,7 @@ use std::collections::HashSet;
 
 use tree_sitter::{Node, Tree};
 
-use crate::abc::{AbcOffense, fmt_vector};
+use crate::abc::{AbcOffense, offense_at};
 use crate::never_used::NeverUsedOffense;
 use crate::paths::Lang;
 use crate::used_once::UsedOnceOffense;
@@ -186,14 +186,5 @@ fn unit_offense(
 /// Vector and score for a finished tally, positioned at its unit root.
 fn score_offense(unit: Node, name: String, t: Tally) -> AbcOffense {
     let (a, b, c) = t.counts();
-    let pos = unit.start_position();
-    let raw = ((a * a + b * b + c * c) as f64).sqrt();
-    AbcOffense {
-        line: pos.row + 1,
-        end_line: unit.end_position().row + 1,
-        column: pos.column,
-        name,
-        score: (raw * 100.0).round() / 100.0,
-        vector: fmt_vector(a, b, c),
-    }
+    offense_at(unit, &name, a, b, c)
 }

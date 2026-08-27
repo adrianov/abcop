@@ -3,7 +3,7 @@
 use tree_sitter::Node;
 
 use super::CSharpFile;
-use crate::abc::{AbcOffense, fmt_vector};
+use crate::abc::{AbcOffense, offense_at};
 
 /// Subtrees that belong to another unit; lambdas and local functions
 /// roll into the enclosing unit.
@@ -21,41 +21,40 @@ const C_OPERATORS: &[&str] = &["&&", "||", "==", "!=", "<", ">", "<=", ">=", "is
 pub(crate) fn all_scores(fm: &CSharpFile) -> Vec<AbcOffense> {
     let mut offenses = Vec::new();
     visit_units(fm.tree.root_node(), fm.src, &mut |unit, name| {
-        let Some(body) = unit.child_by_field_name("body") else {
-            return;
-        };
-        let mut t = Tally {
-            src: fm.src,
-            ..Default::default()
-        };
-        t.walk(body);
-        let pos = unit.start_position();
-        let raw = ((t.a * t.a + t.b * t.b + t.c * t.c) as f64).sqrt();
-        offenses.push(AbcOffense {
-            line: pos.row + 1,
-            end_line: unit.end_position().row + 1,
-            column: pos.column,
-            name: name.to_string(),
-            score: (raw * 100.0).round() / 100.0,
-            vector: fmt_vector(t.a, t.b, t.c),
-        });
+        push_unit(&mut offenses, fm.src, unit, name);
     });
     offenses.sort_by_key(|o| (o.line, o.column));
     offenses
 }
 
+/// Tally one unit subtree and record its offense entry.
+fn push_unit(out: &mut Vec<AbcOffense>, src: &[u8], unit: Node<'_>, name: &str) {
+    let Some(body) = unit.child_by_field_name("body") else {
+        return;
+    };
+    let mut t = Tally {
+        src,
+        ..Default::default()
+    };
+    t.walk(body);
+    out.push(offense_at(unit, name, t.a, t.b, t.c));
+}
+
 fn visit_units<'t>(n: Node<'t>, src: &'t [u8], f: &mut impl FnMut(Node<'t>, &'t str)) {
     if UNIT_KINDS.contains(&n.kind()) {
-        if let Some(name) = n.child_by_field_name("name") {
-            if let Ok(text) = name.utf8_text(src) {
-                f(n, text);
-            }
+        if let Some(name) = unit_name(n, src) {
+            f(n, name);
         }
     }
     let mut cursor = n.walk();
     for child in n.children(&mut cursor) {
         visit_units(child, src, f);
     }
+}
+
+/// The declared identifier of a unit node, if its text decodes.
+fn unit_name<'t>(n: Node<'t>, src: &'t [u8]) -> Option<&'t str> {
+    n.child_by_field_name("name")?.utf8_text(src).ok()
 }
 
 #[derive(Default)]
@@ -77,35 +76,23 @@ impl Tally<'_> {
         if is_boundary(n.kind()) {
             return;
         }
+        self.tally(n);
+        let mut cursor = n.walk();
+        for child in n.children(&mut cursor) {
+            self.walk(child);
+        }
+    }
+
+    /// One node's contribution to A/B/C.
+    fn tally(&mut self, n: Node) {
         match n.kind() {
             // one A per declared local
             "variable_declarator" => self.a += 1,
-            "assignment_expression" => {
-                let plain = self.op_of(n) == Some("=");
-                if plain
-                    && n.child_by_field_name("left")
-                        .is_some_and(|l| l.kind() == "identifier")
-                {
-                    self.a += 1;
-                } else if !plain {
-                    self.a += 1;
-                }
-            }
-            // ++/-- rewrite a variable exactly like Go's inc/dec
-            k if k.ends_with("unary_expression") => {
-                let incdec = matches!(self.op_of(n), Some("++" | "--"));
-                if incdec {
-                    self.a += 1;
-                } else {
-                    self.b += 1;
-                }
-            }
-            "foreach_statement" => {
-                self.c += 1;
-                if let Some(left) = n.child_by_field_name("left") {
-                    self.a += u32::from(left.kind() == "identifier");
-                }
-            }
+            "assignment_expression" => self.tally_assignment(n),
+            // ++/-- rewrite a variable exactly like Go's inc/dec; other
+            // unaries are ordinary value computation.
+            k if k.ends_with("unary_expression") => self.tally_unary(n),
+            "foreach_statement" => self.tally_foreach(n),
             "if_statement"
             | "for_statement"
             | "while_statement"
@@ -113,21 +100,51 @@ impl Tally<'_> {
             | "switch_section"
             | "catch_clause"
             | "conditional_expression" => self.c += 1,
-            "binary_expression" => {
-                if self.op_of(n).is_some_and(|op| C_OPERATORS.contains(&op)) {
-                    self.c += 1;
-                } else {
-                    self.b += 1;
-                }
-            }
+            "binary_expression" => self.tally_binary(n),
             k if k.contains("invocation_expression") || k == "object_creation_expression" => {
                 self.b += 1
             }
             _ => {}
         }
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
-            self.walk(child);
+    }
+
+    /// Plain `=` into a bare identifier writes one variable; every
+    /// other shape (compound operator, reference target) still counts a
+    /// single rewrite.
+    fn tally_assignment(&mut self, n: Node) {
+        let plain = self.op_of(n) == Some("=");
+        if plain
+            && n.child_by_field_name("left")
+                .is_some_and(|l| l.kind() == "identifier")
+        {
+            self.a += 1;
+        } else if !plain {
+            self.a += 1;
+        }
+    }
+
+    fn tally_unary(&mut self, n: Node) {
+        if matches!(self.op_of(n), Some("++" | "--")) {
+            self.a += 1;
+        } else {
+            self.b += 1;
+        }
+    }
+
+    /// The foreach head branches once and binds its loop variable.
+    fn tally_foreach(&mut self, n: Node) {
+        self.c += 1;
+        if let Some(left) = n.child_by_field_name("left") {
+            self.a += u32::from(left.kind() == "identifier");
+        }
+    }
+
+    /// `&&`/`||`/comparisons branch; remaining binaries just compute.
+    fn tally_binary(&mut self, n: Node) {
+        if self.op_of(n).is_some_and(|op| C_OPERATORS.contains(&op)) {
+            self.c += 1;
+        } else {
+            self.b += 1;
         }
     }
 }

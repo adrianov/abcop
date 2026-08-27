@@ -5,8 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use tree_sitter::Node;
 
-use super::AbcOffense;
-use super::fmt_vector;
+use super::{AbcOffense, offense_at};
 use crate::model::FileModel;
 
 pub(crate) struct Calc<'f> {
@@ -80,7 +79,7 @@ pub(super) fn build_ctx(fm: &FileModel) -> ScoreCtx {
     }
 }
 
-pub(super) fn score_unit(ctx: &ScoreCtx, fm: &FileModel, unit: Node, name: &str) -> AbcOffense {
+pub(crate) fn score_unit(ctx: &ScoreCtx, fm: &FileModel, unit: Node, name: &str) -> AbcOffense {
     let mut calc = Calc {
         fm,
         csend_recv: &ctx.csend_recv,
@@ -93,20 +92,7 @@ pub(super) fn score_unit(ctx: &ScoreCtx, fm: &FileModel, unit: Node, name: &str)
     if let Some(body) = unit.child_by_field_name("body") {
         calc.walk(body);
     }
-    finished_offense(calc, unit, name)
-}
-
-fn finished_offense(calc: Calc<'_>, unit: Node, name: &str) -> AbcOffense {
-    let raw = ((calc.a * calc.a + calc.b * calc.b + calc.c * calc.c) as f64).sqrt();
-    let pos = unit.start_position();
-    AbcOffense {
-        line: pos.row + 1,
-        end_line: unit.end_position().row + 1,
-        column: pos.column,
-        name: name.to_string(),
-        score: (raw * 100.0).round() / 100.0,
-        vector: fmt_vector(calc.a, calc.b, calc.c),
-    }
+    offense_at(unit, name, calc.a, calc.b, calc.c)
 }
 
 pub(super) fn visit_units(fm: &FileModel, n: Node, f: &mut impl FnMut(Node, &str)) {

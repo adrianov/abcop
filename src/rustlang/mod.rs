@@ -30,7 +30,7 @@ mod usedonce;
 
 use tree_sitter::Node;
 
-use crate::abc::{AbcOffense, fmt_vector};
+use crate::abc::{AbcOffense, offense_at};
 
 pub use builder::build;
 pub use pure::never_used_offenses;
@@ -76,20 +76,6 @@ fn score_unit(fm: &RustFile, unit: Node, name: &str) -> AbcOffense {
         return offense_at(unit, name, a, b, c);
     }
     offense_at(unit, name, 0, 0, 0)
-}
-
-/// Position an AbcOffense at its unit root with rounded score and vector.
-fn offense_at(unit: Node, name: &str, a: u32, b: u32, c: u32) -> AbcOffense {
-    let raw = ((a * a + b * b + c * c) as f64).sqrt();
-    let pos = unit.start_position();
-    AbcOffense {
-        line: pos.row + 1,
-        end_line: unit.end_position().row + 1,
-        column: pos.column,
-        name: name.to_string(),
-        score: (raw * 100.0).round() / 100.0,
-        vector: fmt_vector(a, b, c),
-    }
 }
 
 pub fn all_scores(fm: &RustFile) -> Vec<AbcOffense> {

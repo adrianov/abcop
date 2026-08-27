@@ -11,6 +11,8 @@ mod count;
 mod flow;
 mod helpers;
 
+use tree_sitter::Node;
+
 use crate::model::FileModel;
 
 #[derive(PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -25,6 +27,35 @@ pub struct AbcOffense {
 
 pub(crate) fn fmt_vector(a: u32, b: u32, c: u32) -> String {
     format!("<{}, {}, {}>", a, b, c)
+}
+
+/// Position an AbcOffense at its unit root with rounded score and
+/// vector -- the single RuboCop-compatible assembly point shared by
+/// every language backend.
+pub(crate) fn offense_at(unit: Node<'_>, name: &str, a: u32, b: u32, c: u32) -> AbcOffense {
+    let raw = ((a * a + b * b + c * c) as f64).sqrt();
+    let pos = unit.start_position();
+    AbcOffense {
+        line: pos.row + 1,
+        end_line: unit.end_position().row + 1,
+        column: pos.column,
+        name: name.to_string(),
+        score: (raw * 100.0).round() / 100.0,
+        vector: fmt_vector(a, b, c),
+    }
+}
+
+/// Parse an `"<A, B, C>"` metric vector into its three numbers; the
+/// inverse of [`fmt_vector`], used by backend assertions.
+#[cfg(test)]
+pub(crate) fn parse_vector(vector: &str) -> (u32, u32, u32) {
+    let nums = vector.trim_matches(|c| c == '<' || c == '>');
+    let mut it = nums.split(", ");
+    (
+        it.next().unwrap().parse().unwrap(),
+        it.next().unwrap().parse().unwrap(),
+        it.next().unwrap().parse().unwrap(),
+    )
 }
 
 /// C `%g`-style formatting with 4 significant digits.

@@ -2,6 +2,7 @@
 //! UsedOnce candidacy and NeverUsed reporting.
 
 use super::{build, never_used_offenses, used_once_offenses};
+use crate::abc::parse_vector;
 use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::javalang::JavaFile<'static> {
@@ -10,18 +11,11 @@ fn parse(src: &'static str) -> crate::javalang::JavaFile<'static> {
 }
 
 fn scores(src: &'static str) -> Vec<(String, u32, u32, u32)> {
-    let fm = parse(src);
-    super::abc::all_scores(&fm)
+    super::abc::all_scores(&parse(src))
         .into_iter()
         .map(|o| {
-            let nums = o.vector.trim_matches(|c| c == '<' || c == '>');
-            let mut it = nums.split(", ");
-            (
-                o.name,
-                it.next().unwrap().parse().unwrap(),
-                it.next().unwrap().parse().unwrap(),
-                it.next().unwrap().parse().unwrap(),
-            )
+            let (a, b, c) = parse_vector(&o.vector);
+            (o.name, a, b, c)
         })
         .collect()
 }
@@ -73,12 +67,13 @@ fn branches_loops_switch_labels_tally_c() {
 
 #[test]
 fn constructors_are_units_and_lambdas_roll_in() {
-    let src = "class K {\n  int seed;\n  K(int seed) {\n\
-               \x20   this.seed = seed;\n\
-               \x20   java.util.function.IntSupplier s = () -> 40 + 2;\n\
-               \x20   useLater(s);\n\
-               \x20 }\n}";
-    let got = scores(src);
+    let got = scores(
+        "class K {\n  int seed;\n  K(int seed) {\n\
+                     \x20   this.seed = seed;\n\
+                     \x20   java.util.function.IntSupplier s = () -> 40 + 2;\n\
+                     \x20   useLater(s);\n\
+                     \x20 }\n}",
+    );
     assert_eq!(got.len(), 1);
     // A: the local `s` declarator (field target binds nothing)
     // B: + inside the lambda and the useLater(...) invocation

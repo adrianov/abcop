@@ -3,7 +3,7 @@
 use tree_sitter::Node;
 
 use super::JavaFile;
-use crate::abc::{AbcOffense, fmt_vector};
+use crate::abc::{AbcOffense, offense_at};
 
 /// Subtrees that belong to another unit; anonymous class bodies roll up
 /// into the enclosing unit, whose nested methods still score themselves.
@@ -20,41 +20,41 @@ const C_OPERATORS: &[&str] = &["&&", "||", "==", "!=", "<", ">", "<=", ">=", "in
 pub(crate) fn all_scores(fm: &JavaFile) -> Vec<AbcOffense> {
     let mut offenses = Vec::new();
     visit_units(fm.tree.root_node(), fm.src, &mut |unit, name| {
-        let Some(body) = unit.child_by_field_name("body") else {
-            return;
-        };
-        let mut t = Tally {
-            src: fm.src,
-            ..Default::default()
-        };
-        t.walk(body);
-        let pos = unit.start_position();
-        let raw = ((t.a * t.a + t.b * t.b + t.c * t.c) as f64).sqrt();
-        offenses.push(AbcOffense {
-            line: pos.row + 1,
-            end_line: unit.end_position().row + 1,
-            column: pos.column,
-            name: name.to_string(),
-            score: (raw * 100.0).round() / 100.0,
-            vector: fmt_vector(t.a, t.b, t.c),
-        });
+        score_unit(unit, name, fm.src, &mut offenses);
     });
     offenses.sort_by_key(|o| (o.line, o.column));
     offenses
 }
 
 fn visit_units<'t>(n: Node<'t>, src: &'t [u8], f: &mut impl FnMut(Node<'t>, &'t str)) {
-    if UNIT_KINDS.contains(&n.kind()) {
-        if let Some(name) = n.child_by_field_name("name") {
-            if let Ok(text) = name.utf8_text(src) {
-                f(n, text);
-            }
-        }
+    if UNIT_KINDS.contains(&n.kind())
+        && let Some(name) = unit_name(n, src)
+    {
+        f(n, name);
     }
     let mut cursor = n.walk();
     for child in n.children(&mut cursor) {
         visit_units(child, src, f);
     }
+}
+
+/// The declared identifier of a unit node, if its text decodes.
+fn unit_name<'t>(n: Node<'t>, src: &'t [u8]) -> Option<&'t str> {
+    n.child_by_field_name("name")
+        .and_then(|name| name.utf8_text(src).ok())
+}
+
+/// Tally one unit subtree and record its offense entry.
+fn score_unit(unit: Node, name: &str, src: &[u8], out: &mut Vec<AbcOffense>) {
+    let Some(body) = unit.child_by_field_name("body") else {
+        return;
+    };
+    let (a, b, c) = Tally {
+        src,
+        ..Default::default()
+    }
+    .over(body);
+    out.push(offense_at(unit, name, a, b, c));
 }
 
 #[derive(Default)]
@@ -66,66 +66,91 @@ struct Tally<'s> {
 }
 
 impl Tally<'_> {
-    fn op_is_c<'n>(&self, n: Node<'n>) -> bool {
+    /// Score a whole unit body, consuming the tally.
+    fn over(mut self, body: Node) -> (u32, u32, u32) {
+        self.walk(body);
+        (self.a, self.b, self.c)
+    }
+
+    /// The node's textual operator, or "" when there is none.
+    fn op_text(&self, n: Node) -> &str {
         n.child_by_field_name("operator")
             .and_then(|o| o.utf8_text(self.src).ok())
-            .is_some_and(|op| C_OPERATORS.contains(&op))
+            .unwrap_or("")
+    }
+
+    fn op_is_c(&self, n: Node) -> bool {
+        C_OPERATORS.contains(&self.op_text(n))
     }
 
     fn walk(&mut self, n: Node) {
         if is_boundary(n.kind()) {
             return;
         }
-        match n.kind() {
-            // one A per declared local
-            "variable_declarator" => self.a += 1,
-            "assignment_expression" => {
-                // plain `=` counts per target; compound reads + rewrites
-                let plain = n
-                    .child_by_field_name("operator")
-                    .and_then(|o| o.utf8_text(self.src).ok())
-                    == Some("=");
-                if plain {
-                    if let Some(left) = n.child_by_field_name("left")
-                        && left.kind() == "identifier"
-                    {
-                        self.a += 1;
-                    }
-                } else {
-                    self.a += 1;
-                }
-            }
-            // enhanced-for heads bind loop variables like declarations
-            "enhanced_for_statement" => {
-                self.c += 1;
-                if let Some(name) = n.child_by_field_name("name") {
-                    self.a += u32::from(name.kind() == "identifier");
-                }
-            }
-            // i++ / --i rewrite a variable, exactly like Go's inc/dec
-            "update_expression" => self.a += 1,
-            "if_statement" | "for_statement" | "while_statement" | "do_statement"
-            | "switch_label" | "catch_clause" => self.c += 1,
-            "ternary_expression" => self.c += 1,
-            "binary_expression" => {
-                if self.op_is_c(n) {
-                    self.c += 1;
-                } else {
-                    self.b += 1;
-                }
-            }
-            k if k.contains("invocation")
-                || k == "object_creation_expression"
-                || k == "explicit_constructor_invocation"
-                || k == "unary_expression" =>
-            {
-                self.b += 1
-            }
-            _ => {}
-        }
+        self.tally(n);
         let mut cursor = n.walk();
         for child in n.children(&mut cursor) {
             self.walk(child);
         }
     }
+
+    /// Attribute one node to its A/B/C slot by kind.
+    fn tally(&mut self, n: Node) {
+        match n.kind() {
+            // one A per declared local and per i++ / --i rewrite,
+            // exactly like Go's inc/dec
+            "variable_declarator" | "update_expression" => self.a += 1,
+            "assignment_expression" => self.assignment(n),
+            // enhanced-for heads bind loop variables like declarations
+            "enhanced_for_statement" => self.enhanced_for(n),
+            "binary_expression" => self.binary(n),
+            // selection and iteration heads, switch labels, catch clauses
+            "if_statement" | "for_statement" | "while_statement" | "do_statement"
+            | "switch_label" | "catch_clause" | "ternary_expression" => self.c += 1,
+            k if is_b_op(k) => self.b += 1,
+            _ => {}
+        }
+    }
+
+    /// Plain `=` counts one A per simple identifier target; compound
+    /// operators rewrite-and-read regardless of the target shape.
+    fn assignment(&mut self, n: Node) {
+        let plain = self.op_text(n) == "=";
+        if plain {
+            if let Some(left) = n.child_by_field_name("left")
+                && left.kind() == "identifier"
+            {
+                self.a += 1;
+            }
+        } else {
+            self.a += 1;
+        }
+    }
+
+    fn enhanced_for(&mut self, n: Node) {
+        self.c += 1;
+        if let Some(name) = n.child_by_field_name("name") {
+            self.a += u32::from(name.kind() == "identifier");
+        }
+    }
+
+    /// Comparisons, logical operators and `instanceof` are control flow
+    /// (C); every other binary operator is an operation (B).
+    fn binary(&mut self, n: Node) {
+        if self.op_is_c(n) {
+            self.c += 1;
+        } else {
+            self.b += 1;
+        }
+    }
+}
+
+/// Kinds counted toward B: anything invocation-shaped, object creation,
+/// explicit constructor invocations and unary operators.
+fn is_b_op(kind: &str) -> bool {
+    kind.contains("invocation")
+        || matches!(
+            kind,
+            "explicit_constructor_invocation" | "object_creation_expression" | "unary_expression"
+        )
 }
