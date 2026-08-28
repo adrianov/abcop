@@ -132,11 +132,15 @@ cargo build --release
 
 **Explicit paths** — exactly those targets are analysed.
 
-**Omitted** — abcop auto-selects the scope, in order:
+**Omitted** — abcop auto-selects the narrowest scope still reviewing real work, in order:
 
 1. uncommitted work vs `HEAD`, when the tree is dirty
 2. your current merge request (see `--mr`)
 3. the full tree, outside a repository
+
+The choice is announced on stderr — a silently narrowed scope looks
+identical to a requested one, which is exactly what misleads — and
+`--mr`/`--full` pin the wider scopes explicitly.
 
 **Every walking mode prunes:**
 
@@ -148,8 +152,36 @@ cargo build --release
 
 Name such a path explicitly to scan it anyway. A scoped run reviews only
 its changed files, and third-party/vendored material in a diff is never
-pulled into review surface, no matter which path opts it in. The rationale
-for each rule: [Scope rules and why they exist](#scope-rules-and-why-they-exist).
+pulled into review surface, no matter which path opts it in.
+
+**Route tables (`config/routes.rb`, `config/routes/*.rb`) are never review
+surface.** They are declarative wiring: nearly every line added is an
+endpoint someone asked for, so AbcSize/ModuleSize findings there are noise
+with no action.
+
+**Third-party material is never scoped review surface.** A diff that
+touches `vendor/`, `node_modules/`, `db/migrate/` or a generated file does
+not make it owned production code — size and complexity findings there
+carry no action you can take upstream. Name the path explicitly
+(`abcop vendor/foo.c`) when you genuinely forked and own it.
+
+**In scoped runs (bare `abcop` or explicit `--mr`), ModuleSize fires only
+when your diff touched ≥100 lines of that module** (untracked files count
+as fully changed) — and this applies to **any** module, spec/test files
+included: a hundred changed lines in a spec means the extraction
+conversation is on the table there too. Rationale: scoped reviews exist to
+keep changes compact — easier to review and less likely to drift out of
+the MR's task scope. A three-line patch into a 500-line legacy module
+should not gate your review for a size problem you did not cause;
+refactor-scale diffs are exactly where extracting a coherent subunit is
+expected. Full scans (`--full`, `--everything`) keep reporting every
+oversized module.
+
+**Code rules run in tests; only ModuleSize exempts them by default.**
+AbcSize, UsedOnce and NeverUsed stay active in `spec/`, `test/` and
+friends: tests are code, dead bindings and inline candidates smell just as
+much there. ModuleSize's test-tree exemption lifts automatically once a
+scoped diff crosses the 100-line threshold above.
 
 Exit codes: `0` clean, `1` diagnostics reported, `2` usage error.
 
@@ -203,44 +235,6 @@ just the working-tree edits (plus untracked files) and says so on
 stderr; `--mr` forces the full branch union when you want it. Explicitly
 narrowed runs (`--uncommitted`) fail loudly outside a repository rather
 than silently widening to the full tree.
-
-### Scope rules and why they exist
-
-**Bare `abcop` gates what you are working on right now.** The default
-picks the narrowest scope still reviewing real work: uncommitted work
-vs `HEAD` when there is any, the branch's committed changes vs its base
-otherwise. The choice is announced on stderr — a silently narrowed
-scope looks identical to a requested one, which is exactly what
-misleads — and `--mr`/`--full` pin the wider scopes explicitly.
-
-**Route tables (`config/routes.rb`, `config/routes/*.rb`) are never
-review surface.** They are declarative wiring: nearly every line added
-is an endpoint someone asked for, so AbcSize/ModuleSize findings there
-are noise with no action. Name one explicitly (`abcop config/routes.rb`)
-to analyse it anyway.
-
-**Third-party material is never scoped review surface.** A diff that
-touches `vendor/`, `node_modules/`, `db/migrate/` or a generated file does
-not make it owned production code — size and complexity findings there
-carry no action you can take upstream. Name the path explicitly
-(`abcop vendor/foo.c`) when you genuinely forked and own it.
-
-**In scoped runs (bare `abcop` or explicit `--mr`), ModuleSize fires only when your diff
-touched ≥100 lines of that module** (untracked files count as fully
-changed) — and this applies to **any** module, spec/test files included:
-a hundred changed lines in a spec means the extraction conversation is
-on the table there too. Rationale: scoped reviews exist to keep changes
-compact — easier to review and less likely to drift out of the MR's task
-scope. A three-line patch into a 500-line legacy module should not gate
-your review for a size problem you did not cause; refactor-scale diffs
-are exactly where extracting a coherent subunit is expected. Full scans
-(`--full`, `--everything`) keep reporting every oversized module.
-
-**Code rules run in tests; only ModuleSize exempts them by default.**
-AbcSize, UsedOnce and NeverUsed stay active in `spec/`, `test/` and
-friends: tests are code, dead bindings and inline candidates smell just
-as much there. ModuleSize's test-tree exemption lifts automatically once
-a scoped diff crosses the 100-line threshold above.
 
 ### Directives
 
