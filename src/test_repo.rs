@@ -63,8 +63,7 @@ pub(crate) fn seed_repo_with_base_commit(dir: &Path) {
     run_git(dir, &["config", "user.email", "t@t"]);
     run_git(dir, &["config", "user.name", "t"]);
     std::fs::write(dir.join("a.rb"), "def base\nend\n").unwrap();
-    run_git(dir, &["add", "-A"]);
-    run_git(dir, &["commit", "-qm", "base"]);
+    commit_all(dir, "base");
     run_git(dir, &["branch", "-M", "main"]);
 }
 
@@ -72,6 +71,11 @@ pub(crate) fn seed_repo_with_base_commit(dir: &Path) {
 pub(crate) fn commit_all(dir: &Path, msg: &str) {
     run_git(dir, &["add", "-A"]);
     run_git(dir, &["commit", "-qm", msg]);
+}
+
+/// Creates and checks out a topic branch off the current HEAD.
+pub(crate) fn checkout_new_branch(dir: &Path, name: &str) {
+    run_git(dir, &["checkout", "-qb", name]);
 }
 
 /// One file edited (unstaged), one added (staged), one untracked.
