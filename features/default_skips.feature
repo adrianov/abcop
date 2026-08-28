@@ -4,7 +4,7 @@ Feature: Default skip policy
 
   Scenario: Framework route tables are not review surface
     Given a Rails application with "config/routes.rb" and "config/routes/api.rb"
-    When a default walk or an "--mr"/"--changed" scope runs
+    When a default walk or an "--mr" scope runs
     Then no diagnostics are reported for route tables
     And other files under the same tree are analysed normally
 
@@ -20,7 +20,7 @@ Feature: Default skip policy
 
   Scenario: Scoped runs keep code rules but drop route tables
     Given a branch whose changed files include tests and "config/routes.rb"
-    When an "--mr" or "--changed" scope resolves its file list
+    When an "--mr" scope resolves its file list
     Then AbcSize, UsedOnce and NeverUsed still run on the test files
     And only ModuleSize exempts test trees by default
     And route tables are excluded entirely
@@ -28,16 +28,21 @@ Feature: Default skip policy
 
   Scenario: ModuleSize gates scoped reviews only on refactor-scale diffs
     Given a 228-line production module where the branch changed 4 lines
-    When an "--mr" or "--changed" scope runs
+    When an "--mr" scope runs
     Then no ModuleSize warning is reported for that module
     But when the diff touches at least 100 lines of it
     Then the ModuleSize warning is reported
 
-  Scenario: Default invocation is the union of both scopes
+  Scenario: Default invocation prefers uncommitted work
     Given uncommitted edits against HEAD and commits on the branch
     When abcop runs with no scope flags
-    Then files from both changes are analysed
-    And direct commits to the default branch are always covered
+    Then only the uncommitted edits are analysed
+    And a note announces the narrowed scope
+
+  Scenario: Default invocation covers branch work on a clean tree
+    Given commits on the branch and a clean working tree
+    When abcop runs with no scope flags
+    Then the branch's committed changes are analysed
 
   Feature: Ruby shorthand hash arguments count as reads
     Ruby 3 allows `foo(user:, strict: false)` where a value-less key reads

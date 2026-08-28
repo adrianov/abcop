@@ -117,13 +117,13 @@ cargo build --release
 
 | Option | Default | Meaning |
 |---|---|---|
-| `[PATH]...` | current MR | files or directories to analyse; **omitted, abcop scans your current merge request** (see `--mr`), falling back to the full tree outside a repository. Given: exactly those targets. All walking modes prune test/fixture trees (`spec/`, `tests/`, `fixtures/`, `testdata/`, …), vendored/build trees (`vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …), Rails `db/migrate/`, framework route tables (`config/routes.rb`, `config/routes/*.rb`) and generated files (`*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`) — name such a path explicitly to scan it; this union scope is the same one `--mr` selects explicitly, and third-party/vendored material in a diff is never pulled into review surface no matter which path opts it in. Bare `abcop` covers the union of uncommitted work vs `HEAD` and the branch's committed changes vs its base — commit-as-you-go onto the default branch and staged feature branches are both covered with no extra flags.
+| `[PATH]...` | auto | files or directories to analyse; **omitted, abcop auto-selects the scope**: uncommitted work vs `HEAD` when the tree is dirty, otherwise your current merge request (see `--mr`), falling back to the full tree outside a repository. Given: exactly those targets. All walking modes prune test/fixture trees (`spec/`, `tests/`, `fixtures/`, `testdata/`, …), vendored/build trees (`vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …), Rails `db/migrate/`, framework route tables (`config/routes.rb`, `config/routes/*.rb`) and generated files (`*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`) — name such a path explicitly to scan it; a scoped run reviews only its changed files, and third-party/vendored material in a diff is never pulled into review surface no matter which path opts it in.
 | `--max-abc N` | `17` | report functions scoring above N |
 | `--only abc\|used-once\|never-used` | all | run a single check |
-| `--full` | off | scan the whole production tree instead of the current MR (default skips stay active); bare `--full` targets the current directory |
+| `--full` | off | scan the whole production tree instead of the scoped run (default skips stay active); bare `--full` targets the current directory |
 | `--everything` | off | scan literally everything below the target: no gitignore, no hidden-file skipping, no vendored/generated/test pruning |
 | `--format text\|json` | `text` | machine-readable JSON for CI dashboards |
-| `--mr` | off | select the current-MR scope explicitly (uncommitted plus branch commits vs base); same as the bare default |
+| `--mr` | off | select the current-MR scope explicitly (uncommitted plus branch commits vs base); the bare default picks uncommitted-only when the tree is dirty |
 | `--uncommitted` | off | scan only uncommitted work: working-tree and index edits vs `HEAD` plus untracked files — no branch/base diff; requires a repository |
 | `--no-cache` | off | skip the on-disk result cache for this run |
 | `--dump-tree FILE` | — | debug: print the syntax tree of a single file
@@ -170,24 +170,25 @@ git checkout -b feature/x     # branch off main
 # ... work ...
 abcop --mr --only abc src     # only functions you touched on this branch
 abcop --uncommitted          # pre-commit check: just your working-tree edits
+abcop                        # bare: auto — uncommitted work when dirty, branch diff otherwise
 ```
 
-Committing straight to main? The same scope switches to a 36-hour window
-automatically (`<default-branch>@{36.hours.ago}`) — enough to cover work
-resumed from the previous morning. Uncommitted edits are always part of
-the scan; when the committed branch work is not under review,
-`--uncommitted` narrows the run to just those working-tree edits (plus
-untracked files) — and fails loudly outside a repository rather than
-silently widening to the full tree.
+Committing straight to main? The MR scope switches to a 36-hour window
+automatically — enough to cover work resumed from the previous morning.
+A dirty tree skips that machinery entirely: the bare default narrows to
+just the working-tree edits (plus untracked files) and says so on
+stderr; `--mr` forces the full branch union when you want it. Explicitly
+narrowed runs (`--uncommitted`) fail loudly outside a repository rather
+than silently widening to the full tree.
 
 ### Scope rules and why they exist
 
-**Bare `abcop` gates everything you are responsible for right now.**
-The default scope is the union of uncommitted work vs `HEAD` and the
-branch's committed changes vs its base. Rationale: whether you commit
-little-and-often onto the default branch or stage a feature branch,
-"what changed" must never silently miss half of your work — and direct
-commits to `main` should not depend on a time heuristic to be seen.
+**Bare `abcop` gates what you are working on right now.** The default
+picks the narrowest scope still reviewing real work: uncommitted work
+vs `HEAD` when there is any, the branch's committed changes vs its base
+otherwise. The choice is announced on stderr — a silently narrowed
+scope looks identical to a requested one, which is exactly what
+misleads — and `--mr`/`--full` pin the wider scopes explicitly.
 
 **Route tables (`config/routes.rb`, `config/routes/*.rb`) are never
 review surface.** They are declarative wiring: nearly every line added

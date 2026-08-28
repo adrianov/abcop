@@ -11,10 +11,12 @@ abcop \- fast multi\-language ABC\-size and used\-once\-variable linter
 .PP
 Bare
 .B abcop
-scans your current merge request: only functions on lines changed since
-branching from the default branch (or the last 36 hours when committing
-directly onto it). Outside a repository \-\- or when no base can be
-detected \-\- it falls back to walking the full current directory.
+scans for what you are working on right now: uncommitted changes against
+HEAD when there are any, otherwise your current merge request (only
+functions on lines changed since branching from the default branch, or
+the last 36 hours when committing directly onto it). Outside a
+repository \-\- or when no base can be detected \-\- it falls back to
+walking the full current directory.
 Use
 .B \-\-full
 for a deliberate whole\-tree scan,
@@ -34,9 +36,9 @@ sequence, framework route tables
 .IR config/routes/*.rb ),
 and minified bundles
 .RB ( *.min.js, " *.bundle.js ).
-MR scopes also drop framework route tables,
-and a bare invocation covers the union of uncommitted work against
-HEAD plus the branch's changes against its base.
+MR scopes also drop framework route tables, and a bare invocation
+prefers uncommitted work against HEAD when the tree is dirty, covering
+the branch's changes against its base otherwise.
 A path named explicitly on the command line is walked in full regardless.
 .SH DESCRIPTION
 .B abcop
@@ -198,21 +200,22 @@ master/main (merge\-base), or \-\- when committing directly onto the default
 branch \-\-
 .RB "last 36 hours"
 .RB ( default_branch "@{" 36.hours.ago "}),
-unioned with uncommitted working\-tree edits. This is also the default
-when no path is given.
+unioned with uncommitted working\-tree edits.
 The default branch is detected among origin/main, origin/master, main and
-master. Bare
-.B abcop
-(no PATH, no mode flags) applies this scope automatically.
+master. The bare default picks uncommitted work alone when the working
+tree is dirty; pass
+.B \-\-mr
+to force this union regardless.
 .TP
 .B \-\-uncommitted
 Scan only uncommitted work: working\-tree and index edits against HEAD
 plus untracked files. No branch/base diff is computed, so the scope is
-exactly what would be staged or committed next. Fails outside a
-repository instead of widening to a full\-tree scan.
+exactly what would be staged or committed next \-\- what the bare default
+already prefers when such work exists. Fails outside a repository
+instead of widening to a full\-tree scan.
 .TP
 .B \-\-full
-Scan the whole production tree instead of the current MR; the default
+Scan the whole production tree instead of the scoped run; the default
 pruning of vendored/generated/test material stays active. Bare
 .B \-\-full
 targets the current directory.
