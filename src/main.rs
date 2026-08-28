@@ -53,7 +53,9 @@ use clap::Parser as ClapParser;
     about = "Fast multi-language ABC-size + used-once-variable linter"
 )]
 pub(crate) struct Cli {
-    /// Files or directories to analyse; omitted means current-MR scope
+    /// Files or directories to analyse; omitted means the auto-selected
+    /// scope: uncommitted work when the tree is dirty, else the MR scope,
+    /// else the full tree
     pub(crate) paths: Vec<String>,
     /// Output format
     #[arg(long, value_parser = ["text", "json"], default_value = "text")]
@@ -65,15 +67,16 @@ pub(crate) struct Cli {
     #[arg(long, value_parser = ["abc", "used-once", "never-used"])]
     pub(crate) only: Option<String>,
     /// Scan the last MR explicitly: changes since branching from
-    /// master/main plus uncommitted work (this is the default when no
-    /// path is given)
+    /// master/main plus uncommitted work (the bare default prefers
+    /// uncommitted work when the tree is dirty)
     #[arg(long)]
     pub(crate) mr: bool,
     /// Scan only uncommitted work: working-tree and index edits vs
-    /// HEAD plus untracked files -- no branch/base diff
+    /// HEAD plus untracked files -- no branch/base diff (what the
+    /// bare default picks automatically when such work exists)
     #[arg(long, conflicts_with_all = ["mr", "full", "everything"])]
     pub(crate) uncommitted: bool,
-    /// Scan the whole production tree instead of the current MR (default
+    /// Scan the whole production tree instead of the scoped run (default
     /// skips for vendored/generated/test trees stay active)
     #[arg(long, conflicts_with_all = ["mr", "everything"])]
     pub(crate) full: bool,

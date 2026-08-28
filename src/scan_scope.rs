@@ -1,9 +1,10 @@
 //! Scan-scope resolution: decides which repository state an invocation
-//! reviews. Bare invocations default to the MR scope -- uncommitted work
-//! against HEAD plus everything the branch already changed vs its base,
-//! the union CI would gate on. `--uncommitted` narrows that to the
-//! working tree only. Outside a repository, or with no detectable base,
-//! the bare default falls back to a full-tree scan rather than failing.
+//! reviews. A bare invocation picks the narrowest scope still reviewing
+//! real work: uncommitted work against HEAD when there is any, the MR
+//! scope (branch changes vs base) when the tree is clean.
+//! `--uncommitted` pins the working tree only; `--mr` pins the branch
+//! union. Outside a repository, or with no detectable base, the bare
+//! default falls back to a full-tree scan rather than failing.
 //!
 //! Diff selection itself lives in [`crate::git_changes`]; base-ref choice
 //! lives in [`crate::mr_scope`].
@@ -16,7 +17,8 @@ use crate::git_changes::{Changeset, Lines};
 /// no repository scoping: analyse explicit targets or the whole tree.
 /// `uncommitted` selects working-tree work vs HEAD only, and fails
 /// loudly outside a repository -- an explicitly narrowed scope must not
-/// silently widen.
+/// silently widen. The bare default is smart: uncommitted work when
+/// present, the MR scope otherwise.
 pub(crate) fn resolve(
     mr: bool,
     uncommitted: bool,
@@ -31,6 +33,33 @@ pub(crate) fn resolve(
         return Changeset::load("HEAD").map(Some);
     }
     let head = Changeset::load("HEAD");
+    if mr {
+        return branch_scope(head);
+    }
+    smart_default(head)
+}
+
+/// Bare-invocation default: the narrowest scope still reviewing real
+/// work. Uncommitted changes win -- they are what is being edited right
+/// now; a clean tree scans the branch's MR scope instead. The choice is
+/// announced: a silently narrowed scope looks identical to a requested
+/// one, which is exactly what misleads.
+fn smart_default(head: Result<Changeset, String>) -> Result<Option<Changeset>, String> {
+    match head {
+        Ok(cs) if !cs.files.is_empty() => {
+            eprintln!(
+                "note: uncommitted changes detected; scanning uncommitted work only \
+                 (--mr adds the branch diff vs its base)"
+            );
+            Ok(Some(cs))
+        }
+        head => branch_scope(head),
+    }
+}
+
+/// MR union: the branch diff vs its base plus uncommitted HEAD work,
+/// falling back per [`head_fallback`] when the base cannot be resolved.
+fn branch_scope(head: Result<Changeset, String>) -> Result<Option<Changeset>, String> {
     match load_mr_scope() {
         Ok(mr_cs) => Ok(Some(union_with_head(mr_cs, head))),
         Err(e) => head_fallback(head, &e),
