@@ -117,7 +117,7 @@ cargo build --release
 
 | Option | Default | Meaning |
 |---|---|---|
-| `[PATH]...` | auto | files or directories to analyse; **omitted, abcop auto-selects the scope**: uncommitted work vs `HEAD` when the tree is dirty, otherwise your current merge request (see `--mr`), falling back to the full tree outside a repository. Given: exactly those targets. All walking modes prune test/fixture trees (`spec/`, `tests/`, `fixtures/`, `testdata/`, …), vendored/build trees (`vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …), Rails `db/migrate/`, framework route tables (`config/routes.rb`, `config/routes/*.rb`) and generated files (`*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`) — name such a path explicitly to scan it; a scoped run reviews only its changed files, and third-party/vendored material in a diff is never pulled into review surface no matter which path opts it in.
+| `[PATH]...` | auto | files or directories to analyse; omitted → auto-selected scope, see [Scope selection](#scope-selection) below |
 | `--max-abc N` | `17` | report functions scoring above N |
 | `--only abc\|used-once\|never-used` | all | run a single check |
 | `--full` | off | scan the whole production tree instead of the scoped run (default skips stay active); bare `--full` targets the current directory |
@@ -127,6 +127,29 @@ cargo build --release
 | `--uncommitted` | off | scan only uncommitted work: working-tree and index edits vs `HEAD` plus untracked files — no branch/base diff; requires a repository |
 | `--no-cache` | off | skip the on-disk result cache for this run |
 | `--dump-tree FILE` | — | debug: print the syntax tree of a single file
+
+### Scope selection
+
+**Explicit paths** — exactly those targets are analysed.
+
+**Omitted** — abcop auto-selects the scope, in order:
+
+1. uncommitted work vs `HEAD`, when the tree is dirty
+2. your current merge request (see `--mr`)
+3. the full tree, outside a repository
+
+**Every walking mode prunes:**
+
+- test/fixture trees — `spec/`, `tests/`, `fixtures/`, `testdata/`, …
+- vendored/build trees — `vendor/`, `node_modules/`, `target/`, `dist/`, `third_party/`, `coverage/`, `.terraform/`, `DerivedData/`, …
+- Rails `db/migrate/`
+- framework route tables — `config/routes.rb`, `config/routes/*.rb`
+- generated files — `*.min.js`, `*.bundle.js`, protobuf `*_pb.rb` / `*_pb2.py` / `*.pb.go`
+
+Name such a path explicitly to scan it anyway. A scoped run reviews only
+its changed files, and third-party/vendored material in a diff is never
+pulled into review surface, no matter which path opts it in. The rationale
+for each rule: [Scope rules and why they exist](#scope-rules-and-why-they-exist).
 
 Exit codes: `0` clean, `1` diagnostics reported, `2` usage error.
 
