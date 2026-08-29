@@ -57,24 +57,24 @@ fn declarator_name(n: Node, src: &[u8]) -> Option<String> {
     }
 }
 
-/// ObjC: the selector parts precede the body; take the first one.
+/// ObjC: build the selector from direct children of `method_definition`
+/// (`pick:` / `foo:bar:`). Skip return `method_type` and do not enter
+/// `method_parameter` identifiers — that wrongly picked `items` / `y`.
 fn selector_name(n: Node, src: &[u8]) -> Option<String> {
+    let mut name = String::new();
     let mut cursor = n.walk();
-    let mut stack: Vec<Node> = n.children(&mut cursor).collect();
-    while let Some(c) = stack.pop() {
-        if matches!(c.kind(), "body" | "compound_statement") {
-            continue;
+    for c in n.children(&mut cursor) {
+        match c.kind() {
+            "compound_statement" | "body" => break,
+            "method_type" => {}
+            "identifier" | "method_identifier" | "field_identifier" => {
+                name.push_str(node_text(c, src));
+            }
+            "method_parameter" => name.push(':'),
+            _ => {}
         }
-        if matches!(
-            c.kind(),
-            "identifier" | "method_identifier" | "field_identifier"
-        ) {
-            return Some(node_text(c, src).to_string());
-        }
-        let mut inner = c.walk();
-        stack.extend(c.children(&mut inner));
     }
-    None
+    (!name.is_empty()).then_some(name)
 }
 
 /// Name bound to an anonymous function-like by its parent, if any: the
