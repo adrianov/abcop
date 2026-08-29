@@ -58,7 +58,7 @@ pub(crate) struct Cli {
     /// else the full tree
     pub(crate) paths: Vec<String>,
     /// Output format
-    #[arg(long, value_parser = ["text", "json"], default_value = "text")]
+    #[arg(long, value_parser = ["text", "json", "jsonl"], default_value = "text")]
     pub(crate) format: String,
     /// Maximum ABC score before reporting
     #[arg(long, default_value_t = 17.0)]

@@ -1,4 +1,4 @@
-//! Human and JSON rendering of scan results.
+//! Human, JSON and JSONL rendering of scan results.
 
 mod json;
 
@@ -262,7 +262,7 @@ pub fn print_text_sorted(results: &[FileResult], max: f64, elapsed: std::time::D
     print_summary(&RunStats::from_results(results), elapsed);
 }
 
-pub use json::print_json;
+pub use json::{print_file_jsonl, print_json, print_jsonl};
 
 /// Seconds with enough decimals that the fraction always carries a nonzero
 /// digit (`0.003s` instead of `0.00s`); two decimals once measurable there.

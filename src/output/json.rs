@@ -1,4 +1,4 @@
-//! JSON document rendering: buffered emit and live streaming.
+//! JSON and JSONL rendering: buffered emit and live streaming.
 
 use super::{Diagnostic, FileResult, RunStats, score_order};
 use crate::abc;
@@ -17,6 +17,20 @@ pub fn print_json(file_count: &usize, results: &[FileResult], elapsed: std::time
         elapsed_ms: elapsed.as_millis(),
     };
     println!("{}", serde_json::to_string(&out).unwrap());
+}
+
+/// Buffered JSONL emit: one diagnostic object per line, highest-score first.
+pub fn print_jsonl(results: &[FileResult]) {
+    let mut diags: Vec<Diagnostic> = results.iter().flat_map(result_diagnostics).collect();
+    sort_diagnostics(&mut diags);
+    for d in &diags {
+        println!("{}", serde_json::to_string(d).unwrap());
+    }
+}
+
+/// Emit one file's findings as JSON Lines (no global sort).
+pub fn print_file_jsonl(r: &FileResult) {
+    write_jsonl(&mut std::io::stdout(), r);
 }
 
 /// Streams one JSON document: opens `diagnostics` immediately, appends
@@ -60,6 +74,13 @@ impl<W: std::io::Write> JsonStream<W> {
             elapsed.as_millis()
         );
     }
+}
+
+fn write_jsonl(out: &mut impl std::io::Write, r: &FileResult) {
+    for d in result_diagnostics(r) {
+        let _ = writeln!(out, "{}", serde_json::to_string(&d).unwrap());
+    }
+    let _ = out.flush();
 }
 
 fn sort_diagnostics(diags: &mut [Diagnostic]) {
@@ -231,5 +252,23 @@ mod tests {
         assert_eq!(v["files"], 2);
         assert_eq!(v["elapsed_ms"], 12);
         assert_eq!(v["diagnostics"].as_array().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn jsonl_writes_one_object_per_line() {
+        let results = sample_results();
+        let mut buf = Vec::new();
+        for r in &results {
+            write_jsonl(&mut buf, r);
+        }
+        let text = String::from_utf8(buf).unwrap();
+        let lines: Vec<_> = text.lines().collect();
+        assert_eq!(lines.len(), 5);
+        for line in &lines {
+            let v: serde_json::Value = serde_json::from_str(line).unwrap();
+            assert!(v.get("rule").is_some());
+            assert!(v.get("file").is_some());
+        }
+        assert!(!text.contains("elapsed_ms"));
     }
 }

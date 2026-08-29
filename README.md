@@ -112,9 +112,9 @@ tools stop where we wanted to start.
   installed: CI images, containers, clean checkouts, a colleague's laptop.
   The result cache is an embedded pure-Rust database file — no external
   services to run or configure.
-- **Deterministic diagnostics**: identical findings across runs; JSON mode
-  for CI. Text and JSON stream as each file finishes (completion order);
-  `--sort-by-score` buffers first for a fixed emit order.
+- **Deterministic diagnostics**: identical findings across runs; JSON and
+  JSONL modes for CI. Text, JSON and JSONL stream as each file finishes
+  (completion order); `--sort-by-score` buffers first for a fixed emit order.
 
 ## Usage
 
@@ -132,7 +132,7 @@ cargo build --release
 | `--only abc\|used-once\|never-used` | all | run a single check |
 | `--full` | off | scan the whole production tree instead of the scoped run (default skips stay active); bare `--full` targets the current directory |
 | `--everything` | off | scan literally everything below the target: no gitignore, no hidden-file skipping, no vendored/generated/test pruning |
-| `--format text\|json` | `text` | machine-readable JSON for CI dashboards |
+| `--format text\|json\|jsonl` | `text` | machine-readable JSON or JSON Lines for CI |
 | `--sort-by-score` | off | buffer all findings, then print highest-score first |
 | `--mr` | off | select the current-MR scope explicitly (uncommitted plus branch commits vs base); the bare default picks uncommitted-only when the tree is dirty |
 | `--uncommitted` | off | scan only uncommitted work: working-tree and index edits vs `HEAD` plus untracked files — no branch/base diff; requires a repository |
@@ -196,11 +196,12 @@ scoped diff crosses the 100-line threshold above.
 
 Exit codes: `0` clean, `1` diagnostics reported, `2` usage error.
 
-Files are analysed in parallel. Text and JSON print each file as soon as
-its analysis finishes (completion order). JSON is still one object:
-`diagnostics` opens first and grows, then `files` / `elapsed_ms` close
-the document. Pass `--sort-by-score` to buffer everything and emit the
-biggest ABC findings first (module and method scores descending;
+Files are analysed in parallel. Text, JSON and JSONL print each file as
+soon as its analysis finishes (completion order). JSON is still one
+object: `diagnostics` opens first and grows, then `files` / `elapsed_ms`
+close the document. JSONL writes one diagnostic object per line with no
+wrapping document. Pass `--sort-by-score` to buffer everything and emit
+the biggest ABC findings first (module and method scores descending;
 UsedOnce / NeverUsed last).
 
 Examples:
@@ -208,13 +209,15 @@ Examples:
 ```sh
 abcop app lib                          # scan two trees, text output
 abcop --format json lib > abcop.json   # JSON for CI dashboards
+abcop --format jsonl lib > abcop.jsonl # JSON Lines for streaming consumers
 abcop --only used-once src             # inline-candidate hunt
 abcop --max-abc 12 --only abc lib      # stricter ABC budget
 abcop --sort-by-score --only abc lib   # worst AbcSize hits first
 ```
 
-JSON diagnostics carry `file`, `line`, `column`, `severity`, `rule`,
-`message`, plus `score` and `vector` for ABC entries (method and module):
+JSON and JSONL diagnostics carry `file`, `line`, `column`, `severity`,
+`rule`, `message`, plus `score` and `vector` for ABC entries (method and
+module):
 
 ```json
 {"rule":"Metrics/AbcSize","score":10.0,"vector":"<6, 8, 0>"}

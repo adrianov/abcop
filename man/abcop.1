@@ -176,7 +176,7 @@ on a definition line suppresses its report.
 .BI \-\-format " FORMAT"
 Output format:
 .B text
-(human readable, default) or
+(human readable, default),
 .B json
 (machine readable; one object with a
 .I diagnostics
@@ -192,7 +192,13 @@ and
 .IR elapsed_ms .
 Without
 .B \-\-sort\-by\-score
-the array streams as each file finishes).
+the array streams as each file finishes),
+or
+.B jsonl
+(JSON Lines: the same diagnostic objects one per line, no wrapping
+document; streams as each file finishes unless
+.B \-\-sort\-by\-score
+buffers first).
 .TP
 .BI \-\-max\-abc " N"
 Maximum ABC score before reporting (default 17, matching RuboCop).
@@ -308,6 +314,14 @@ Emit JSON for tooling, tolerating a custom threshold:
 .RS
 .nf
 abcop \-\-format json \-\-max\-abc 12 lib > abcop.json
+.fi
+.RE
+.PP
+Emit JSON Lines for streaming consumers:
+.PP
+.RS
+.nf
+abcop \-\-format jsonl lib > abcop.jsonl
 .fi
 .RE
 .PP

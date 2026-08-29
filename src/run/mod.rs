@@ -59,7 +59,7 @@ impl ScanRun<'_> {
         };
         let start = std::time::Instant::now();
         // --sort-by-score needs every result before emit; otherwise each
-        // file prints as soon as its analysis finishes (text and JSON).
+        // file prints as soon as its analysis finishes (text/json/jsonl).
         if self.sort_by_score {
             self.run_buffered(&prepared, start)
         } else {
@@ -95,6 +95,7 @@ impl ScanRun<'_> {
         );
         match self.format {
             "json" => crate::output::print_json(&results.len(), &results, start.elapsed()),
+            "jsonl" => crate::output::print_jsonl(&results),
             _ => crate::output::print_text_sorted(&results, self.max_abc, start.elapsed()),
         }
         exit_code(&results)
@@ -103,6 +104,7 @@ impl ScanRun<'_> {
     fn run_stream(&self, prepared: &Prepared, start: std::time::Instant) -> ExitCode {
         match self.format {
             "json" => self.stream_json(prepared, start),
+            "jsonl" => self.stream_jsonl(prepared),
             _ => self.stream_text(prepared, start),
         }
     }
@@ -129,6 +131,16 @@ impl ScanRun<'_> {
         let (stream, stats) = sink.into_inner().unwrap();
         stream.finish(&stats, start.elapsed());
         exit_from_stats(&stats)
+    }
+
+    fn stream_jsonl(&self, prepared: &Prepared) -> ExitCode {
+        let sink = Mutex::new(RunStats::default());
+        self.for_each_file(prepared, |r| {
+            let mut sink = sink.lock().unwrap();
+            crate::output::print_file_jsonl(r);
+            sink.add(r);
+        });
+        exit_from_stats(&sink.into_inner().unwrap())
     }
 
     /// Analyse every file, collecting results in walker order.
