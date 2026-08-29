@@ -76,3 +76,15 @@ fn cpp_pure_literal_flags_while_lambda_and_field_reads_do_not() {
     assert_eq!(used(Lang::Cpp, src), vec!["local".to_string()]);
     assert_eq!(dead(Lang::Cpp, src), Vec::<String>::new());
 }
+
+#[test]
+fn header_extension_uses_cpp_so_class_fields_stay_clean() {
+    // `.h` must not pick the C grammar: that misreads `class` bodies as
+    // functions and NeverUsed-flags every member.
+    assert_eq!(
+        crate::paths::lang_for(std::path::Path::new("MainWindowPrivate.h")),
+        Lang::Cpp
+    );
+    let src = "class MainWindowPrivate {\npublic:\n  int life;\n  QWidget *presence;\n  Arena *arena = nullptr;\n};\n";
+    assert_eq!(dead(Lang::Cpp, src), Vec::<String>::new());
+}
