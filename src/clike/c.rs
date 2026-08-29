@@ -10,7 +10,7 @@ use tree_sitter::Node;
 
 use crate::paths::Lang;
 use crate::scope_model::walk::{Backend, Spec, dispatch};
-use crate::scope_model::{IntroKind, Model, Write};
+use crate::scope_model::{IntroKind, Model, ScopeKind, Write};
 
 const PREPROC: &[&str] = &[
     "preproc_include",
@@ -29,7 +29,15 @@ const C_SPEC: Spec = Spec {
     exclude_fields: &[],
 };
 
-const CPP_SPEC: Spec = C_SPEC;
+/// Like [`C_SPEC`], but `function_definition` is handled in `custom` so
+/// a misparsed `class EXPORT Name { ... }` body is not walked as locals.
+const CPP_SPEC: Spec = Spec {
+    skip_kinds: PREPROC,
+    block_scoped: &["compound_statement", "lambda_expression"],
+    function_kinds: &["method_definition"],
+    read_kinds: &["identifier"],
+    exclude_fields: &[],
+};
 
 const OBJC_SPEC: Spec = Spec {
     skip_kinds: &[
@@ -87,22 +95,12 @@ impl Backend for Collector<'_> {
 
     fn custom(&mut self, n: Node, scope: usize) {
         match n.kind() {
+            "function_definition" => self.walk_function(n, scope),
             "declaration" | "field_declaration" => self.bind_declaration(n, scope),
             "assignment_expression" | "augmented_assignment_expression" => {
                 self.bind_assignment(n, scope);
             }
-            // i++ / ++i read-and-rewrite a visible local; targets with no
-            // visible binding contribute operand reads only
-            "update_expression" => {
-                let arg = n
-                    .child_by_field_name("argument")
-                    .or_else(|| n.named_child(0));
-                if let Some(operand) = arg.filter(|o| o.kind() == "identifier") {
-                    self.rebind_local(operand, scope, false, None);
-                } else if let Some(arg) = arg {
-                    dispatch(self, arg, scope);
-                }
-            }
+            "update_expression" => self.bind_update(n, scope),
             // loop heads are protocol: initializer/control variables are
             // never tracked (an `int i` written once and read once would
             // otherwise surface a bogus inlining suggestion)
@@ -113,7 +111,38 @@ impl Backend for Collector<'_> {
     }
 }
 
+/// True when tree-sitter took `class MACRO Name` as a function_definition
+/// whose type is the class_specifier (export/visibility macros).
+fn export_macro_class(n: Node) -> bool {
+    matches!(
+        n.child_by_field_name("type").map(|t| t.kind()),
+        Some("class_specifier" | "struct_specifier" | "union_specifier")
+    )
+}
+
 impl Collector<'_> {
+    /// Open a function scope, unless this is a misparsed export-macro class.
+    fn walk_function(&mut self, n: Node, scope: usize) {
+        if export_macro_class(n) {
+            return;
+        }
+        let s = self.model().open_scope(ScopeKind::Function, scope);
+        self.walk_children(n, s);
+    }
+
+    /// i++ / ++i read-and-rewrite a visible local; non-local targets are
+    /// operand reads only.
+    fn bind_update(&mut self, n: Node, scope: usize) {
+        let arg = n
+            .child_by_field_name("argument")
+            .or_else(|| n.named_child(0));
+        if let Some(operand) = arg.filter(|o| o.kind() == "identifier") {
+            self.rebind_local(operand, scope, false, None);
+        } else if let Some(arg) = arg {
+            dispatch(self, arg, scope);
+        }
+    }
+
     /// Bind each declarator of a `declaration`.
     fn bind_declaration(&mut self, n: Node, scope: usize) {
         let mut cursor = n.walk();

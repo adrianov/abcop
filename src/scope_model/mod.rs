@@ -135,7 +135,7 @@ impl Model {
     }
 
     pub fn bind(&mut self, scope: usize, name: &str, w: Write, intro: IntroKind) {
-        if name.starts_with('_') {
+        if name.is_empty() || name.starts_with('_') {
             return;
         }
         match self.lookup(scope, w.byte, name) {
@@ -162,7 +162,7 @@ impl Model {
     }
 
     pub fn record_read(&mut self, scope: usize, name: &str, byte: usize) {
-        if name.starts_with('_') {
+        if name.is_empty() || name.starts_with('_') {
             return;
         }
         if let Some(s) = self.lookup(scope, byte, name) {

@@ -51,13 +51,10 @@ pub fn dispatch(b: &mut impl Backend, n: Node, scope: usize) -> bool {
     true
 }
 
-/// Record `n`'s text as a read of that name at its start byte, skipping
-/// Rust-style throwaway `_`-prefixed names.
+/// Record `n`'s text as a read of that name at its start byte.
 fn record_read(b: &mut impl Backend, n: Node, scope: usize) {
     let name = b.text_of(n).to_string();
-    if !name.starts_with('_') {
-        b.model().record_read(scope, &name, n.start_byte());
-    }
+    b.model().record_read(scope, &name, n.start_byte());
 }
 
 /// Walk children while skipping the named-child slot this kind uses for
