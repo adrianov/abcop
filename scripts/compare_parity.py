@@ -7,20 +7,26 @@ import json
 import re
 import sys
 
+_ABC = re.compile(r"\[<(\d+), (\d+), (\d+)> ([0-9.e+]+)")
+
+
+def parse_abc(message):
+    m = _ABC.search(message)
+    if not m:
+        return None
+    return (f"<{m.group(1)}, {m.group(2)}, {m.group(3)}>", float(m.group(4)))
+
 
 def load_rubocop(path):
     data = json.load(open(path))
     out = {}
     for f in data["files"]:
-        rel = f["path"]
         for o in f["offenses"]:
             if o["cop_name"] != "Metrics/AbcSize":
                 continue
-            m = re.search(r"\[<(\d+), (\d+), (\d+)> ([0-9.e+]+)", o["message"])
-            if not m:
-                continue
-            key = (rel, o["location"]["line"])
-            out[key] = (f"<{m.group(1)}, {m.group(2)}, {m.group(3)}>", float(m.group(4)))
+            parsed = parse_abc(o["message"])
+            if parsed:
+                out[(f["path"], o["location"]["line"])] = parsed
     return out
 
 
