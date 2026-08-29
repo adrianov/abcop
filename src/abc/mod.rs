@@ -179,4 +179,16 @@ mod tests {
         assert_eq!(g4(0.5), "0.5");
         assert_eq!(g4(9.9999), "10");
     }
+
+    #[test]
+    fn define_method_uses_symbol_or_string_name_not_paren() {
+        // Regression: `argument_list.child(0)` is the anonymous `(`.
+        let s = scores(
+            "define_method(:dyn) do |x|\n  x ? 1 : 0\nend\ndefine_method(\"str\") { |y| y ? 1 : 0 }\n",
+        );
+        let names: Vec<_> = s.iter().map(|o| o.name.as_str()).collect();
+        assert!(names.contains(&"dyn"), "got {names:?}");
+        assert!(names.contains(&"str"), "got {names:?}");
+        assert!(!names.iter().any(|n| n.contains('(')), "got {names:?}");
+    }
 }
