@@ -1,16 +1,17 @@
 # abcop
 
 **A must-have gate for AI-written code.** One self-contained binary that
-measures size and finds dead locals across Ruby, Rust, Python, Go, PHP,
-Java, C#, Dart, JavaScript, TypeScript, C, C++, Objective-C, Swift and
-Solidity — no runtimes, no plugins, no per-language installs.
+measures complexity — function and module ABC size — across Ruby, Rust,
+Python, Go, PHP, Java, C#, Dart, JavaScript, TypeScript, C, C++,
+Objective-C, Swift and Solidity — no runtimes, no plugins, no
+per-language installs.
 
 Agents ship code faster than humans can re-read it. abcop keeps that code
 *understandable*: functions and modules stay small enough for a reviewer
 (or the next model turn) to hold in one context window. Its diagnostics
 are also a **hook for automated refactoring** — extract a method, split a
-module, inline a one-shot local — so CI does not only reject bad growth;
-it points agents at concrete maintainability fixes.
+module — so CI does not only reject bad growth; it points agents at
+concrete maintainability fixes.
 
 Written in Rust for speed: one parse per file, one walk per metric,
 file-level parallelism, grammars compiled in. Whole trees in milliseconds.
@@ -46,8 +47,8 @@ separates them. Module size is gated by complexity, never by a line budget.
   small units reliably; when something breaks, the blast radius is tiny.
 - **Refactoring hook.** Exit code `1` plus stable JSON/JSONL diagnostics
   (`rule`, `score`, `vector`, `message`) feed agents and scripts: split
-  oversized modules, extract hot methods, inline UsedOnce locals. Each
-  finding is an actionable maintainability step, not a style nit.
+  oversized modules, extract hot methods. Each finding is an actionable
+  maintainability step, not a style nit.
 - **Fast enough for every push.** Sub-second whole-tree scans — including
   code an agent will never re-read tomorrow.
 - **Signal only.** No formatting or style cops. Vendored, generated and
