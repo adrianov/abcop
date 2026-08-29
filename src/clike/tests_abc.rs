@@ -144,3 +144,48 @@ Widget* make(int n) {
     // C: if, <= comparison
     assert_eq!(off[0].vector, "<0, 2, 2>");
 }
+
+#[test]
+fn cpp_out_of_line_method_uses_method_name_not_parameter() {
+    // Regression: qualified / ref-returning / operator= units used to report
+    // the last parameter (`data`, `o`) via an ObjC-style identifier DFS.
+    let off = scores(
+        Lang::Cpp,
+        "\
+void Transfers::onGetFileListClicked_gui(GtkMenuItem*, gpointer data) {
+  Transfers *tr = (Transfers *)data;
+  if (tr) tr->refresh();
+}
+const Foo& Foo::get(gpointer data) {
+  if (data) return *this;
+  return *this;
+}
+Foo& Foo::operator=(const Foo& o) {
+  if (&o == this) return *this;
+  return *this;
+}
+Transfers::~Transfers() {
+  cleanup();
+}
+Foo::operator int() const {
+  if (ready) return 1;
+  return 0;
+}
+",
+        0.0,
+    );
+    let names: Vec<_> = off.iter().map(|o| o.name.as_str()).collect();
+    assert!(
+        names.contains(&"onGetFileListClicked_gui"),
+        "got {names:?}"
+    );
+    assert!(names.contains(&"get"), "got {names:?}");
+    assert!(names.contains(&"operator="), "got {names:?}");
+    assert!(names.contains(&"~Transfers"), "got {names:?}");
+    assert!(
+        names.iter().any(|n| n.starts_with("operator int")),
+        "got {names:?}"
+    );
+    assert!(!names.contains(&"data"), "parameter must not be the unit name");
+    assert!(!names.contains(&"o"), "parameter must not be the unit name");
+}
