@@ -86,8 +86,8 @@ fn module_abc_sums_method_vectors() {
 
 #[test]
 fn module_abc_ignores_scores_at_the_threshold() {
-    // magnitude 90 exactly must not fire (AbcSize-style `>`).
-    let scores = vec![offense(54, 72, 0)]; // 90
+    // magnitude 120 exactly must not fire (AbcSize-style `>`).
+    let scores = vec![offense(72, 96, 0)]; // 120
     assert!(from_scores(&scores, "app/models/user.rb", "").is_none());
 }
 

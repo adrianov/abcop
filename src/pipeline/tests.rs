@@ -5,7 +5,7 @@
 use super::analyze_one;
 use super::narrow::apply;
 use crate::git_changes::{Changeset, Lines};
-use crate::modulesize::ModuleAbc;
+use crate::modulesize::{self, ModuleAbc};
 use crate::output::FileResult;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -22,7 +22,7 @@ fn cs_with_ranges(rel: &str, lo: usize, hi: usize) -> Changeset {
 
 fn sample_module_abc() -> ModuleAbc {
     ModuleAbc {
-        score: 120.0,
+        score: 150.0,
         vector: "<40, 100, 40>".into(),
     }
 }
@@ -171,7 +171,7 @@ fn refactor_scale_spec_diff_is_size_accountable() {
     let mut r = analyze_one(&file, None, 17.0, Some(&cs), None);
     apply(Some(&cs), &mut r, src.as_bytes());
     assert!(
-        r.module_abc.as_ref().is_some_and(|m| m.score > 90.0),
+        r.module_abc.as_ref().is_some_and(|m| m.score > modulesize::MAX_ABC),
         "refactor-scale spec diff must surface ModuleAbcSize, got {:?}",
         r.module_abc
     );
