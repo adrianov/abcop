@@ -15,7 +15,7 @@ use tree_sitter::Node;
 
 use crate::model::FileModel;
 
-#[derive(PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct AbcOffense {
     pub line: usize,
     pub end_line: usize,
@@ -46,8 +46,7 @@ pub(crate) fn offense_at(unit: Node<'_>, name: &str, a: u32, b: u32, c: u32) -> 
 }
 
 /// Parse an `"<A, B, C>"` metric vector into its three numbers; the
-/// inverse of [`fmt_vector`], used by backend assertions.
-#[cfg(test)]
+/// inverse of [`fmt_vector`].
 pub(crate) fn parse_vector(vector: &str) -> (u32, u32, u32) {
     let nums = vector.trim_matches(|c| c == '<' || c == '>');
     let mut it = nums.split(", ");
@@ -56,6 +55,19 @@ pub(crate) fn parse_vector(vector: &str) -> (u32, u32, u32) {
         it.next().unwrap().parse().unwrap(),
         it.next().unwrap().parse().unwrap(),
     )
+}
+
+/// Fitzpatrick module score: sum method vectors, then one magnitude.
+pub(crate) fn module_score(scores: &[AbcOffense]) -> (u32, u32, u32, f64) {
+    let (mut a, mut b, mut c) = (0u32, 0u32, 0u32);
+    for o in scores {
+        let (oa, ob, oc) = parse_vector(&o.vector);
+        a += oa;
+        b += ob;
+        c += oc;
+    }
+    let raw = ((a * a + b * b + c * c) as f64).sqrt();
+    (a, b, c, (raw * 100.0).round() / 100.0)
 }
 
 /// C `%g`-style formatting with 4 significant digits.
@@ -86,13 +98,6 @@ pub fn all_scores(fm: &FileModel) -> Vec<AbcOffense> {
     });
     offenses.sort_by_key(|o| (o.line, o.column));
     offenses
-}
-
-pub fn analyze(fm: &FileModel, max: f64) -> Vec<AbcOffense> {
-    all_scores(fm)
-        .into_iter()
-        .filter(|o| o.score > max)
-        .collect()
 }
 
 #[cfg(test)]

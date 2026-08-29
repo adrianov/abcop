@@ -19,7 +19,7 @@
 //! - NeverUsed: written but never read, reported at the first write;
 //!   same exclusions.
 
-mod abc;
+pub(crate) mod abc;
 mod decl;
 mod scope;
 mod usage;
@@ -52,10 +52,4 @@ impl SolFile<'_> {
 pub fn build(src: &[u8], tree: Tree) -> SolFile<'_> {
     let scopes = scope::collect(tree.root_node(), src);
     SolFile { src, tree, scopes }
-}
-
-pub fn analyze(fm: &SolFile, max: f64) -> Vec<crate::abc::AbcOffense> {
-    let mut offenses = abc::all_scores(fm);
-    offenses.retain(|o| o.score > max);
-    offenses
 }

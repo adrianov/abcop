@@ -1,7 +1,7 @@
 Feature: Swift language support
   abcop scores Swift sources with the same four rules it applies to
   Ruby, Rust and the JavaScript/TypeScript family: Metrics/AbcSize per
-  function, UsedOnce, NeverUsed and ModuleSize. Swift reuses the shared
+  function, UsedOnce, NeverUsed and ModuleAbcSize. Swift reuses the shared
   scope-model engine (the JS/TS backend's collector) with a Swift-specific
   spec: bindings are `property_declaration`/`value_binding_pattern`, reads
   are `simple_identifier`, assignments are `assignment` (plain `=` and

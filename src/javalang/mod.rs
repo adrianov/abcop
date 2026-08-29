@@ -20,7 +20,7 @@
 
 use crate::scope_model::Scope;
 
-mod abc;
+pub(crate) mod abc;
 mod scope;
 mod usage;
 
@@ -53,10 +53,4 @@ impl JavaFile<'_> {
 pub fn build(src: &[u8], tree: Tree) -> JavaFile<'_> {
     let scopes = scope::collect(tree.root_node(), src);
     JavaFile { src, tree, scopes }
-}
-
-pub fn analyze(fm: &JavaFile, max: f64) -> Vec<crate::abc::AbcOffense> {
-    let mut offenses = abc::all_scores(fm);
-    offenses.retain(|o| o.score > max);
-    offenses
 }

@@ -22,16 +22,16 @@ Feature: Default skip policy
     Given a branch whose changed files include tests and "config/routes.rb"
     When an "--mr" scope resolves its file list
     Then AbcSize, UsedOnce and NeverUsed still run on the test files
-    And only ModuleSize exempts test trees by default
+    And only ModuleAbcSize exempts test trees by default
     And route tables are excluded entirely
     And the goal is compact reviews that stay within the MR's task scope
 
-  Scenario: ModuleSize gates scoped reviews only on refactor-scale diffs
-    Given a 228-line production module where the branch changed 4 lines
+  Scenario: ModuleAbcSize gates scoped reviews only on refactor-scale diffs
+    Given a production module whose ABC exceeds 90 where the branch changed 4 lines
     When an "--mr" scope runs
-    Then no ModuleSize warning is reported for that module
+    Then no ModuleAbcSize warning is reported for that module
     But when the diff touches at least 100 lines of it
-    Then the ModuleSize warning is reported
+    Then the ModuleAbcSize warning is reported
 
   Scenario: Default invocation prefers uncommitted work
     Given uncommitted edits against HEAD and commits on the branch

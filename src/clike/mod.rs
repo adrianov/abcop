@@ -155,7 +155,7 @@ use scan::{discover, unit_body};
 use spec::{Spec, spec_for};
 use tally::Tally;
 
-pub(crate) fn analyze(src: &[u8], tree: &Tree, lang: Lang, max: f64) -> Vec<AbcOffense> {
+pub(crate) fn all_scores(src: &[u8], tree: &Tree, lang: Lang) -> Vec<AbcOffense> {
     let spec = spec_for(lang);
     let mut units = Vec::new();
     let mut roots = HashSet::new();
@@ -166,7 +166,6 @@ pub(crate) fn analyze(src: &[u8], tree: &Tree, lang: Lang, max: f64) -> Vec<AbcO
         .filter_map(|(unit, name)| unit_offense(unit, name, &spec, src, &roots))
         .collect();
     offenses.sort_by_key(|o| (o.line, o.column));
-    offenses.retain(|o| o.score > max);
     offenses
 }
 

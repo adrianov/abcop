@@ -17,7 +17,7 @@
 //! - NeverUsed: written but never read, reported at the first write;
 //!   same exclusions.
 
-mod abc;
+pub(crate) mod abc;
 mod scope;
 
 #[cfg(test)]
@@ -51,10 +51,4 @@ impl CSharpFile<'_> {
 pub fn build(src: &[u8], tree: Tree) -> CSharpFile<'_> {
     let scopes = scope::collect(tree.root_node(), src);
     CSharpFile { src, tree, scopes }
-}
-
-pub fn analyze(fm: &CSharpFile, max: f64) -> Vec<crate::abc::AbcOffense> {
-    let mut offenses = abc::all_scores(fm);
-    offenses.retain(|o| o.score > max);
-    offenses
 }

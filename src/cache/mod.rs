@@ -85,9 +85,9 @@ impl Cache {
         abc: &[crate::abc::AbcOffense],
         used_once: &[crate::used_once::UsedOnceOffense],
         never_used: &[crate::never_used::NeverUsedOffense],
-        oversize: Option<usize>,
+        module_abc: Option<crate::modulesize::ModuleAbc>,
     ) {
-        self.store.store(key, abc, used_once, never_used, oversize)
+        self.store.store(key, abc, used_once, never_used, module_abc)
     }
 
     /// Keep the newest MAX_ENTRIES entries; drop the rest.

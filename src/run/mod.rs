@@ -130,7 +130,7 @@ fn exit_code(results: &[FileResult]) -> ExitCode {
         r.abc.is_empty()
             && r.used_once.is_empty()
             && r.never_used.is_empty()
-            && r.oversize.is_none()
+            && r.module_abc.is_none()
     });
     if clean {
         ExitCode::SUCCESS

@@ -5,6 +5,7 @@ use tree_sitter::Tree;
 
 use crate::abc::AbcOffense;
 use crate::directives::{self, Directives};
+use crate::modulesize;
 use crate::never_used::NeverUsedOffense;
 use crate::output::FileResult;
 use crate::used_once::UsedOnceOffense;
@@ -23,6 +24,18 @@ fn suppressed<T>(v: Vec<T>, keep: impl Fn(&T) -> bool) -> Vec<T> {
     v.into_iter().filter(|o| !keep(o)).collect()
 }
 
+fn set_module_abc(r: &mut FileResult, src: &[u8], all: &[AbcOffense]) {
+    let text = std::str::from_utf8(src).unwrap_or("");
+    r.module_abc = modulesize::from_scores(all, &r.path, text);
+}
+
+fn keep_abc(dirs: &Directives, all: Vec<AbcOffense>, max: f64) -> Vec<AbcOffense> {
+    suppressed(
+        all.into_iter().filter(|o| o.score > max).collect(),
+        |o| dirs.suppresses_abc(o.line),
+    )
+}
+
 /// Run the clike scope-model family (JS/TS, Swift and the plain-C trio):
 /// ABC plus UsedOnce/NeverUsed for grammars with collectors.
 pub(super) fn clike_arm(
@@ -34,10 +47,10 @@ pub(super) fn clike_arm(
     max: f64,
 ) {
     let dirs = directives_for(src);
+    let all = crate::clike::all_scores(src, tree, lang);
+    set_module_abc(r, src, &all);
     if checks.want_abc {
-        r.abc = suppressed(crate::clike::analyze(src, tree, lang, max), |o| {
-            dirs.suppresses_abc(o.line)
-        });
+        r.abc = keep_abc(&dirs, all, max);
     }
     if !matches!(
         lang,
@@ -60,19 +73,22 @@ pub(super) fn clike_arm(
 /// three optionally-run checks with inline filtering applied to abc/used.
 fn directed<A, U, N>(
     r: &mut FileResult,
+    src: &[u8],
     dirs: &Directives,
     checks: &Checks,
     max: f64,
-    analyze_abc: A,
+    all_scores: A,
     used_once: U,
     never_used: N,
 ) where
-    A: FnOnce(f64) -> Vec<AbcOffense>,
+    A: FnOnce() -> Vec<AbcOffense>,
     U: FnOnce() -> Vec<UsedOnceOffense>,
     N: FnOnce() -> Vec<NeverUsedOffense>,
 {
+    let all = all_scores();
+    set_module_abc(r, src, &all);
     if checks.want_abc {
-        r.abc = suppressed(analyze_abc(max), |o| dirs.suppresses_abc(o.line));
+        r.abc = keep_abc(dirs, all, max);
     }
     if checks.want_used {
         r.used_once = suppressed(used_once(), |o| dirs.suppresses_all(o.line));
@@ -94,10 +110,11 @@ fn non_clike_directed<B: NonClike>(
     let fm = B::build(src, tree);
     directed(
         r,
+        src,
         &directives_for(src),
         checks,
         max,
-        |max| B::analyze(&fm, max),
+        || B::all_scores(&fm),
         || B::used_once_offenses(&fm),
         || B::never_used_offenses(&fm),
     );
@@ -108,8 +125,10 @@ fn non_clike_directed<B: NonClike>(
 /// three rules run.
 fn rust_arm(r: &mut FileResult, src: &[u8], tree: Tree, checks: &Checks, max: f64) -> bool {
     let fm = crate::rustlang::build(src, tree);
+    let all = crate::rustlang::all_scores(&fm);
+    set_module_abc(r, src, &all);
     if checks.want_abc {
-        r.abc = crate::rustlang::analyze(&fm, max);
+        r.abc = all.into_iter().filter(|o| o.score > max).collect();
     }
     if checks.want_used {
         r.used_once = crate::rustlang::used_once_offenses(&fm);
@@ -127,10 +146,10 @@ fn ruby_arm(r: &mut FileResult, src: &[u8], checks: &Checks, max: f64) -> bool {
     let Some(fm) = super::reparsed(src, Lang::Ruby) else {
         return false;
     };
+    let all = crate::abc::all_scores(&fm);
+    set_module_abc(r, src, &all);
     if checks.want_abc {
-        r.abc = suppressed(crate::abc::analyze(&fm, max), |o| {
-            dirs.suppresses_abc(o.line)
-        });
+        r.abc = keep_abc(&dirs, all, max);
     }
     if checks.want_used {
         r.used_once = suppressed(crate::used_once::analyze(&fm), |o| {

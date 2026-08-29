@@ -18,7 +18,7 @@
 //! - NeverUsed: written but never read, reported at the first write;
 //!   same exclusions.
 
-mod abc;
+pub(crate) mod abc;
 mod vars;
 
 use tree_sitter::Tree;
@@ -47,10 +47,4 @@ impl GoFile<'_> {
 pub fn build(src: &[u8], tree: Tree) -> GoFile<'_> {
     let scopes = vars::collect(tree.root_node(), src);
     GoFile { src, tree, scopes }
-}
-
-pub fn analyze(fm: &GoFile, max: f64) -> Vec<crate::abc::AbcOffense> {
-    let mut offenses = abc::all_scores(fm);
-    offenses.retain(|o| o.score > max);
-    offenses
 }

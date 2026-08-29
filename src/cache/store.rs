@@ -15,7 +15,7 @@ use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinitio
 
 /// Bump whenever counting rules or output shape change so stale entries are
 /// never served.
-pub(crate) const RULES_REV: u32 = 11;
+pub(crate) const RULES_REV: u32 = 12;
 
 pub(crate) const MAX_ENTRIES: usize = 20_000;
 const ENTRIES: TableDefinition<&str, &[u8]> = TableDefinition::new("entries");
@@ -34,7 +34,7 @@ impl EntryStore {
         let table = rtx.open_table(ENTRIES).ok()?;
         let value = table.get(key).ok()??;
         let f: CachedFile = serde_json::from_slice(value.value()).ok()?;
-        Some((f.abc, f.used_once, f.never_used, f.oversize))
+        Some((f.abc, f.used_once, f.never_used, f.module_abc))
     }
 
     pub(crate) fn store(
@@ -43,14 +43,14 @@ impl EntryStore {
         abc: &[crate::abc::AbcOffense],
         used_once: &[crate::used_once::UsedOnceOffense],
         never_used: &[crate::never_used::NeverUsedOffense],
-        oversize: Option<usize>,
+        module_abc: Option<crate::modulesize::ModuleAbc>,
     ) {
         let payload = CachedFileRef {
             ts: now_ms(),
             abc,
             used_once,
             never_used,
-            oversize,
+            module_abc,
         };
         let bytes = serde_json::to_vec(&payload);
         let tx = self.write_tx();
@@ -154,7 +154,7 @@ struct CachedFile {
     abc: Vec<crate::abc::AbcOffense>,
     used_once: Vec<crate::used_once::UsedOnceOffense>,
     never_used: Vec<crate::never_used::NeverUsedOffense>,
-    oversize: Option<usize>,
+    module_abc: Option<crate::modulesize::ModuleAbc>,
 }
 
 /// Borrowing twin of [`CachedFile`] for serialization straight from the
@@ -165,7 +165,7 @@ struct CachedFileRef<'a> {
     abc: &'a [crate::abc::AbcOffense],
     used_once: &'a [crate::used_once::UsedOnceOffense],
     never_used: &'a [crate::never_used::NeverUsedOffense],
-    oversize: Option<usize>,
+    module_abc: Option<crate::modulesize::ModuleAbc>,
 }
 
 /// The stored-diagnostics tuple handed back to the pipeline.
@@ -173,7 +173,7 @@ pub type CachedDiags = (
     Vec<crate::abc::AbcOffense>,
     Vec<crate::used_once::UsedOnceOffense>,
     Vec<crate::never_used::NeverUsedOffense>,
-    Option<usize>,
+    Option<crate::modulesize::ModuleAbc>,
 );
 
 /// Parse one stored row into `(timestamp, key)`; corrupt rows are skipped

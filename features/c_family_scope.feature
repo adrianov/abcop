@@ -1,7 +1,7 @@
 Feature: C, C++ and Objective-C language support
   abcop scores the plain-C-family grammars with the same four rules it
   applies to every other backed language: Metrics/AbcSize per function,
-  UsedOnce, NeverUsed and ModuleSize. All three share tree-sitter's C core
+  UsedOnce, NeverUsed and ModuleAbcSize. All three share tree-sitter's C core
   shapes -- reads are `identifier`, declarations carry `init_declarator`
   with an optional initializer, assignments use the JS-shaped
   left/operator/right fields -- so one collector plus three spec tables

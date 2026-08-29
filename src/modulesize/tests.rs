@@ -1,6 +1,8 @@
 //! Classification behavior for route tables and third-party trees.
 
 use super::classify::{is_route_table, is_third_party};
+use super::{ModuleAbc, from_scores};
+use crate::abc::AbcOffense;
 
 #[test]
 fn rails_route_tables_are_route_files() {
@@ -55,4 +57,60 @@ fn owned_sources_stay_in_scope() {
     ] {
         assert!(!is_third_party(std::path::Path::new(p)), "{p}");
     }
+}
+
+fn offense(a: u32, b: u32, c: u32) -> AbcOffense {
+    let raw = ((a * a + b * b + c * c) as f64).sqrt();
+    AbcOffense {
+        line: 1,
+        end_line: 1,
+        column: 0,
+        name: "m".into(),
+        score: (raw * 100.0).round() / 100.0,
+        vector: format!("<{a}, {b}, {c}>"),
+    }
+}
+
+#[test]
+fn module_abc_sums_method_vectors() {
+    let scores = vec![offense(30, 40, 0), offense(0, 0, 120)];
+    let hit = from_scores(&scores, "app/models/user.rb", "").unwrap();
+    assert_eq!(
+        hit,
+        ModuleAbc {
+            score: 130.0,
+            vector: "<30, 40, 120>".into(),
+        }
+    );
+}
+
+#[test]
+fn module_abc_ignores_scores_at_the_threshold() {
+    // magnitude 90 exactly must not fire (AbcSize-style `>`).
+    let scores = vec![offense(54, 72, 0)]; // 90
+    assert!(from_scores(&scores, "app/models/user.rb", "").is_none());
+}
+
+#[test]
+fn rust_cfg_test_tail_is_excluded_from_module_abc() {
+    let src = "fn prod() {}\n#[cfg(test)]\nmod tests {\n  fn t() {}\n}\n";
+    let scores = vec![
+        AbcOffense {
+            line: 1,
+            end_line: 1,
+            column: 0,
+            name: "prod".into(),
+            score: 0.0,
+            vector: "<0, 0, 0>".into(),
+        },
+        AbcOffense {
+            line: 4,
+            end_line: 4,
+            column: 2,
+            name: "t".into(),
+            score: 100.0,
+            vector: "<60, 80, 0>".into(),
+        },
+    ];
+    assert!(from_scores(&scores, "src/lib.rs", src).is_none());
 }

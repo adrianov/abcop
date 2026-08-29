@@ -21,7 +21,7 @@
 //!   underscore-prefixed names are excluded.
 //! - NeverUsed: written but never read, reported at the first write;
 //!   same exclusions.
-mod abc;
+pub(crate) mod abc;
 mod vars;
 
 #[cfg(test)]
@@ -58,9 +58,3 @@ pub fn build(src: &[u8], tree: Tree) -> PyFile<'_> {
 
 use vars::Scope;
 pub(crate) use vars::{never_used_offenses, used_once_offenses};
-
-pub fn analyze(fm: &PyFile, max: f64) -> Vec<crate::abc::AbcOffense> {
-    let mut offenses = abc::all_scores(fm);
-    offenses.retain(|o| o.score > max);
-    offenses
-}

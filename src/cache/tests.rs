@@ -9,8 +9,8 @@ fn temp_cache_dir(tag: &str) -> PathBuf {
     dir
 }
 
-fn sample(oversize: Option<usize>) -> (Vec<crate::abc::AbcOffense>, CachedDiags) {
-    let mk = || {
+fn sample(module_abc: Option<crate::modulesize::ModuleAbc>) -> CachedDiags {
+    (
         vec![crate::abc::AbcOffense {
             line: 7,
             end_line: 19,
@@ -18,11 +18,7 @@ fn sample(oversize: Option<usize>) -> (Vec<crate::abc::AbcOffense>, CachedDiags)
             name: "Foo#bar".into(),
             score: 22.5,
             vector: "<9, 4, 2>".into(),
-        }]
-    };
-    let abc = mk();
-    let diags = (
-        mk(),
+        }],
         vec![crate::used_once::UsedOnceOffense {
             line: 12,
             column: 4,
@@ -33,32 +29,35 @@ fn sample(oversize: Option<usize>) -> (Vec<crate::abc::AbcOffense>, CachedDiags)
             column: 2,
             name: "dead".into(),
         }],
-        oversize,
-    );
-    (abc, diags)
+        module_abc,
+    )
 }
 
-#[test]
-fn roundtrip_returns_stored_diagnostics() {
-    let dir = temp_cache_dir("roundtrip");
-    let cache = Cache::open_at(&dir).expect("cache opens");
-    let (_, diags) = sample(Some(210));
-    let key = "a".repeat(64);
-    cache.store(&key, &diags.0, &diags.1, &diags.2, diags.3);
-
-    let hit = cache.get(&key).expect("cache hit");
+fn assert_sample_hit(hit: &CachedDiags, module_abc: Option<crate::modulesize::ModuleAbc>) {
     assert_eq!(hit.0[0].name, "Foo#bar");
     assert_eq!(hit.0[0].score, 22.5);
     assert_eq!(hit.1[0].name, "x");
     assert_eq!(hit.2[0].name, "dead");
-    assert_eq!(hit.3, Some(210));
+    assert_eq!(hit.3, module_abc);
+}
+
+#[test]
+fn roundtrip_returns_stored_diagnostics() {
+    let cache = Cache::open_at(&temp_cache_dir("roundtrip")).expect("cache opens");
+    let module_abc = crate::modulesize::ModuleAbc {
+        score: 120.5,
+        vector: "<40, 100, 40>".into(),
+    };
+    let diags = sample(Some(module_abc.clone()));
+    let key = "a".repeat(64);
+    cache.store(&key, &diags.0, &diags.1, &diags.2, diags.3);
+    assert_sample_hit(&cache.get(&key).expect("cache hit"), Some(module_abc));
 }
 
 #[test]
 fn miss_on_other_key_is_none() {
-    let dir = temp_cache_dir("miss");
-    let cache = Cache::open_at(&dir).expect("cache opens");
-    let (_, diags) = sample(Some(210));
+    let cache = Cache::open_at(&temp_cache_dir("miss")).expect("cache opens");
+    let diags = sample(None);
     cache.store(&"a".repeat(64), &diags.0, &diags.1, &diags.2, diags.3);
     assert!(cache.get(&"b".repeat(64)).is_none(), "unrelated key misses");
 }
@@ -69,15 +68,15 @@ fn prune_keeps_newest_max_entries() {
 
     fn seed_entries(cache: &Cache, count: u64) {
         for i in 0..count {
-            let payload =
-                format!(r#"{{"ts":{i},"abc":[],"used_once":[],"never_used":[],"oversize":null}}"#);
+            let payload = format!(
+                r#"{{"ts":{i},"abc":[],"used_once":[],"never_used":[],"module_abc":null}}"#
+            );
             cache
                 .store_ref()
                 .raw_insert(&format!("{i:064}"), payload.as_bytes());
         }
     }
-    let dir = temp_cache_dir("prune");
-    let cache = Cache::open_at(&dir).expect("cache opens");
+    let cache = Cache::open_at(&temp_cache_dir("prune")).expect("cache opens");
     seed_entries(&cache, MAX_ENTRIES as u64 + 10);
     cache.prune();
 
@@ -93,8 +92,7 @@ fn prune_keeps_newest_max_entries() {
 
 #[test]
 fn corrupt_entry_is_a_miss_not_a_crash() {
-    let dir = temp_cache_dir("corrupt");
-    let cache = Cache::open_at(&dir).expect("cache opens");
+    let cache = Cache::open_at(&temp_cache_dir("corrupt")).expect("cache opens");
     let key = "c".repeat(64);
     cache.store_ref().raw_insert(&key, b"{not json");
     assert!(cache.get(&key).is_none());

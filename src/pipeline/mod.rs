@@ -36,7 +36,7 @@ fn blank_with(path: &std::path::Path) -> crate::output::FileResult {
         abc: Vec::new(),
         used_once: Vec::new(),
         never_used: Vec::new(),
-        oversize: None,
+        module_abc: None,
     }
 }
 
@@ -81,11 +81,8 @@ pub(crate) fn analyze_one(
 
 /// Blank result plus source bytes; None when the file cannot be read.
 fn loaded_result(path: &std::path::Path) -> Option<(crate::output::FileResult, SrcBuf)> {
-    let mut r = blank_with(path);
+    let r = blank_with(path);
     let src_buf = load_src(path).ok()?;
-    r.oversize = std::str::from_utf8(&src_buf)
-        .ok()
-        .and_then(|t| crate::modulesize::offense(t, &r.path));
     Some((r, src_buf))
 }
 
@@ -98,13 +95,13 @@ fn cache_hit(
     max: f64,
 ) -> Option<crate::output::FileResult> {
     let key = cache.file_key(path, src, only, max);
-    let (abc, used_once, never_used, oversize) = cache.get(&key)?;
+    let (abc, used_once, never_used, module_abc) = cache.get(&key)?;
     Some(crate::output::FileResult {
         path: path.display().to_string(),
         abc,
         used_once,
         never_used,
-        oversize,
+        module_abc,
     })
 }
 
@@ -118,6 +115,12 @@ fn store_result(
 ) {
     if let Some(cache) = cache {
         let key = cache.file_key(path, src, only, max);
-        cache.store(&key, &r.abc, &r.used_once, &r.never_used, r.oversize);
+        cache.store(
+            &key,
+            &r.abc,
+            &r.used_once,
+            &r.never_used,
+            r.module_abc.clone(),
+        );
     }
 }

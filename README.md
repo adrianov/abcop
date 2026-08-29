@@ -12,8 +12,8 @@ took.
 ```text
 lib/sinatra/base.rb:1254:0: C: Metrics/AbcSize: Assignment Branch Condition size for `error_block!` is too high. [<7, 14, 9> 18.06/17]
 lib/foo.rb:12:2: W: UsedOnce: variable `tmp` is assigned once and read once -- consider inlining
-src/main.rs: W: ModuleSize: 227 lines (>= 200) -- extract a coherent subunit
-132 files analysed in 0.09s, 7 abc offenses, 52 used-once offenses, 0 never-used warnings, 14 module-size warnings
+src/main.rs: W: Metrics/ModuleAbcSize: Assignment Branch Condition size for module is too high. [<80, 200, 60> 228.04/90] -- extract a coherent subunit
+132 files analysed in 0.09s, 7 abc offenses, 52 used-once offenses, 0 never-used warnings, 14 module-abc warnings
 ```
 
 ## Why
@@ -33,12 +33,12 @@ source modules from growing without bound.
 abcop exists to gate AI-written code in CI pipelines. That mission dictates
 the rules it ships:
 
-- **Short modules, low complexity — enforced, not wished for.** A 200-line
-  module budget and per-function ABC limits keep every file small enough to
-  hold in a human's head and inside an LLM's context window at once. Small,
-  simple units are what models modify most reliably and what reviewers can
-  actually read; when something breaks, the debugging surface is tiny by
-  construction.
+- **Short modules, low complexity — enforced, not wished for.** A module ABC
+  budget (≈ a typical 200-line Ruby file) and per-function ABC limits keep
+  every file small enough to hold in a human's head and inside an LLM's
+  context window at once. Small, simple units are what models modify most
+  reliably and what reviewers can actually read; when something breaks, the
+  debugging surface is tiny by construction.
 - **Fast enough to run on every push.** Sub-second whole-tree scans make
   linting free at the exact moment code is written — including code written
   by an agent that will never re-read it tomorrow.
@@ -75,7 +75,7 @@ From RuboCop we take the exact default counting rules for Ruby (verified
 byte-for-byte against RuboCop 1.89's calculator) and its suppression-comment
 workflow. From lizard we take the shape: one small tool that speaks many
 languages. Everything else — the speed target, the used-once analysis, the
-module-size budget — exists because those two tools stop where we wanted to
+module ABC budget — exists because those two tools stop where we wanted to
 start.
 
 ## Advantages
@@ -94,9 +94,11 @@ start.
 - **UsedOnce**: inline candidates only — pure right-hand side, unconditional
   write, straight-line dominance, single read outside macro input tokens.
   Parameters, pattern bindings, reassignments and shadowed names never qualify.
-- **ModuleSize**: warns when a production module reaches 200 lines. Test
-  suites, fixtures, lockfiles and schema dumps are exempt; Rust `#[cfg(test)]`
-  tails don't count toward the budget.
+- **ModuleAbcSize**: warns when a production module's summed method ABC
+  exceeds 90 (Fitzpatrick total: sum `<A,B,C>` then one magnitude — calibrated
+  to a typical ~200-line Ruby file). Test suites, fixtures, lockfiles and
+  schema dumps are exempt; Rust `#[cfg(test)]` tails don't count toward the
+  budget.
 - **One tool, zero dependencies.** A single self-contained binary replaces
   the per-language linter fleet — no Ruby gems, no pip/npm packages, no
   plugins, no version drift between machines. Every grammar is compiled
@@ -156,7 +158,7 @@ pulled into review surface, no matter which path opts it in.
 
 **Route tables (`config/routes.rb`, `config/routes/*.rb`) are never review
 surface.** They are declarative wiring: nearly every line added is an
-endpoint someone asked for, so AbcSize/ModuleSize findings there are noise
+endpoint someone asked for, so AbcSize/ModuleAbcSize findings there are noise
 with no action.
 
 **Third-party material is never scoped review surface.** A diff that
@@ -165,7 +167,7 @@ not make it owned production code — size and complexity findings there
 carry no action you can take upstream. Name the path explicitly
 (`abcop vendor/foo.c`) when you genuinely forked and own it.
 
-**In scoped runs (bare `abcop` or explicit `--mr`), ModuleSize fires only
+**In scoped runs (bare `abcop` or explicit `--mr`), ModuleAbcSize fires only
 when your diff touched ≥100 lines of that module** (untracked files count
 as fully changed) — and this applies to **any** module, spec/test files
 included: a hundred changed lines in a spec means the extraction
@@ -177,10 +179,10 @@ refactor-scale diffs are exactly where extracting a coherent subunit is
 expected. Full scans (`--full`, `--everything`) keep reporting every
 oversized module.
 
-**Code rules run in tests; only ModuleSize exempts them by default.**
+**Code rules run in tests; only ModuleAbcSize exempts them by default.**
 AbcSize, UsedOnce and NeverUsed stay active in `spec/`, `test/` and
 friends: tests are code, dead bindings and inline candidates smell just as
-much there. ModuleSize's test-tree exemption lifts automatically once a
+much there. ModuleAbcSize's test-tree exemption lifts automatically once a
 scoped diff crosses the 100-line threshold above.
 
 Exit codes: `0` clean, `1` diagnostics reported, `2` usage error.
@@ -201,10 +203,11 @@ abcop --max-abc 12 --only abc lib      # stricter ABC budget
 ```
 
 JSON diagnostics carry `file`, `line`, `column`, `severity`, `rule`,
-`message`, plus `score` and `vector` for ABC entries:
+`message`, plus `score` and `vector` for ABC entries (method and module):
 
 ```json
 {"rule":"Metrics/AbcSize","score":10.0,"vector":"<6, 8, 0>"}
+{"rule":"Metrics/ModuleAbcSize","score":120.5,"vector":"<40, 100, 40>"}
 ```
 
 ### Checks
@@ -214,7 +217,7 @@ JSON diagnostics carry `file`, `line`, `column`, `severity`, `rule`,
 | `Metrics/AbcSize` | C | function ABC score exceeds `--max-abc` |
 | `UsedOnce` | W | local assigned once, read once, safe to inline |
 | `NeverUsed` | W | local assigned but never read (dead writes) |
-| `ModuleSize` | W | production module ≥ 200 lines |
+| `Metrics/ModuleAbcSize` | W | module ABC (summed method vectors) exceeds 90 |
 
 ### Changed-code workflow
 
@@ -294,7 +297,7 @@ output format and one CI gate.
 
 Every row runs the same scope-model engine — static spec tables describe
 each grammar (which kinds bind, read, open scopes); one dispatcher
-evaluates UsedOnce, NeverUsed, purity-gated inlining and ModuleSize on
+evaluates UsedOnce, NeverUsed, purity-gated inlining and ModuleAbcSize on
 top. C/C++/Objective-C conventions: file-scope globals are out of reach
 of single-file analysis and never reported; loop-head variables are
 protocol; writing a struct field also reads the object itself.

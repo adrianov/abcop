@@ -21,7 +21,7 @@
 
 use crate::scope_model::Scope;
 
-mod abc;
+pub(crate) mod abc;
 mod scope;
 mod usage;
 
@@ -54,10 +54,4 @@ impl PhpFile<'_> {
 pub fn build(src: &[u8], tree: Tree) -> PhpFile<'_> {
     let scopes = scope::collect(tree.root_node(), src);
     PhpFile { src, tree, scopes }
-}
-
-pub fn analyze(fm: &PhpFile, max: f64) -> Vec<crate::abc::AbcOffense> {
-    let mut offenses = abc::all_scores(fm);
-    offenses.retain(|o| o.score > max);
-    offenses
 }

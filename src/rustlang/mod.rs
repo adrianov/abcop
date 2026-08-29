@@ -88,10 +88,3 @@ pub fn all_scores(fm: &RustFile) -> Vec<AbcOffense> {
     offenses.sort_by_key(|o| (o.line, o.column));
     offenses
 }
-
-pub fn analyze(fm: &RustFile, max: f64) -> Vec<AbcOffense> {
-    all_scores(fm)
-        .into_iter()
-        .filter(|o| o.score > max)
-        .collect()
-}

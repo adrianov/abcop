@@ -11,7 +11,7 @@ use crate::{csharp, dart, golang, javalang, phplang, pylang, sollang};
 pub(super) trait NonClike {
     type Model<'a>;
     fn build<'t>(src: &'t [u8], tree: Tree) -> Self::Model<'t>;
-    fn analyze(model: &Self::Model<'_>, max: f64) -> Vec<AbcOffense>;
+    fn all_scores(model: &Self::Model<'_>) -> Vec<AbcOffense>;
     fn used_once_offenses(model: &Self::Model<'_>) -> Vec<UsedOnceOffense>;
     fn never_used_offenses(model: &Self::Model<'_>) -> Vec<NeverUsedOffense>;
 }
@@ -27,8 +27,8 @@ macro_rules! non_clike_backend {
                 $module::build(src, tree)
             }
 
-            fn analyze(model: &Self::Model<'_>, max: f64) -> Vec<AbcOffense> {
-                $module::analyze(model, max)
+            fn all_scores(model: &Self::Model<'_>) -> Vec<AbcOffense> {
+                $module::abc::all_scores(model)
             }
 
             fn used_once_offenses(model: &Self::Model<'_>) -> Vec<UsedOnceOffense> {

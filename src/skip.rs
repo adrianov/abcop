@@ -3,7 +3,7 @@
 //! A default scan reviews production code, not third-party or machine-
 //! generated material. Directory walks therefore prune:
 //!
-//! * test and fixture trees -- same taxonomy as ModuleSize (`spec/`,
+//! * test and fixture trees -- same taxonomy as ModuleAbcSize (`spec/`,
 //!   `tests/`, `fixtures/`, `testdata/`, ...),
 //! * vendored dependency, package-cache and build-output trees (`vendor/`,
 //!   `node_modules/`, `target/`, `dist/`, `coverage/`, `venv/`, ...),

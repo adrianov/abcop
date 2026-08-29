@@ -1,7 +1,7 @@
 Feature: Python language support
   abcop scores Python sources with the same four rules it applies to
   Ruby and Rust: Metrics/AbcSize per function, UsedOnce, NeverUsed and
-  ModuleSize.
+  ModuleAbcSize.
 
   Background:
     Given a Python file "sample.py"
@@ -48,9 +48,9 @@ Feature: Python language support
     Given a line carrying "# rubocop:disable Metrics/AbcSize" style directives
     Then AbcSize offenses on that line are suppressed like in Ruby
 
-  Scenario: ModuleSize applies to Python files
-    Given a production Python module of 200 lines or more
-    Then abcop reports a ModuleSize warning
+  Scenario: ModuleAbcSize applies to Python files
+    Given a production Python module whose summed method ABC exceeds 90
+    Then abcop reports a ModuleAbcSize warning
 
 Feature: Go and PHP language support
   The same four rules run on Go (.go) and PHP (.php) sources.

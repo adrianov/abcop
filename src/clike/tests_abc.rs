@@ -7,7 +7,10 @@ use crate::paths::Lang;
 
 fn scores(lang: Lang, code: &str, max: f64) -> Vec<AbcOffense> {
     let tree = crate::paths::parse_file_lang(code.as_bytes(), lang).unwrap();
-    analyze(code.as_bytes(), &tree, lang, max)
+    all_scores(code.as_bytes(), &tree, lang)
+        .into_iter()
+        .filter(|o| o.score > max)
+        .collect()
 }
 
 #[test]

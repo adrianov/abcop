@@ -26,7 +26,7 @@
 //! (`include_root_scope: false`) because top-level finals may be consumed
 //! by other libraries.
 
-mod abc;
+pub(crate) mod abc;
 mod patterns;
 mod scope;
 mod tally;
@@ -62,10 +62,4 @@ impl DartFile<'_> {
 pub fn build(src: &[u8], tree: Tree) -> DartFile<'_> {
     let scopes = scope::collect(tree.root_node(), src);
     DartFile { src, tree, scopes }
-}
-
-pub fn analyze(fm: &DartFile, max: f64) -> Vec<crate::abc::AbcOffense> {
-    let mut offenses = abc::all_scores(fm);
-    offenses.retain(|o| o.score > max);
-    offenses
 }

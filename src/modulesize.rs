@@ -1,4 +1,4 @@
-//! ModuleSize rule: production modules must stay under MAX_LINES.
+//! Metrics/ModuleAbcSize: production modules must stay under MAX_ABC.
 //! Classification mirrors refactor_gpt quality standards: spec/test trees,
 //! test-file suffixes, lockfiles, docs and schema dumps are exempt.
 
@@ -10,9 +10,13 @@ pub(crate) use classify::{
     GENERATED_DIR_PAIRS, GENERATED_DIRS, is_generated_name, is_route_table, is_third_party,
 };
 
-pub const MAX_LINES: usize = 200;
+use crate::abc::{self, AbcOffense};
 
-/// In --mr/--changed scopes ModuleSize only fires when the diff itself
+/// Calibrated against ~200-line Ruby modules in RuboCop/Sinatra lib trees:
+/// median file ABC there is ~85–90 (summed method vectors, Fitzpatrick).
+pub const MAX_ABC: f64 = 90.0;
+
+/// In --mr/--changed scopes ModuleAbcSize only fires when the diff itself
 /// touches at least this many lines: a refactor-scale change invites the
 /// size conversation, while a three-line patch into an already-large
 /// legacy module should not gate the review.
@@ -29,6 +33,12 @@ pub(crate) const NON_PROD_DIRS: [&str; 9] = [
     "testing/",
     "fixtures/",
 ];
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ModuleAbc {
+    pub score: f64,
+    pub vector: String,
+}
 
 pub(crate) fn is_test_path(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
@@ -55,36 +65,50 @@ fn is_test_basename(base: &str) -> bool {
         || base.ends_with(".test.")
 }
 
-/// Effective size: for Rust sources the trailing `#[cfg(test)]` module does
-/// not count toward the budget (mirrors the spec-file exemption).
-pub fn effective_lines(src: &str, path: &str) -> usize {
-    let mut n = src.lines().count();
-    if path.ends_with(".rs")
-        && let Some(pos) = src
-            .lines()
-            .position(|l| l.trim_start().starts_with("#[cfg(test)]"))
-    {
-        n = pos;
-    }
-    n
-}
-
 pub fn is_production(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
     let technical = p.ends_with("schema.rb") || p.ends_with(".lock") || p.contains("schema.rb");
     !is_test_path(path) && !technical
 }
-/// Returns Some(lines) when the module exceeds the budget.
-/// Data files that no supported language parses (Qt Linguist `.ts` XML,
-/// and XML generally): line counts on them are meaningless noise.
-fn is_data_file(src: &str) -> bool {
-    src.trim_start().starts_with("<?xml")
+
+/// File ABC over method scores; Rust `#[cfg(test)]` tails are omitted
+/// (same exemption the old line budget used).
+pub fn from_scores(scores: &[AbcOffense], path: &str, src: &str) -> Option<ModuleAbc> {
+    let filtered = rust_prod_scores(scores, path, src);
+    let (a, b, c, score) = abc::module_score(filtered.as_ref());
+    (score > MAX_ABC).then(|| ModuleAbc {
+        score,
+        vector: abc::fmt_vector(a, b, c),
+    })
 }
 
-pub fn offense(src: &str, path: &str) -> Option<usize> {
-    if !is_production(path) || is_data_file(src) {
-        return None;
+/// Drop non-production ModuleAbcSize hits on full (unscoped) scans.
+pub(crate) fn drop_non_production(path: &str, module_abc: &mut Option<ModuleAbc>) {
+    if module_abc.is_some() && !is_production(path) {
+        *module_abc = None;
     }
-    let lines = effective_lines(src, path);
-    (lines >= MAX_LINES).then_some(lines)
+}
+
+fn rust_prod_scores<'a>(
+    scores: &'a [AbcOffense],
+    path: &str,
+    src: &str,
+) -> std::borrow::Cow<'a, [AbcOffense]> {
+    if !path.ends_with(".rs") {
+        return std::borrow::Cow::Borrowed(scores);
+    }
+    let Some(pos) = src
+        .lines()
+        .position(|l| l.trim_start().starts_with("#[cfg(test)]"))
+    else {
+        return std::borrow::Cow::Borrowed(scores);
+    };
+    let cutoff = pos + 1;
+    std::borrow::Cow::Owned(
+        scores
+            .iter()
+            .filter(|o| o.line < cutoff)
+            .cloned()
+            .collect(),
+    )
 }

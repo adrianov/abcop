@@ -2,7 +2,7 @@
 
 use crate::abc;
 use crate::abc::AbcOffense;
-use crate::modulesize;
+use crate::modulesize::{self, ModuleAbc};
 use crate::never_used::NeverUsedOffense;
 use crate::used_once::UsedOnceOffense;
 
@@ -25,16 +25,17 @@ pub(crate) struct FileResult {
     pub abc: Vec<AbcOffense>,
     pub used_once: Vec<UsedOnceOffense>,
     pub never_used: Vec<NeverUsedOffense>,
-    pub oversize: Option<usize>,
+    pub module_abc: Option<ModuleAbc>,
 }
 
-fn print_module_size(r: &FileResult) {
-    if let Some(lines) = r.oversize {
+fn print_module_abc(r: &FileResult) {
+    if let Some(m) = &r.module_abc {
         println!(
-            "{}: W: ModuleSize: {} lines (>= {}) -- extract a coherent subunit",
+            "{}: W: Metrics/ModuleAbcSize: Assignment Branch Condition size for module is too high. [{} {}/{}] -- extract a coherent subunit",
             r.path,
-            lines,
-            modulesize::MAX_LINES
+            m.vector,
+            abc::g4(m.score),
+            abc::g4(modulesize::MAX_ABC)
         );
     }
 }
@@ -65,16 +66,16 @@ pub fn print_text(results: &[FileResult], max: f64, elapsed: std::time::Duration
                 r.path, o.line, o.column, o.name
             );
         }
-        print_module_size(r);
+        print_module_abc(r);
     }
     println!(
-        "{} files analysed in {}, {} abc offenses, {} used-once offenses, {} never-used warnings, {} module-size warnings",
+        "{} files analysed in {}, {} abc offenses, {} used-once offenses, {} never-used warnings, {} module-abc warnings",
         results.len(),
         summary_secs(elapsed),
         results.iter().map(|r| r.abc.len()).sum::<usize>(),
         results.iter().map(|r| r.used_once.len()).sum::<usize>(),
         results.iter().map(|r| r.never_used.len()).sum::<usize>(),
-        results.iter().filter_map(|r| r.oversize).count()
+        results.iter().filter_map(|r| r.module_abc.as_ref()).count()
     );
 }
 
@@ -102,68 +103,75 @@ pub fn print_json(file_count: &usize, results: &[FileResult], elapsed: std::time
 
 /// Every diagnostic one file contributes, in rule order.
 fn result_diagnostics(r: &FileResult) -> Vec<Diagnostic> {
-    let mut diags = Vec::new();
-    if let Some(lines) = r.oversize {
-        diags.push(Diagnostic {
-            file: r.path.clone(),
-            line: lines,
-            column: 0,
-            severity: "W",
-            rule: "ModuleSize",
-            message: format!(
-                "module has {} lines (>= {}) -- extract a coherent subunit",
-                lines,
-                modulesize::MAX_LINES
-            ),
-            score: None,
-            vector: None,
-        });
-    }
-    for o in &r.abc {
-        diags.push(Diagnostic {
-            file: r.path.clone(),
-            line: o.line,
-            column: o.column,
-            severity: "C",
-            rule: "Metrics/AbcSize",
-            message: format!(
-                "Assignment Branch Condition size for `{}` is too high. [{} {}]",
-                o.name,
-                o.vector,
-                abc::g4(o.score)
-            ),
-            score: Some(o.score),
-            vector: Some(o.vector.clone()),
-        });
-    }
-    for o in &r.never_used {
-        diags.push(Diagnostic {
-            file: r.path.clone(),
-            line: o.line,
-            column: o.column,
-            severity: "W",
-            rule: "NeverUsed",
-            message: format!("variable `{}` is assigned but never used", o.name),
-            score: None,
-            vector: None,
-        });
-    }
-    for o in &r.used_once {
-        diags.push(Diagnostic {
-            file: r.path.clone(),
-            line: o.line,
-            column: o.column,
-            severity: "W",
-            rule: "UsedOnce",
-            message: format!(
-                "variable `{}` is assigned once and read once -- consider inlining",
-                o.name
-            ),
-            score: None,
-            vector: None,
-        });
-    }
+    let mut diags: Vec<_> = r.module_abc.iter().map(|m| module_abc_diag(r, m)).collect();
+    diags.extend(r.abc.iter().map(|o| abc_diag(r, o)));
+    diags.extend(r.never_used.iter().map(|o| never_used_diag(r, o)));
+    diags.extend(r.used_once.iter().map(|o| used_once_diag(r, o)));
     diags
+}
+
+fn module_abc_diag(r: &FileResult, m: &ModuleAbc) -> Diagnostic {
+    Diagnostic {
+        file: r.path.clone(),
+        line: 1,
+        column: 0,
+        severity: "W",
+        rule: "Metrics/ModuleAbcSize",
+        message: format!(
+            "Assignment Branch Condition size for module is too high. [{} {}] -- extract a coherent subunit",
+            m.vector,
+            abc::g4(m.score)
+        ),
+        score: Some(m.score),
+        vector: Some(m.vector.clone()),
+    }
+}
+
+fn abc_diag(r: &FileResult, o: &AbcOffense) -> Diagnostic {
+    Diagnostic {
+        file: r.path.clone(),
+        line: o.line,
+        column: o.column,
+        severity: "C",
+        rule: "Metrics/AbcSize",
+        message: format!(
+            "Assignment Branch Condition size for `{}` is too high. [{} {}]",
+            o.name,
+            o.vector,
+            abc::g4(o.score)
+        ),
+        score: Some(o.score),
+        vector: Some(o.vector.clone()),
+    }
+}
+
+fn never_used_diag(r: &FileResult, o: &NeverUsedOffense) -> Diagnostic {
+    Diagnostic {
+        file: r.path.clone(),
+        line: o.line,
+        column: o.column,
+        severity: "W",
+        rule: "NeverUsed",
+        message: format!("variable `{}` is assigned but never used", o.name),
+        score: None,
+        vector: None,
+    }
+}
+
+fn used_once_diag(r: &FileResult, o: &UsedOnceOffense) -> Diagnostic {
+    Diagnostic {
+        file: r.path.clone(),
+        line: o.line,
+        column: o.column,
+        severity: "W",
+        rule: "UsedOnce",
+        message: format!(
+            "variable `{}` is assigned once and read once -- consider inlining",
+            o.name
+        ),
+        score: None,
+        vector: None,
+    }
 }
 
 #[derive(serde::Serialize)]
