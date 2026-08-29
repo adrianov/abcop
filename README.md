@@ -296,7 +296,7 @@ output format and one CI gate.
 | Solidity | `.sol` | all four |
 | JavaScript | `.js .mjs .cjs .jsx` | all four |
 | TypeScript | `.ts .tsx .mts .cts` | all four |
-| C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | all four |
+| C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | all four (`.h` via C++ grammar) |
 | Objective-C | `.m .mm` | all four |
 | Swift | `.swift` | all four |
 | Dart | `.dart` | all four |
@@ -306,7 +306,9 @@ each grammar (which kinds bind, read, open scopes); one dispatcher
 evaluates UsedOnce, NeverUsed, purity-gated inlining and ModuleAbcSize on
 top. C/C++/Objective-C conventions: file-scope globals are out of reach
 of single-file analysis and never reported; loop-head variables are
-protocol; writing a struct field also reads the object itself.
+protocol; writing a struct field also reads the object itself. Headers
+ending in `.h` use the C++ grammar so a `class` body is not mistaken for
+a function (which would flag every member as NeverUsed).
 
 Scoring semantics stay uniform across languages: named declarations are
 the measured units, anonymous function-likes roll into their enclosing
