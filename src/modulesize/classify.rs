@@ -5,7 +5,7 @@
 /// machine-generated trees are never the review target of a default scan.
 /// Walker-side only (see `skip::skipped_by_default`); ModuleAbcSize's own
 /// classification above stays unchanged.
-pub(crate) const GENERATED_DIRS: [&str; 29] = [
+pub(crate) const GENERATED_DIRS: [&str; 31] = [
     "vendor/",
     ".bundle/",
     "node_modules/",
@@ -35,6 +35,8 @@ pub(crate) const GENERATED_DIRS: [&str; 29] = [
     ".terraform/",
     "elm-stuff/",
     ".stack-work/",
+    ".zig-cache/",
+    "zig-out/",
 ];
 
 /// Codegen file-name suffixes across ecosystems (protobuf et al). Matched

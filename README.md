@@ -8,7 +8,7 @@ extract a method, split a module — so CI rejects bad growth *and* points
 agents at concrete maintainability fixes.
 
 One self-contained binary across Ruby, Rust, Python, Go, PHP, Java, C#,
-Dart, JavaScript, TypeScript, C, C++, Objective-C, Swift and Solidity —
+Dart, JavaScript, TypeScript, C, C++, Objective-C, Swift, Solidity and Zig —
 no runtimes, no plugins, no per-language installs. Written in Rust for
 speed: one parse per file, one walk per metric, grammars compiled in;
 whole trees in milliseconds.
@@ -164,7 +164,7 @@ disables. Nothing is written inside the project.
 
 ## Supported languages
 
-Fifteen languages, four rules each, one CI gate.
+Sixteen languages, four rules each, one CI gate.
 
 | Language | Files | Notes |
 |---|---|---|
@@ -176,12 +176,13 @@ Fifteen languages, four rules each, one CI gate.
 | Java | `.java` | |
 | C# | `.cs` | |
 | Solidity | `.sol` | |
+| Dart | `.dart` | |
+| Zig | `.zig` | |
 | JavaScript | `.js .mjs .cjs .jsx` | |
 | TypeScript | `.ts .tsx .mts .cts` | |
 | C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | `.h` via C++ grammar |
 | Objective-C | `.m .mm` | |
 | Swift | `.swift` | |
-| Dart | `.dart` | |
 
 Named declarations are measured units; anonymous function-likes roll into
 the enclosing unit; nested units never double-count. C-family: file-scope

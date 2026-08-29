@@ -6,7 +6,8 @@
 //! * test and fixture trees -- same taxonomy as ModuleAbcSize (`spec/`,
 //!   `tests/`, `fixtures/`, `testdata/`, ...),
 //! * vendored dependency, package-cache and build-output trees (`vendor/`,
-//!   `node_modules/`, `target/`, `dist/`, `coverage/`, `venv/`, ...),
+//!   `node_modules/`, `target/`, `dist/`, `coverage/`, `venv/`,
+//!   `.zig-cache/`, `zig-out/`, ...),
 //! * generated directory sequences (Rails' `db/migrate`),
 //! * generated single files: minified/bundled JS stems (`app.min.js`,
 //!   `app.bundle.js`).

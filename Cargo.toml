@@ -34,6 +34,7 @@ tree-sitter-java = { path = "vendor/tree-sitter-java" }
 tree-sitter-c-sharp = { path = "vendor/tree-sitter-c-sharp" }
 tree-sitter-solidity = { path = "vendor/tree-sitter-solidity" }
 tree-sitter-dart = { path = "vendor/tree-sitter-dart" }
+tree-sitter-zig = { path = "vendor/tree-sitter-zig" }
 git2 = { version = "0.20", default-features = false }
 
 

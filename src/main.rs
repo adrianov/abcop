@@ -34,6 +34,7 @@ mod scope_model;
 mod skip;
 mod sollang;
 mod srcbuf;
+mod ziglang;
 mod untracked_scan;
 
 #[cfg(test)]

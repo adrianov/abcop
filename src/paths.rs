@@ -15,6 +15,7 @@ pub enum Lang {
     CSharp,
     Solidity,
     Dart,
+    Zig,
     Js,
     Ts,
     Tsx,
@@ -34,30 +35,43 @@ impl Lang {
     }
 }
 
+/// Ruby source extensions (and Gemfile-style basenames via [`CODE_NAMES`]).
+const RUBY_EXTS: &[&str] = &["rb", "rake", "ru", "gemspec"];
+
+/// Extension → language. `.h` rides the C++ grammar: the C grammar
+/// misreads `class` / `namespace` bodies as function definitions and
+/// then NeverUsed fires on every member.
+const EXT_LANG: &[(&[&str], Lang)] = &[
+    (&["rs"], Lang::Rust),
+    (&["js", "mjs", "cjs", "jsx"], Lang::Js),
+    (&["ts", "mts", "cts"], Lang::Ts),
+    (&["tsx"], Lang::Tsx),
+    (&["c"], Lang::C),
+    (&["h", "cc", "cpp", "cxx", "hpp", "hxx", "hh"], Lang::Cpp),
+    (&["m", "mm"], Lang::ObjC),
+    (&["swift"], Lang::Swift),
+    (&["py", "pyi", "pyw"], Lang::Py),
+    (&["go"], Lang::Go),
+    (&["php"], Lang::Php),
+    (&["java"], Lang::Java),
+    (&["cs"], Lang::CSharp),
+    (&["sol"], Lang::Solidity),
+    (&["dart"], Lang::Dart),
+    (&["zig"], Lang::Zig),
+];
+
 pub fn lang_for(path: &std::path::Path) -> Lang {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("rs") => Lang::Rust,
-        Some("js" | "mjs" | "cjs" | "jsx") => Lang::Js,
-        Some("ts" | "mts" | "cts") => Lang::Ts,
-        Some("tsx") => Lang::Tsx,
-        Some("c") => Lang::C,
-        // `.h` is shared by C and C++; the C grammar misreads `class` /
-        // `namespace` bodies as function definitions and then NeverUsed
-        // fires on every member. tree-sitter-cpp covers both dialects.
-        Some("h" | "cc" | "cpp" | "cxx" | "hpp" | "hxx" | "hh") => Lang::Cpp,
-        Some("m" | "mm") => Lang::ObjC,
-        Some("swift") => Lang::Swift,
-        Some("py" | "pyi" | "pyw") => Lang::Py,
-        Some("go") => Lang::Go,
-        Some("php") => Lang::Php,
-        Some("java") => Lang::Java,
-        Some("cs") => Lang::CSharp,
-        Some("sol") => Lang::Solidity,
-        Some("dart") => Lang::Dart,
-        // Gemfile-style names and anything else text-shaped stay Ruby,
-        // whose scorer is a no-op for non-Ruby content.
-        _ => Lang::Ruby,
+    let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+        return Lang::Ruby;
+    };
+    for (exts, lang) in EXT_LANG {
+        if exts.contains(&ext) {
+            return *lang;
+        }
     }
+    // Gemfile-style names and anything else text-shaped stay Ruby,
+    // whose scorer is a no-op for non-Ruby content.
+    Lang::Ruby
 }
 
 pub fn parse_file_lang(src: &[u8], lang: Lang) -> Option<tree_sitter::Tree> {
@@ -102,25 +116,23 @@ fn standalone_grammar(lang: Lang) -> Option<tree_sitter::Language> {
         Lang::CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
         Lang::Solidity => tree_sitter_solidity::LANGUAGE.into(),
         Lang::Dart => tree_sitter_dart::LANGUAGE.into(),
+        Lang::Zig => tree_sitter_zig::LANGUAGE.into(),
         _ => return None,
     };
     Some(ts_lang)
 }
 
-const CODE_EXTS: [&str; 33] = [
-    "rb", "rake", "ru", "gemspec", "rs", //
-    "js", "mjs", "cjs", "jsx", "ts", "tsx", "mts", "cts", //
-    "c", "h", "cc", "cpp", "cxx", "hpp", "hxx", "hh", //
-    "m", "mm", "swift", "py", "pyi", "pyw", "go", "php", "java", "cs", "sol", "dart",
-];
-
 const CODE_NAMES: [&str; 6] = [
     "Gemfile", "Rakefile", "Capfile", "Brewfile", "Podfile", "Fastfile",
 ];
 
+fn is_code_ext(ext: &str) -> bool {
+    RUBY_EXTS.contains(&ext) || EXT_LANG.iter().any(|(exts, _)| exts.contains(&ext))
+}
+
 pub fn is_code_path(p: &std::path::Path) -> bool {
     match p.extension().and_then(|e| e.to_str()) {
-        Some(ext) => CODE_EXTS.contains(&ext),
+        Some(ext) => is_code_ext(ext),
         None => p
             .file_name()
             .and_then(|n| n.to_str())
