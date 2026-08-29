@@ -12,9 +12,10 @@ pub(crate) use classify::{
 
 use crate::abc::{self, AbcOffense};
 
-/// Calibrated against ~200-line Ruby modules in RuboCop/Sinatra lib trees:
-/// median file ABC there is ~85–90 (summed method vectors, Fitzpatrick).
-pub const MAX_ABC: f64 = 90.0;
+/// Default ModuleAbcSize ceiling. Calibrated against ~200-line Ruby modules
+/// in RuboCop/Sinatra lib trees (~85–90 median); 120 is a looser default
+/// so typical mid-size files stay quiet while still flagging oversized ones.
+pub const MAX_ABC: f64 = 120.0;
 
 /// In --mr/--changed scopes ModuleAbcSize only fires when the diff itself
 /// touches at least this many lines: a refactor-scale change invites the

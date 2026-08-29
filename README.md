@@ -12,7 +12,7 @@ took.
 ```text
 lib/sinatra/base.rb:1254:0: C: Metrics/AbcSize: Assignment Branch Condition size for `error_block!` is too high. [<7, 14, 9> 18.06/17]
 lib/foo.rb:12:2: W: UsedOnce: variable `tmp` is assigned once and read once -- consider inlining
-src/main.rs: W: Metrics/ModuleAbcSize: Assignment Branch Condition size for module is too high. [<80, 200, 60> 228.04/90] -- extract a coherent subunit
+src/main.rs: W: Metrics/ModuleAbcSize: Assignment Branch Condition size for module is too high. [<80, 200, 60> 228.04/120] -- extract a coherent subunit
 132 files analysed in 0.09s, 7 abc offenses, 52 used-once offenses, 0 never-used warnings, 14 module-abc warnings
 ```
 
@@ -36,7 +36,7 @@ abcop exists to gate AI-written code in CI pipelines. That mission dictates
 the rules it ships:
 
 - **Short modules, low complexity — enforced, not wished for.** Per-function
-  AbcSize (`--max-abc`, default 17) and file-level ModuleAbcSize (fixed at 90,
+  AbcSize (`--max-abc`, default 17) and file-level ModuleAbcSize (fixed at 120,
   ~a typical 200-line Ruby module) keep every unit small enough to hold in a
   human's head and inside an LLM's context window at once. Small, simple units
   are what models modify most reliably and what reviewers can actually read;
@@ -101,8 +101,8 @@ tools stop where we wanted to start.
   write, straight-line dominance, single read outside macro input tokens.
   Parameters, pattern bindings, reassignments and shadowed names never qualify.
 - **ModuleAbcSize**: warns when a production module's Fitzpatrick total
-  (sum of method `<A,B,C>`, then `sqrt(A²+B²+C²)`) exceeds **90** — calibrated
-  against ~200-line Ruby modules in RuboCop/Sinatra `lib`. Same score and
+  (sum of method `<A,B,C>`, then `sqrt(A²+B²+C²)`) exceeds **120** — looser
+  than the ~90 median of ~200-line Ruby lib modules. Same score and
   vector shape as method AbcSize. Test suites, fixtures, lockfiles and schema
   dumps are exempt; Rust `#[cfg(test)]` tails don't count toward the budget.
 - **One tool, zero dependencies.** A single self-contained binary replaces
@@ -183,7 +183,7 @@ the MR's task scope. A three-line patch into a 500-line legacy module
 should not gate your review for a size problem you did not cause;
 refactor-scale diffs are exactly where extracting a coherent subunit is
 expected. Full scans (`--full`, `--everything`) keep reporting every
-module whose ABC exceeds 90.
+module whose ABC exceeds 120.
 
 **Code rules run in tests; only ModuleAbcSize exempts them by default.**
 AbcSize, UsedOnce and NeverUsed stay active in `spec/`, `test/` and
@@ -223,7 +223,7 @@ JSON diagnostics carry `file`, `line`, `column`, `severity`, `rule`,
 | `Metrics/AbcSize` | C | function ABC score exceeds `--max-abc` |
 | `UsedOnce` | W | local assigned once, read once, safe to inline |
 | `NeverUsed` | W | local assigned but never read (dead writes) |
-| `Metrics/ModuleAbcSize` | W | module ABC exceeds 90 (summed method vectors) |
+| `Metrics/ModuleAbcSize` | W | module ABC exceeds 120 (summed method vectors) |
 
 ### Changed-code workflow
 
