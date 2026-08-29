@@ -11,29 +11,50 @@ use super::spec::{Spec, node_text};
 /// Display name of a unit root: `name` field, then a declarator chain
 /// (C/C++), then the first identifier-shaped child before the body
 /// (ObjC selectors), else `(anonymous)`.
+///
+/// When a `@declarator` is present but cannot be resolved, do **not**
+/// fall through to the ObjC-style DFS: that walk picks the last parameter
+/// name (`data`, `o`, …) for out-of-line C++ methods.
 pub(crate) fn declared_name(n: Node, src: &[u8]) -> String {
     if let Some(name) = n.child_by_field_name("name") {
         return node_text(name, src).to_string();
     }
-    if let Some(name) = declarator_name(n, src) {
-        return name;
+    if n.child_by_field_name("declarator").is_some() {
+        return declarator_name(n, src).unwrap_or_else(|| "(anonymous)".to_string());
     }
     selector_name(n, src).unwrap_or_else(|| "(anonymous)".to_string())
 }
 
-/// C/C++ `int (*f)(...)`-style chains: first identifier down the
-/// `declarator` field spine.
+/// C/C++ declarator chains: follow `@declarator` through pointer/array/
+/// function wrappers; for `Class::method` take the qualified `@name`.
+/// `reference_declarator` has no `@declarator` field — use its named child.
 fn declarator_name(n: Node, src: &[u8]) -> Option<String> {
-    let mut cur = n.child_by_field_name("declarator");
-    while let Some(c) = cur {
-        match c.kind() {
-            "identifier" | "field_identifier" | "property_identifier" => {
-                return Some(node_text(c, src).to_string());
+    let mut cur = n.child_by_field_name("declarator")?;
+    loop {
+        match cur.kind() {
+            "identifier"
+            | "field_identifier"
+            | "property_identifier"
+            | "destructor_name"
+            | "operator_name"
+            | "operator_cast" => {
+                return Some(node_text(cur, src).to_string());
             }
-            _ => cur = c.child_by_field_name("declarator"),
+            // Transfers::onFoo / ns::Foo<T>::bar → keep walking at `@name`
+            "qualified_identifier" => {
+                cur = cur.child_by_field_name("name")?;
+            }
+            _ => {
+                if let Some(next) = cur.child_by_field_name("declarator") {
+                    cur = next;
+                } else if cur.kind().ends_with("_declarator") {
+                    cur = cur.named_child(0)?;
+                } else {
+                    return None;
+                }
+            }
         }
     }
-    None
 }
 
 /// ObjC: the selector parts precede the body; take the first one.
