@@ -308,7 +308,10 @@ top. C/C++/Objective-C conventions: file-scope globals are out of reach
 of single-file analysis and never reported; loop-head variables are
 protocol; writing a struct field also reads the object itself. Headers
 ending in `.h` use the C++ grammar so a `class` body is not mistaken for
-a function (which would flag every member as NeverUsed).
+a function (which would flag every member as NeverUsed). A `class` /
+`struct` with an export macro between the keyword and the name
+(`class UTIL_EXPORT Foo`) is likewise skipped for variable rules — the
+grammar otherwise treats the body as a function of locals.
 
 Scoring semantics stay uniform across languages: named declarations are
 the measured units, anonymous function-likes roll into their enclosing
