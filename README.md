@@ -1,13 +1,17 @@
 # abcop
 
-**A blazing-fast, Rust-based, opinionated complexity linter.** It gates
-function and module ABC size so code stays maintainable for humans and
-LLM agents — built for CI, and as a hook for automated refactoring.
+**A must-have gate for AI-written code.** Agents ship faster than humans
+can re-read; abcop keeps that code *understandable* by gating function and
+module ABC complexity so every unit fits a human head and an LLM context
+window. Diagnostics are also a **hook for automated refactoring** —
+extract a method, split a module — so CI rejects bad growth *and* points
+agents at concrete maintainability fixes.
 
 One self-contained binary across Ruby, Rust, Python, Go, PHP, Java, C#,
 Dart, JavaScript, TypeScript, C, C++, Objective-C, Swift and Solidity —
-no runtimes, no plugins, no per-language installs. One parse per file,
-one walk per metric, grammars compiled in; whole trees in milliseconds.
+no runtimes, no plugins, no per-language installs. Written in Rust for
+speed: one parse per file, one walk per metric, grammars compiled in;
+whole trees in milliseconds.
 
 ```text
 lib/sinatra/base.rb:1254:0: C: Metrics/AbcSize: Assignment Branch Condition size for `error_block!` is too high. [<7, 14, 9> 18.06/17]
@@ -25,7 +29,7 @@ Fitzpatrick defined both method and module scope; abcop gates both:
 | Rule | Severity | Meaning |
 |---|---|---|
 | `Metrics/AbcSize` | C | function ABC above `--max-abc` (default 17) |
-| `Metrics/ModuleAbcSize` | W | module ABC above 120 (summed method vectors) |
+| `Metrics/ModuleAbcSize` | W | module ABC above `--max-module-abc` (default 120) |
 | `UsedOnce` | W | local written once, read once — safe to inline |
 | `NeverUsed` | W | local written, never read |
 
@@ -45,8 +49,8 @@ NeverUsed are secondary.
 - **Fast enough for every push.** Sub-second whole-tree scans — including
   code an agent will never re-read tomorrow.
 - **Signal only.** No formatting or style cops. Vendored, generated and
-  test trees are skipped by default. One knob to argue about: `--max-abc`
-  (ModuleAbcSize is fixed at 120).
+  test trees are skipped by default. Two knobs: `--max-abc` and
+  `--max-module-abc`.
 
 Inspired by [RuboCop](https://github.com/rubocop/rubocop) (Ruby AbcSize
 parity and `# rubocop:disable` directives) and
@@ -76,6 +80,7 @@ cargo build --release
 |---|---|---|
 | `[PATH]...` | auto | targets; omitted → [scope selection](#scope-selection) |
 | `--max-abc N` | `17` | function ABC ceiling |
+| `--max-module-abc N` | `120` | module ABC ceiling |
 | `--only abc\|used-once\|never-used` | all | single check |
 | `--full` | off | whole production tree (default skips stay on) |
 | `--everything` | off | no gitignore / hidden / vendored pruning |
@@ -93,6 +98,7 @@ abcop app lib                          # two trees
 abcop --format jsonl lib > abcop.jsonl # streaming CI / agent input
 abcop --only used-once src             # inline candidates
 abcop --max-abc 12 --only abc lib      # stricter function budget
+abcop --max-module-abc 80 lib           # stricter module budget
 abcop --sort-by-score --only abc lib   # worst first
 abcop --uncommitted                    # pre-commit / agent loop
 abcop --mr --only abc                  # this branch's touched units
@@ -127,9 +133,9 @@ diff through `vendor/` does not make it owned code.
 that module (any file, including specs; untracked = fully changed). A
 three-line patch into an oversized legacy file should not block you; a
 refactor-scale diff should invite extraction. Full scans (`--full`,
-`--everything`) report every module over ABC 120. AbcSize / UsedOnce /
-NeverUsed still run in tests; only ModuleAbcSize exempts test trees by
-default (lifted once the 100-line threshold hits).
+`--everything`) report every module over `--max-module-abc` (default 120).
+AbcSize / UsedOnce / NeverUsed still run in tests; only ModuleAbcSize
+exempts test trees by default (lifted once the 100-line threshold hits).
 
 On a dirty tree the bare default is uncommitted-only; `--mr` takes the
 full branch union. Commits straight to main use a 36-hour window when no

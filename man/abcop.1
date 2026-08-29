@@ -99,7 +99,9 @@ items (free functions and inherent/trait methods); closures roll into the
 enclosing function. Match arms each count as one condition, guards via their
 binary expressions, and the ? try operator counts as a branch.
 .SS ModuleAbcSize
-Production modules whose summed method ABC exceeds 120 are flagged for
+Production modules whose summed method ABC exceeds
+.I max\-module\-abc
+(default 120) are flagged for
 extraction (Fitzpatrick total of method vectors). Test suites and test
 directories, lockfiles, schema dumps and documentation trees are exempt.
 For Rust files the trailing
@@ -209,6 +211,9 @@ buffers first).
 .TP
 .BI \-\-max\-abc " N"
 Maximum ABC score before reporting (default 17, matching RuboCop).
+.TP
+.BI \-\-max\-module\-abc " N"
+Maximum module ABC score before reporting (default 120).
 .TP
 .BI \-\-only " CHECK"
 Run only one of
