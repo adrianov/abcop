@@ -1,26 +1,18 @@
 # abcop
 
-**A must-have gate for AI-written code.** One self-contained binary that
-measures complexity — function and module ABC size — across Ruby, Rust,
-Python, Go, PHP, Java, C#, Dart, JavaScript, TypeScript, C, C++,
-Objective-C, Swift and Solidity — no runtimes, no plugins, no
-per-language installs.
+**A blazing-fast, Rust-based, opinionated complexity linter.** It gates
+function and module ABC size so code stays maintainable for humans and
+LLM agents — built for CI, and as a hook for automated refactoring.
 
-Agents ship code faster than humans can re-read it. abcop keeps that code
-*understandable*: functions and modules stay small enough for a reviewer
-(or the next model turn) to hold in one context window. Its diagnostics
-are also a **hook for automated refactoring** — extract a method, split a
-module — so CI does not only reject bad growth; it points agents at
-concrete maintainability fixes.
-
-Written in Rust for speed: one parse per file, one walk per metric,
-file-level parallelism, grammars compiled in. Whole trees in milliseconds.
+One self-contained binary across Ruby, Rust, Python, Go, PHP, Java, C#,
+Dart, JavaScript, TypeScript, C, C++, Objective-C, Swift and Solidity —
+no runtimes, no plugins, no per-language installs. One parse per file,
+one walk per metric, grammars compiled in; whole trees in milliseconds.
 
 ```text
 lib/sinatra/base.rb:1254:0: C: Metrics/AbcSize: Assignment Branch Condition size for `error_block!` is too high. [<7, 14, 9> 18.06/17]
-lib/foo.rb:12:2: W: UsedOnce: variable `tmp` is assigned once and read once -- consider inlining
 src/main.rs: W: Metrics/ModuleAbcSize: Assignment Branch Condition size for module is too high. [<80, 200, 60> 228.04/120] -- extract a coherent subunit
-132 files analysed in 0.09s, 7 abc offenses, 52 used-once offenses, 0 never-used warnings, 14 module-abc warnings
+132 files analysed in 0.09s, 7 abc offenses, 0 used-once offenses, 0 never-used warnings, 14 module-abc warnings
 ```
 
 ## Why ABC, not line counts
@@ -28,7 +20,7 @@ src/main.rs: W: Metrics/ModuleAbcSize: Assignment Branch Condition size for modu
 Line counts lie. The [ABC metric](https://en.wikipedia.org/wiki/ABC_Software_Metric)
 (Jerry Fitzpatrick, *C++ Report*, June 1997) counts what does work —
 assignments (A), branches (B), conditions (C) — as `sqrt(A² + B² + C²)`.
-Fitzpatrick defined both method and module scope; abcop ships both:
+Fitzpatrick defined both method and module scope; abcop gates both:
 
 | Rule | Severity | Meaning |
 |---|---|---|
@@ -38,7 +30,8 @@ Fitzpatrick defined both method and module scope; abcop ships both:
 | `NeverUsed` | W | local written, never read |
 
 A sparse wrapper and a dense god-object can share a line count; ABC
-separates them. Module size is gated by complexity, never by a line budget.
+separates them. Complexity is the gate — never a line budget. UsedOnce /
+NeverUsed are secondary.
 
 ## Built for AI workflows
 

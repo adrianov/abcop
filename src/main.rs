@@ -1,4 +1,4 @@
-//! abcop — fast multi-language ABC-size and used-once-variable linter.
+//! abcop — blazing-fast, opinionated ABC complexity linter for humans and LLM agents.
 
 mod abc;
 mod cache;
@@ -50,7 +50,7 @@ use clap::Parser as ClapParser;
 #[command(
     name = "abcop",
     version,
-    about = "Fast multi-language ABC-size + used-once-variable linter"
+    about = "Blazing-fast, opinionated ABC complexity linter for humans and LLM agents"
 )]
 pub(crate) struct Cli {
     /// Files or directories to analyse; omitted means the auto-selected

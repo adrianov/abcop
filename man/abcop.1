@@ -1,6 +1,6 @@
 .TH ABCOP 1 "2026-08-27" "abcop 0.16.0" "User Commands"
 .SH NAME
-abcop \- fast multi\-language ABC\-size and used\-once\-variable linter
+abcop \- blazing\-fast, opinionated ABC complexity linter for humans and LLM agents
 .SH SYNOPSIS
 .B abcop
 .RI [ OPTIONS ]
@@ -46,10 +46,17 @@ is a static\-analysis utility in the spirit of
 .BR rubocop (1)
 and
 .BR lizard (1),
-built for speed. It parses source files with tree\-sitter grammars (no Ruby
-runtime required), computes the ABC software metric for every measurable
-function, and detects local variables that are assigned exactly once and read
-exactly once under conditions where inlining is provably safe.
+built for speed and for AI\-era maintainability.
+It parses source with tree\-sitter grammars (no language runtime required)
+and gates
+.B complexity
+via the ABC metric at function scope
+.RI ( Metrics/AbcSize )
+and module scope
+.RI ( Metrics/ModuleAbcSize ),
+so units stay small enough for humans and LLM agents to review.
+Secondary checks flag one\-shot locals that are safe to inline and
+bindings that are never read.
 .PP
 Two design rules distinguish it from general\-purpose linters:
 .TP
@@ -91,6 +98,13 @@ Rust units are
 items (free functions and inherent/trait methods); closures roll into the
 enclosing function. Match arms each count as one condition, guards via their
 binary expressions, and the ? try operator counts as a branch.
+.SS ModuleAbcSize
+Production modules whose summed method ABC exceeds 120 are flagged for
+extraction (Fitzpatrick total of method vectors). Test suites and test
+directories, lockfiles, schema dumps and documentation trees are exempt.
+For Rust files the trailing
+.B #[cfg(test)]
+module does not count toward the budget.
 .SS UsedOnce
 A local variable that is written exactly once by a plain assignment and read
 exactly once afterwards is reported as an inline candidate when the rewrite is
@@ -111,13 +125,6 @@ A local variable that is assigned but never read is dead code. abcop
 reports it once per binding at the first write. Underscore-prefixed names,
 parameters, enum constructors in patterns and reads inside macro input or
 format-string captures all count as uses or exemptions as appropriate.
-.SS ModuleAbcSize
-Production modules whose summed method ABC exceeds 120 are flagged for
-extraction (Fitzpatrick total of method vectors; calibrated to a typical
-~200-line Ruby file). Test suites and test directories, lockfiles, schema
-dumps and documentation trees are exempt. For Rust files the trailing
-.B #[cfg(test)]
-module does not count toward the budget.
 .SH SUPPORTED LANGUAGES
 Language;Extensions / files;Checks
 Ruby;.rb .rake .ru .gemspec plus Gemfile/Rakefile;all four, RuboCop\-parity counting

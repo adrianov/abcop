@@ -5,7 +5,7 @@ edition = "2024"
 authors = ["Peter Adrianov"]
 license = "GPL-3.0-or-later"
 repository = "https://github.com/adrianov/abcop"
-description = "Blazing-fast multi-language ABC-size and used-once-variable linter"
+description = "Blazing-fast, opinionated ABC complexity linter for humans and LLM agents"
 readme = "README.md"
 
 [dependencies]
