@@ -74,10 +74,15 @@ pub fn is_production(path: &str) -> bool {
 
 /// File ABC over method scores; Rust `#[cfg(test)]` tails are omitted
 /// (same exemption the old line budget used).
-pub fn from_scores(scores: &[AbcOffense], path: &str, src: &str) -> Option<ModuleAbc> {
+pub fn from_scores(
+    scores: &[AbcOffense],
+    path: &str,
+    src: &str,
+    max: f64,
+) -> Option<ModuleAbc> {
     let filtered = rust_prod_scores(scores, path, src);
     let (a, b, c, score) = abc::module_score(filtered.as_ref());
-    (score > MAX_ABC).then(|| ModuleAbc {
+    (score > max).then(|| ModuleAbc {
         score,
         vector: abc::fmt_vector(a, b, c),
     })

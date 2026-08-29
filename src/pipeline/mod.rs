@@ -2,6 +2,7 @@
 //! dispatch (`backends`), cache round-trip, and changeset narrowing
 //! (`narrow`).
 
+use crate::abc::Limits;
 use crate::cache;
 use crate::git_changes;
 use crate::paths::{Lang, lang_for, parse_file_lang};
@@ -48,7 +49,7 @@ fn reparsed<'a>(src_bytes: &'a [u8], lang: Lang) -> Option<crate::model::FileMod
 pub(crate) fn analyze_one(
     path: &std::path::Path,
     only: Option<&str>,
-    max: f64,
+    limits: Limits,
     changeset: Option<&git_changes::Changeset>,
     cache: Option<&cache::Cache>,
 ) -> crate::output::FileResult {
@@ -57,7 +58,7 @@ pub(crate) fn analyze_one(
     };
     // Cache stores raw per-file results; scope narrowing is per-run and
     // must also apply when the analysis itself comes from the cache.
-    let hit = cache.and_then(|c| cache_hit(c, path, &src_buf, only, max));
+    let hit = cache.and_then(|c| cache_hit(c, path, &src_buf, only, limits));
     if let Some(mut hit) = hit {
         narrow::apply(changeset, &mut hit, &src_buf);
         return hit;
@@ -69,12 +70,12 @@ pub(crate) fn analyze_one(
     };
     let checks = Checks::new(only);
     if file_lang.is_clike() {
-        backends::clike_arm(&mut r, file_lang, &src_buf, &tree, &checks, max);
-    } else if !backends::non_clike_arm(&mut r, file_lang, &src_buf, tree, &checks, max) {
+        backends::clike_arm(&mut r, file_lang, &src_buf, &tree, &checks, limits);
+    } else if !backends::non_clike_arm(&mut r, file_lang, &src_buf, tree, &checks, limits) {
         // Unparsable Ruby tree: report the blank result without caching it.
         return r;
     }
-    store_result(cache, path, &src_buf, only, max, &r);
+    store_result(cache, path, &src_buf, only, limits, &r);
     narrow::apply(changeset, &mut r, &src_buf);
     r
 }
@@ -92,9 +93,9 @@ fn cache_hit(
     path: &std::path::Path,
     src: &[u8],
     only: Option<&str>,
-    max: f64,
+    limits: Limits,
 ) -> Option<crate::output::FileResult> {
-    let key = cache.file_key(path, src, only, max);
+    let key = cache.file_key(path, src, only, limits);
     let (abc, used_once, never_used, module_abc) = cache.get(&key)?;
     Some(crate::output::FileResult {
         path: path.display().to_string(),
@@ -110,11 +111,11 @@ fn store_result(
     path: &std::path::Path,
     src: &[u8],
     only: Option<&str>,
-    max: f64,
+    limits: Limits,
     r: &crate::output::FileResult,
 ) {
     if let Some(cache) = cache {
-        let key = cache.file_key(path, src, only, max);
+        let key = cache.file_key(path, src, only, limits);
         cache.store(
             &key,
             &r.abc,

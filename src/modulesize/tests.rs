@@ -74,7 +74,7 @@ fn offense(a: u32, b: u32, c: u32) -> AbcOffense {
 #[test]
 fn module_abc_sums_method_vectors() {
     let scores = vec![offense(30, 40, 0), offense(0, 0, 120)];
-    let hit = from_scores(&scores, "app/models/user.rb", "").unwrap();
+    let hit = from_scores(&scores, "app/models/user.rb", "", super::MAX_ABC).unwrap();
     assert_eq!(
         hit,
         ModuleAbc {
@@ -88,7 +88,14 @@ fn module_abc_sums_method_vectors() {
 fn module_abc_ignores_scores_at_the_threshold() {
     // magnitude 120 exactly must not fire (AbcSize-style `>`).
     let scores = vec![offense(72, 96, 0)]; // 120
-    assert!(from_scores(&scores, "app/models/user.rb", "").is_none());
+    assert!(from_scores(&scores, "app/models/user.rb", "", super::MAX_ABC).is_none());
+}
+
+#[test]
+fn module_abc_respects_custom_max() {
+    let scores = vec![offense(30, 40, 0)]; // 50
+    assert!(from_scores(&scores, "app/models/user.rb", "", 50.0).is_none());
+    assert!(from_scores(&scores, "app/models/user.rb", "", 49.0).is_some());
 }
 
 #[test]
@@ -112,5 +119,5 @@ fn rust_cfg_test_tail_is_excluded_from_module_abc() {
             vector: "<60, 80, 0>".into(),
         },
     ];
-    assert!(from_scores(&scores, "src/lib.rs", src).is_none());
+    assert!(from_scores(&scores, "src/lib.rs", src, super::MAX_ABC).is_none());
 }

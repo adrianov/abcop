@@ -61,18 +61,21 @@ impl Cache {
         path: &Path,
         contents: &[u8],
         only: Option<&str>,
-        max: f64,
+        limits: crate::abc::Limits,
     ) -> String {
-        use sha2::Digest;
-        let path_string = path.display().to_string();
-        let mut h = sha2::Sha256::new();
-        h.update(env!("CARGO_PKG_VERSION").as_bytes());
-        h.update(RULES_REV.to_le_bytes());
-        h.update(max.to_le_bytes());
-        h.update(only.unwrap_or("").as_bytes());
-        h.update(&path_string);
-        h.update(contents);
-        format!("{:x}", h.finalize())
+        let path = path.display().to_string();
+        let rev = RULES_REV.to_le_bytes();
+        let method = limits.method.to_le_bytes();
+        let module = limits.module.to_le_bytes();
+        hash_parts(&[
+            env!("CARGO_PKG_VERSION").as_bytes(),
+            &rev,
+            &method,
+            &module,
+            only.unwrap_or("").as_bytes(),
+            path.as_bytes(),
+            contents,
+        ])
     }
 
     pub(crate) fn get(&self, key: &str) -> Option<CachedDiags> {
@@ -99,6 +102,15 @@ impl Cache {
     pub(super) fn store_ref(&self) -> &EntryStore {
         &self.store
     }
+}
+
+fn hash_parts(parts: &[&[u8]]) -> String {
+    use sha2::Digest;
+    let mut h = sha2::Sha256::new();
+    for p in parts {
+        h.update(p);
+    }
+    format!("{:x}", h.finalize())
 }
 
 /// Remove the pre-redb one-JSON-per-entry files left behind in the cache

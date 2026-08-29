@@ -3,7 +3,7 @@
 
 use tree_sitter::Tree;
 
-use crate::abc::AbcOffense;
+use crate::abc::{AbcOffense, Limits};
 use crate::directives::{self, Directives};
 use crate::modulesize;
 use crate::never_used::NeverUsedOffense;
@@ -24,9 +24,9 @@ fn suppressed<T>(v: Vec<T>, keep: impl Fn(&T) -> bool) -> Vec<T> {
     v.into_iter().filter(|o| !keep(o)).collect()
 }
 
-fn set_module_abc(r: &mut FileResult, src: &[u8], all: &[AbcOffense]) {
+fn set_module_abc(r: &mut FileResult, src: &[u8], all: &[AbcOffense], max: f64) {
     let text = std::str::from_utf8(src).unwrap_or("");
-    r.module_abc = modulesize::from_scores(all, &r.path, text);
+    r.module_abc = modulesize::from_scores(all, &r.path, text, max);
 }
 
 fn keep_abc(dirs: &Directives, all: Vec<AbcOffense>, max: f64) -> Vec<AbcOffense> {
@@ -44,13 +44,13 @@ pub(super) fn clike_arm(
     src: &[u8],
     tree: &Tree,
     checks: &Checks,
-    max: f64,
+    limits: Limits,
 ) {
     let dirs = directives_for(src);
     let all = crate::clike::all_scores(src, tree, lang);
-    set_module_abc(r, src, &all);
+    set_module_abc(r, src, &all, limits.module);
     if checks.want_abc {
-        r.abc = keep_abc(&dirs, all, max);
+        r.abc = keep_abc(&dirs, all, limits.method);
     }
     if !matches!(
         lang,
@@ -76,7 +76,7 @@ fn directed<A, U, N>(
     src: &[u8],
     dirs: &Directives,
     checks: &Checks,
-    max: f64,
+    limits: Limits,
     all_scores: A,
     used_once: U,
     never_used: N,
@@ -86,9 +86,9 @@ fn directed<A, U, N>(
     N: FnOnce() -> Vec<NeverUsedOffense>,
 {
     let all = all_scores();
-    set_module_abc(r, src, &all);
+    set_module_abc(r, src, &all, limits.module);
     if checks.want_abc {
-        r.abc = keep_abc(dirs, all, max);
+        r.abc = keep_abc(dirs, all, limits.method);
     }
     if checks.want_used {
         r.used_once = suppressed(used_once(), |o| dirs.suppresses_all(o.line));
@@ -105,7 +105,7 @@ fn non_clike_directed<B: NonClike>(
     src: &[u8],
     tree: Tree,
     checks: &Checks,
-    max: f64,
+    limits: Limits,
 ) -> bool {
     let fm = B::build(src, tree);
     directed(
@@ -113,7 +113,7 @@ fn non_clike_directed<B: NonClike>(
         src,
         &directives_for(src),
         checks,
-        max,
+        limits,
         || B::all_scores(&fm),
         || B::used_once_offenses(&fm),
         || B::never_used_offenses(&fm),
@@ -123,12 +123,21 @@ fn non_clike_directed<B: NonClike>(
 
 /// Rust backend: no inline directives (rustc/clippy own that noise); all
 /// three rules run.
-fn rust_arm(r: &mut FileResult, src: &[u8], tree: Tree, checks: &Checks, max: f64) -> bool {
+fn rust_arm(
+    r: &mut FileResult,
+    src: &[u8],
+    tree: Tree,
+    checks: &Checks,
+    limits: Limits,
+) -> bool {
     let fm = crate::rustlang::build(src, tree);
     let all = crate::rustlang::all_scores(&fm);
-    set_module_abc(r, src, &all);
+    set_module_abc(r, src, &all, limits.module);
     if checks.want_abc {
-        r.abc = all.into_iter().filter(|o| o.score > max).collect();
+        r.abc = all
+            .into_iter()
+            .filter(|o| o.score > limits.method)
+            .collect();
     }
     if checks.want_used {
         r.used_once = crate::rustlang::used_once_offenses(&fm);
@@ -141,15 +150,15 @@ fn rust_arm(r: &mut FileResult, src: &[u8], tree: Tree, checks: &Checks, max: f6
 
 /// Ruby backend: directives-filtered ABC and used-once, plain never-used.
 /// False when the Ruby reparse fails (no usable model).
-fn ruby_arm(r: &mut FileResult, src: &[u8], checks: &Checks, max: f64) -> bool {
+fn ruby_arm(r: &mut FileResult, src: &[u8], checks: &Checks, limits: Limits) -> bool {
     let dirs = directives_for(src);
     let Some(fm) = super::reparsed(src, Lang::Ruby) else {
         return false;
     };
     let all = crate::abc::all_scores(&fm);
-    set_module_abc(r, src, &all);
+    set_module_abc(r, src, &all, limits.module);
     if checks.want_abc {
-        r.abc = keep_abc(&dirs, all, max);
+        r.abc = keep_abc(&dirs, all, limits.method);
     }
     if checks.want_used {
         r.used_once = suppressed(crate::used_once::analyze(&fm), |o| {
@@ -170,18 +179,18 @@ pub(super) fn non_clike_arm(
     src: &[u8],
     tree: Tree,
     checks: &Checks,
-    max: f64,
+    limits: Limits,
 ) -> bool {
     match lang {
-        Lang::Rust => rust_arm(r, src, tree, checks, max),
-        Lang::Ruby => ruby_arm(r, src, checks, max),
-        Lang::Py => non_clike_directed::<PyB>(r, src, tree, checks, max),
-        Lang::Go => non_clike_directed::<GoB>(r, src, tree, checks, max),
-        Lang::Php => non_clike_directed::<PhpB>(r, src, tree, checks, max),
-        Lang::Java => non_clike_directed::<JavaB>(r, src, tree, checks, max),
-        Lang::CSharp => non_clike_directed::<CSharpB>(r, src, tree, checks, max),
-        Lang::Solidity => non_clike_directed::<SolidityB>(r, src, tree, checks, max),
-        Lang::Dart => non_clike_directed::<DartB>(r, src, tree, checks, max),
+        Lang::Rust => rust_arm(r, src, tree, checks, limits),
+        Lang::Ruby => ruby_arm(r, src, checks, limits),
+        Lang::Py => non_clike_directed::<PyB>(r, src, tree, checks, limits),
+        Lang::Go => non_clike_directed::<GoB>(r, src, tree, checks, limits),
+        Lang::Php => non_clike_directed::<PhpB>(r, src, tree, checks, limits),
+        Lang::Java => non_clike_directed::<JavaB>(r, src, tree, checks, limits),
+        Lang::CSharp => non_clike_directed::<CSharpB>(r, src, tree, checks, limits),
+        Lang::Solidity => non_clike_directed::<SolidityB>(r, src, tree, checks, limits),
+        Lang::Dart => non_clike_directed::<DartB>(r, src, tree, checks, limits),
         _ => unreachable!("unsupported non-clike language"),
     }
 }

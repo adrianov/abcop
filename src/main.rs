@@ -63,6 +63,9 @@ pub(crate) struct Cli {
     /// Maximum ABC score before reporting
     #[arg(long, default_value_t = 17.0)]
     pub(crate) max_abc: f64,
+    /// Maximum module ABC score before reporting
+    #[arg(long, default_value_t = modulesize::MAX_ABC)]
+    pub(crate) max_module_abc: f64,
     /// Run only one of the checks
     #[arg(long, value_parser = ["abc", "used-once", "never-used"])]
     pub(crate) only: Option<String>,

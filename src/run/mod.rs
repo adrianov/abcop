@@ -7,6 +7,7 @@ use std::sync::Mutex;
 
 use rayon::prelude::*;
 
+use crate::abc::Limits;
 use crate::output::{FileResult, JsonStream, RunStats};
 use crate::walker::collect_files;
 use crate::{git_changes, pipeline, scan_scope};
@@ -16,7 +17,7 @@ use crate::{git_changes, pipeline, scan_scope};
 pub(crate) struct ScanRun<'a> {
     paths: &'a [String],
     only: Option<&'a str>,
-    max_abc: f64,
+    limits: Limits,
     format: &'a str,
     mr: bool,
     uncommitted: bool,
@@ -31,7 +32,10 @@ impl<'a> From<&'a super::Cli> for ScanRun<'a> {
         Self {
             paths: &cli.paths,
             only: cli.only.as_deref(),
-            max_abc: cli.max_abc,
+            limits: Limits {
+                method: cli.max_abc,
+                module: cli.max_module_abc,
+            },
             format: &cli.format,
             mr: cli.mr,
             uncommitted: cli.uncommitted,
@@ -96,7 +100,7 @@ impl ScanRun<'_> {
         match self.format {
             "json" => crate::output::print_json(&results.len(), &results, start.elapsed()),
             "jsonl" => crate::output::print_jsonl(&results),
-            _ => crate::output::print_text_sorted(&results, self.max_abc, start.elapsed()),
+            _ => crate::output::print_text_sorted(&results, self.limits, start.elapsed()),
         }
         exit_code(&results)
     }
@@ -113,7 +117,7 @@ impl ScanRun<'_> {
         let sink = Mutex::new(RunStats::default());
         self.for_each_file(prepared, |r| {
             let mut sink = sink.lock().unwrap();
-            crate::output::print_file_text(r, self.max_abc);
+            crate::output::print_file_text(r, self.limits);
             sink.add(r);
         });
         let stats = sink.into_inner().unwrap();
@@ -152,7 +156,7 @@ impl ScanRun<'_> {
     ) -> Vec<FileResult> {
         files
             .par_iter()
-            .map(|p| pipeline::analyze_one(p, self.only, self.max_abc, changeset, cache))
+            .map(|p| pipeline::analyze_one(p, self.only, self.limits, changeset, cache))
             .collect()
     }
 
@@ -163,7 +167,7 @@ impl ScanRun<'_> {
             let r = pipeline::analyze_one(
                 p,
                 self.only,
-                self.max_abc,
+                self.limits,
                 prepared.changeset.as_ref(),
                 prepared.cache.as_ref(),
             );

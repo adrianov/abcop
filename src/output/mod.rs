@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 
 use crate::abc;
 use crate::abc::AbcOffense;
-use crate::modulesize::{self, ModuleAbc};
+use crate::modulesize::ModuleAbc;
 use crate::never_used::NeverUsedOffense;
 use crate::used_once::UsedOnceOffense;
 
@@ -84,19 +84,19 @@ struct TextLine {
     text: String,
 }
 
-fn print_module_abc(r: &FileResult) {
+fn print_module_abc(r: &FileResult, max_module: f64) {
     if let Some(m) = &r.module_abc {
-        println!("{}", module_abc_text(r, m));
+        println!("{}", module_abc_text(r, m, max_module));
     }
 }
 
-fn module_abc_text(r: &FileResult, m: &ModuleAbc) -> String {
+fn module_abc_text(r: &FileResult, m: &ModuleAbc, max_module: f64) -> String {
     format!(
         "{}: W: Metrics/ModuleAbcSize: Assignment Branch Condition size for module is too high. [{} {}/{}] -- extract a coherent subunit",
         r.path,
         m.vector,
         abc::g4(m.score),
-        abc::g4(modulesize::MAX_ABC)
+        abc::g4(max_module)
     )
 }
 
@@ -127,7 +127,7 @@ fn never_used_text(r: &FileResult, o: &NeverUsedOffense) -> String {
     )
 }
 
-fn text_lines(results: &[FileResult], max: f64) -> Vec<TextLine> {
+fn text_lines(results: &[FileResult], limits: abc::Limits) -> Vec<TextLine> {
     let mut lines = Vec::new();
     for r in results {
         for o in &r.abc {
@@ -138,7 +138,7 @@ fn text_lines(results: &[FileResult], max: f64) -> Vec<TextLine> {
                 line: o.line,
                 column: o.column,
                 rule: "Metrics/AbcSize",
-                text: abc_text(r, o, max),
+                text: abc_text(r, o, limits.method),
             });
         }
         for o in &r.used_once {
@@ -171,7 +171,7 @@ fn text_lines(results: &[FileResult], max: f64) -> Vec<TextLine> {
                 line: 1,
                 column: 0,
                 rule: "Metrics/ModuleAbcSize",
-                text: module_abc_text(r, m),
+                text: module_abc_text(r, m, limits.module),
             });
         }
     }
@@ -225,10 +225,10 @@ fn sort_text_lines(lines: &mut [TextLine]) {
 }
 
 /// Emit one file's findings immediately (text mode, no global sort).
-pub fn print_file_text(r: &FileResult, max: f64) {
+pub fn print_file_text(r: &FileResult, limits: abc::Limits) {
     use std::io::Write;
     for o in &r.abc {
-        println!("{}", abc_text(r, o, max));
+        println!("{}", abc_text(r, o, limits.method));
     }
     for o in &r.used_once {
         println!("{}", used_once_text(r, o));
@@ -236,7 +236,7 @@ pub fn print_file_text(r: &FileResult, max: f64) {
     for o in &r.never_used {
         println!("{}", never_used_text(r, o));
     }
-    print_module_abc(r);
+    print_module_abc(r, limits.module);
     let _ = std::io::stdout().flush();
 }
 
@@ -253,8 +253,12 @@ pub fn print_summary(stats: &RunStats, elapsed: std::time::Duration) {
 }
 
 /// Buffer every finding, sort highest score first, then emit.
-pub fn print_text_sorted(results: &[FileResult], max: f64, elapsed: std::time::Duration) {
-    let mut lines = text_lines(results, max);
+pub fn print_text_sorted(
+    results: &[FileResult],
+    limits: abc::Limits,
+    elapsed: std::time::Duration,
+) {
+    let mut lines = text_lines(results, limits);
     sort_text_lines(&mut lines);
     for line in &lines {
         println!("{}", line.text);
@@ -348,7 +352,13 @@ mod tests {
     #[test]
     fn sort_by_score_puts_biggest_first() {
         let results = sample_results();
-        let mut lines = text_lines(&results, 17.0);
+        let mut lines = text_lines(
+            &results,
+            abc::Limits {
+                method: 17.0,
+                module: crate::modulesize::MAX_ABC,
+            },
+        );
         sort_text_lines(&mut lines);
         let rules: Vec<_> = lines.iter().map(|l| l.rule).collect();
         assert_eq!(

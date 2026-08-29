@@ -25,6 +25,13 @@ pub struct AbcOffense {
     pub vector: String,
 }
 
+/// Method and module ABC ceilings for one scan.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Limits {
+    pub method: f64,
+    pub module: f64,
+}
+
 pub(crate) fn fmt_vector(a: u32, b: u32, c: u32) -> String {
     format!("<{}, {}, {}>", a, b, c)
 }
