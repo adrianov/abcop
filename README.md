@@ -18,27 +18,29 @@ src/main.rs: W: Metrics/ModuleAbcSize: Assignment Branch Condition size for modu
 
 ## Why
 
-Two questions come up constantly during code review:
+Three questions come up constantly during code review:
 
 1. *How big is this function, really?* Line counts lie. The ABC metric counts
    what actually does work: assignments, branches and conditions.
-2. *Can this variable just be inlined?* A local assigned once and read once is
+2. *How big is this file, really?* The same metric, rolled up across the
+   module — sum every method's `<A, B, C>`, then one magnitude — so a sparse
+   200-line wrapper and a dense 200-line god-object are not treated the same.
+3. *Can this variable just be inlined?* A local assigned once and read once is
    an indirection with no payoff — but inlining must not change behavior.
 
-abcop answers both for whole trees in milliseconds, and a third rule keeps
-source modules from growing without bound.
+abcop answers all three for whole trees in milliseconds.
 
 ## Built for CI in LLM-driven development
 
 abcop exists to gate AI-written code in CI pipelines. That mission dictates
 the rules it ships:
 
-- **Short modules, low complexity — enforced, not wished for.** A module ABC
-  budget (≈ a typical 200-line Ruby file) and per-function ABC limits keep
-  every file small enough to hold in a human's head and inside an LLM's
-  context window at once. Small, simple units are what models modify most
-  reliably and what reviewers can actually read; when something breaks, the
-  debugging surface is tiny by construction.
+- **Short modules, low complexity — enforced, not wished for.** Per-function
+  AbcSize (`--max-abc`, default 17) and file-level ModuleAbcSize (fixed at 90,
+  ~a typical 200-line Ruby module) keep every unit small enough to hold in a
+  human's head and inside an LLM's context window at once. Small, simple units
+  are what models modify most reliably and what reviewers can actually read;
+  when something breaks, the debugging surface is tiny by construction.
 - **Fast enough to run on every push.** Sub-second whole-tree scans make
   linting free at the exact moment code is written — including code written
   by an agent that will never re-read it tomorrow.
@@ -51,7 +53,8 @@ abcop takes sides and does not apologize for them:
   signal about defects; it cannot catch a single bug, only generate churn,
   bikeshedding and diff noise. Formatting belongs to formatters, style to
   taste. abcop spends its budget exclusively on findings that change what you
-  do next: a function too big to review, a dead write, an inline candidate.
+  do next: a function or module too big to review, a dead write, an inline
+  candidate.
 - **Vendored, generated and test material is skipped by default.** Your CI
   minutes and your attention belong to production code. Name such a path
   explicitly when you genuinely want it reviewed.
@@ -68,21 +71,24 @@ article *"Applying the ABC Metric to C, C++, and Java"*, **C++ Report, June
 1997**. He proposed it to overcome the drawbacks of counting lines of code:
 ABC is strictly a *size* metric — it tallies assignments (A), branches (B:
 explicit forward transfers such as calls), and conditions (C) — and combines
-them into a single score, `sqrt(A² + B² + C²)`. RuboCop's `Metrics/AbcSize`
-and lizard's family of size checks are both downstream of that idea.
+them into a single score, `sqrt(A² + B² + C²)`. The same article allows the
+metric at method, class/module or program scope by totaling the A, B and C
+counts of the parts, then taking one magnitude; abcop's `Metrics/AbcSize` and
+`Metrics/ModuleAbcSize` are those two scopes. RuboCop's `Metrics/AbcSize` and
+lizard's family of size checks are both downstream of the same idea.
 
 From RuboCop we take the exact default counting rules for Ruby (verified
 byte-for-byte against RuboCop 1.89's calculator) and its suppression-comment
 workflow. From lizard we take the shape: one small tool that speaks many
 languages. Everything else — the speed target, the used-once analysis, the
-module ABC budget — exists because those two tools stop where we wanted to
-start.
+module ABC budget in place of a line-count gate — exists because those two
+tools stop where we wanted to start.
 
 ## Advantages
 
 - **Fast**: ~850k–940k lines/second per core batch on Apple M1 Pro. Scanning
-  RuboCop's own source tree (943 files, 110k LOC) takes ~0.13 s for both
-  metrics — roughly **39× faster** than `rubocop --only Metrics/AbcSize`
+  RuboCop's own source tree (943 files, 110k LOC) takes ~0.13 s for all
+  checks — roughly **39× faster** than `rubocop --only Metrics/AbcSize`
   (caching disabled), ~140× faster than a full default rubocop run.
 - **RuboCop-compatible AbcSize**: identical formula, vector notation,
   threshold semantics and suppression comments for Ruby. Counting was verified
@@ -94,11 +100,11 @@ start.
 - **UsedOnce**: inline candidates only — pure right-hand side, unconditional
   write, straight-line dominance, single read outside macro input tokens.
   Parameters, pattern bindings, reassignments and shadowed names never qualify.
-- **ModuleAbcSize**: warns when a production module's summed method ABC
-  exceeds 90 (Fitzpatrick total: sum `<A,B,C>` then one magnitude — calibrated
-  to a typical ~200-line Ruby file). Test suites, fixtures, lockfiles and
-  schema dumps are exempt; Rust `#[cfg(test)]` tails don't count toward the
-  budget.
+- **ModuleAbcSize**: warns when a production module's Fitzpatrick total
+  (sum of method `<A,B,C>`, then `sqrt(A²+B²+C²)`) exceeds **90** — calibrated
+  against ~200-line Ruby modules in RuboCop/Sinatra `lib`. Same score and
+  vector shape as method AbcSize. Test suites, fixtures, lockfiles and schema
+  dumps are exempt; Rust `#[cfg(test)]` tails don't count toward the budget.
 - **One tool, zero dependencies.** A single self-contained binary replaces
   the per-language linter fleet — no Ruby gems, no pip/npm packages, no
   plugins, no version drift between machines. Every grammar is compiled
@@ -177,7 +183,7 @@ the MR's task scope. A three-line patch into a 500-line legacy module
 should not gate your review for a size problem you did not cause;
 refactor-scale diffs are exactly where extracting a coherent subunit is
 expected. Full scans (`--full`, `--everything`) keep reporting every
-oversized module.
+module whose ABC exceeds 90.
 
 **Code rules run in tests; only ModuleAbcSize exempts them by default.**
 AbcSize, UsedOnce and NeverUsed stay active in `spec/`, `test/` and
@@ -217,7 +223,7 @@ JSON diagnostics carry `file`, `line`, `column`, `severity`, `rule`,
 | `Metrics/AbcSize` | C | function ABC score exceeds `--max-abc` |
 | `UsedOnce` | W | local assigned once, read once, safe to inline |
 | `NeverUsed` | W | local assigned but never read (dead writes) |
-| `Metrics/ModuleAbcSize` | W | module ABC (summed method vectors) exceeds 90 |
+| `Metrics/ModuleAbcSize` | W | module ABC exceeds 90 (summed method vectors) |
 
 ### Changed-code workflow
 
