@@ -95,11 +95,16 @@ fn objective_c_message_sends_are_branches() {
   }
   return 0;
 }
+- (void)foo:(id)x bar:(id)y {
+  if (x) return;
+}
 @end
 ",
         0.0,
     );
-    assert_eq!(off.len(), 1, "{off:?}");
+    assert_eq!(off.len(), 2, "{off:?}");
+    assert_eq!(off[0].name, "pick:");
+    assert_eq!(off[1].name, "foo:bar:");
     // B: [items count], [self factory], [.. build] = 3 sends
     // C: if, > = 2
     assert_eq!(off[0].vector, "<0, 3, 2>");
