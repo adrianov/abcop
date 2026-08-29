@@ -3,10 +3,11 @@
 //! [`crate::scan_scope`].
 
 use std::process::ExitCode;
+use std::sync::Mutex;
 
 use rayon::prelude::*;
 
-use crate::output::FileResult;
+use crate::output::{FileResult, JsonStream, RunStats};
 use crate::walker::collect_files;
 use crate::{git_changes, pipeline, scan_scope};
 
@@ -22,6 +23,7 @@ pub(crate) struct ScanRun<'a> {
     full: bool,
     everything: bool,
     no_cache: bool,
+    sort_by_score: bool,
 }
 
 impl<'a> From<&'a super::Cli> for ScanRun<'a> {
@@ -36,50 +38,125 @@ impl<'a> From<&'a super::Cli> for ScanRun<'a> {
             full: cli.full,
             everything: cli.everything,
             no_cache: cli.no_cache,
+            sort_by_score: cli.sort_by_score,
         }
     }
+}
+
+struct Prepared {
+    changeset: Option<git_changes::Changeset>,
+    cache: Option<crate::cache::Cache>,
+    files: Vec<std::path::PathBuf>,
 }
 
 impl ScanRun<'_> {
     /// Execute the configured scan and map the outcome to the process exit
     /// code: 0 clean, 1 diagnostics reported.
     pub(crate) fn execute(&self) -> ExitCode {
+        let prepared = match self.prepare() {
+            Ok(p) => p,
+            Err(code) => return code,
+        };
+        let start = std::time::Instant::now();
+        // --sort-by-score needs every result before emit; otherwise each
+        // file prints as soon as its analysis finishes (text and JSON).
+        if self.sort_by_score {
+            self.run_buffered(&prepared, start)
+        } else {
+            self.run_stream(&prepared, start)
+        }
+    }
+
+    fn prepare(&self) -> Result<Prepared, ExitCode> {
         let explicit_paths = !self.paths.is_empty();
-        let changeset = match scan_scope::resolve(
+        let changeset = scan_scope::resolve(
             self.mr,
             self.uncommitted,
             explicit_paths,
             self.full,
             self.everything,
-        ) {
-            Ok(v) => v,
-            Err(e) => return scan_scope::error(e),
-        };
+        )
+        .map_err(scan_scope::error)?;
         let cache = self.open_cache();
-        let start = std::time::Instant::now();
-        let results = self.scan(explicit_paths, changeset.as_ref(), cache.as_ref());
-        self.render(&results, start.elapsed());
+        let files = collect_targets(self, explicit_paths, changeset.as_ref());
+        scan_scope::note_if_empty(changeset.as_ref(), &files);
+        Ok(Prepared {
+            changeset,
+            cache,
+            files,
+        })
+    }
+
+    fn run_buffered(&self, prepared: &Prepared, start: std::time::Instant) -> ExitCode {
+        let results = self.scan_all(
+            &prepared.files,
+            prepared.changeset.as_ref(),
+            prepared.cache.as_ref(),
+        );
+        match self.format {
+            "json" => crate::output::print_json(&results.len(), &results, start.elapsed()),
+            _ => crate::output::print_text_sorted(&results, self.max_abc, start.elapsed()),
+        }
         exit_code(&results)
     }
 
-    /// Collect targets and run the per-file pipeline over them in walker
-    /// order.
-    fn scan(
+    fn run_stream(&self, prepared: &Prepared, start: std::time::Instant) -> ExitCode {
+        match self.format {
+            "json" => self.stream_json(prepared, start),
+            _ => self.stream_text(prepared, start),
+        }
+    }
+
+    fn stream_text(&self, prepared: &Prepared, start: std::time::Instant) -> ExitCode {
+        let sink = Mutex::new(RunStats::default());
+        self.for_each_file(prepared, |r| {
+            let mut sink = sink.lock().unwrap();
+            crate::output::print_file_text(r, self.max_abc);
+            sink.add(r);
+        });
+        let stats = sink.into_inner().unwrap();
+        crate::output::print_summary(&stats, start.elapsed());
+        exit_from_stats(&stats)
+    }
+
+    fn stream_json(&self, prepared: &Prepared, start: std::time::Instant) -> ExitCode {
+        let sink = Mutex::new((JsonStream::begin(), RunStats::default()));
+        self.for_each_file(prepared, |r| {
+            let mut sink = sink.lock().unwrap();
+            sink.0.write_file(r);
+            sink.1.add(r);
+        });
+        let (stream, stats) = sink.into_inner().unwrap();
+        stream.finish(&stats, start.elapsed());
+        exit_from_stats(&stats)
+    }
+
+    /// Analyse every file, collecting results in walker order.
+    fn scan_all(
         &self,
-        explicit_paths: bool,
+        files: &[std::path::PathBuf],
         changeset: Option<&git_changes::Changeset>,
         cache: Option<&crate::cache::Cache>,
     ) -> Vec<FileResult> {
-        // MR/changed scope picks its own files; otherwise walk the targets.
-        // Whole-tree modes and the no-repo fallback both start at cwd.
-        let files = collect_targets(self, explicit_paths, changeset);
-        scan_scope::note_if_empty(changeset, &files);
-
-        // par_iter keeps the walker's (BFS + extension/name) order intact
         files
             .par_iter()
             .map(|p| pipeline::analyze_one(p, self.only, self.max_abc, changeset, cache))
             .collect()
+    }
+
+    /// Run analysis in parallel; `on_file` is called once per finished
+    /// file (caller serializes shared output state).
+    fn for_each_file(&self, prepared: &Prepared, on_file: impl Fn(&FileResult) + Sync) {
+        prepared.files.par_iter().for_each(|p| {
+            let r = pipeline::analyze_one(
+                p,
+                self.only,
+                self.max_abc,
+                prepared.changeset.as_ref(),
+                prepared.cache.as_ref(),
+            );
+            on_file(&r);
+        });
     }
 
     /// Open the on-disk result cache unless disabled, pruning stale entries.
@@ -93,15 +170,6 @@ impl ScanRun<'_> {
             cache.prune();
         }
         cache
-    }
-
-    fn render(&self, results: &[FileResult], elapsed: std::time::Duration) {
-        match self.format {
-            "json" => {
-                crate::output::print_json(&results.len(), results, elapsed);
-            }
-            _ => crate::output::print_text(results, self.max_abc, elapsed),
-        }
     }
 }
 
@@ -126,15 +194,17 @@ fn collect_targets(
 }
 
 fn exit_code(results: &[FileResult]) -> ExitCode {
-    let clean = results.iter().all(|r| {
-        r.abc.is_empty()
-            && r.used_once.is_empty()
-            && r.never_used.is_empty()
-            && r.module_abc.is_none()
-    });
-    if clean {
+    if results.iter().all(|r| r.is_clean()) {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
+    }
+}
+
+fn exit_from_stats(stats: &RunStats) -> ExitCode {
+    if stats.dirty {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
 }

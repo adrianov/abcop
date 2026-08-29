@@ -178,12 +178,21 @@ Output format:
 .B text
 (human readable, default) or
 .B json
-(machine readable; contains a diagnostics array with
+(machine readable; one object with a
+.I diagnostics
+array of
 .IR file ", " line ", " column ", " severity ", " rule ", " message
 and, for ABC entries, numeric
 .I score
 and
-.IR vector ).
+.IR vector ,
+then
+.I files
+and
+.IR elapsed_ms .
+Without
+.B \-\-sort\-by\-score
+the array streams as each file finishes).
 .TP
 .BI \-\-max\-abc " N"
 Maximum ABC score before reporting (default 17, matching RuboCop).
@@ -194,7 +203,8 @@ Run only one of
 or
 .BR used-once
 or
-.BR never-used
+.BR never-used .
+.TP
 .B \-\-mr
 Scan your current merge request explicitly: changes since branching from
 master/main (merge\-base), or \-\- when committing directly onto the default
@@ -226,6 +236,12 @@ Scan literally everything below the target: gitignore files are not
 honoured, hidden directories are entered, and vendored/generated/test
 pruning is disabled. The escape hatch for auditing what the defaults hide.
 .TP
+.B \-\-sort\-by\-score
+Buffer every finding and emit highest\-score diagnostics first
+(method and module ABC descending; UsedOnce / NeverUsed after scored
+entries). Without this flag, text and JSON print each file as soon as
+analysis finishes.
+.TP
 .B \-\-no\-cache
 Skip the on\-disk result cache for this run, forcing a full reanalysis.
 .TP
@@ -238,10 +254,17 @@ Print help.
 .B \-\-version
 Print version.
 .SH FILE ORDER
-Directory trees are walked in parallel but reported breadth\-first:
-shallowest files first, then deeper ones. Within the same depth, files are
-ordered by parent directory, extension, and file name. Explicit file
-arguments always come first.
+Files are analysed in parallel. Text and JSON print each file as soon as
+its analysis finishes (completion order across files). JSON remains one
+object:
+.I diagnostics
+opens first and grows, then
+.I files
+/
+.I elapsed_ms
+close the document. With
+.B \-\-sort\-by\-score
+results are buffered and emitted largest ABC first.
 .SH CACHING
 Results for unchanged files are cached in the user\-wide XDG cache dir
 (

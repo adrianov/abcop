@@ -87,6 +87,9 @@ pub(crate) struct Cli {
     /// Disable the on-disk result cache
     #[arg(long)]
     pub(crate) no_cache: bool,
+    /// Buffer all findings and print highest-score first
+    #[arg(long)]
+    pub(crate) sort_by_score: bool,
     /// Debug: dump the syntax tree of a single file
     #[arg(long, hide = true)]
     dump_tree: bool,
