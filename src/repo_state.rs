@@ -1,7 +1,7 @@
 //! Repository-state queries over the built-in `git2` binding: which
 //! branch is checked out, what counts as the default branch, commit-ish
 //! resolution and ancestry tests. No external `git` process is ever
-//! spawned at runtime; every lookup opens a repository handle directly.
+//! spawned; every lookup opens a repository handle directly.
 
 use std::path::Path;
 

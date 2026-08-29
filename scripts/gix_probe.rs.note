@@ -1,9 +1,0 @@
-// Capability probe for adopting gix over shelling out to `git`.
-// Verified against /Users/adrianov/Transmission (gix 0.87):
-//   discover(path)          -> replaces `git rev-parse --show-toplevel`
-//   rev_parse_single(ref)   -> base resolution (origin/main|master|main|master)
-//   merge_base(head, base)  -> replaces `git merge-base`
-//   reference.log_iter()    -> reflog entries carry raw "<unix> <tz>" time
-//                              strings; parse first token for @{N.hours.ago}
-//                              semantics (None => fall back to full tree).
-// Remaining custom work: `-W` function-context hunk widening for diff spans.

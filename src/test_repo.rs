@@ -1,12 +1,15 @@
-//! Shared fixtures for tests that drive a real `git` repository: temp
-//! repo creation with deterministic layout, commit helpers, and the
-//! process-wide working-directory lock every chdir-based assertion takes.
+//! Shared fixtures for tests that drive a real git repository: temp
+//! repo creation with deterministic layout and commit helpers. Every
+//! repository mutation goes through the built-in `git2` binding — no
+//! external `git` process is spawned, matching production analyse paths.
 
 #![cfg(test)]
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard};
+
+use git2::{Repository, Signature, Time};
 
 /// Tests that temporarily chdir into a fixture repository share one
 /// process-wide working directory -- serialize them.
@@ -33,55 +36,120 @@ pub(crate) fn temp_dir(tag: &str) -> PathBuf {
     dir
 }
 
-fn run_git(dir: &Path, args: &[&str]) {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "git {:?}: {}",
-        args,
-        String::from_utf8_lossy(&out.stderr)
-    );
+fn open(dir: &Path) -> Repository {
+    Repository::open(dir).expect("open fixture repo")
 }
 
+fn sig(when: Option<i64>) -> Signature<'static> {
+    let time = Time::new(when.unwrap_or_else(now_secs), 0);
+    Signature::new("t", "t@t", &time).expect("signature")
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+/// Resolves a rev to its object id hex string.
 pub(crate) fn sha_of(dir: &Path, rev: &str) -> String {
-    let out = std::process::Command::new("git")
-        .args(["rev-parse", rev])
-        .current_dir(dir)
-        .output()
-        .unwrap();
-    assert!(out.status.success(), "rev-parse {rev}");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
+    open(dir)
+        .revparse_single(rev)
+        .expect("revparse")
+        .id()
+        .to_string()
 }
 
 /// Empty repo whose first (and only) commit sits on `main`.
 pub(crate) fn seed_repo_with_base_commit(dir: &Path) {
-    run_git(dir, &["init", "-q"]);
-    run_git(dir, &["config", "user.email", "t@t"]);
-    run_git(dir, &["config", "user.name", "t"]);
+    let mut opts = git2::RepositoryInitOptions::new();
+    opts.initial_head("main");
+    let repo = Repository::init_opts(dir, &opts).expect("init");
     std::fs::write(dir.join("a.rb"), "def base\nend\n").unwrap();
-    commit_all(dir, "base");
-    run_git(dir, &["branch", "-M", "main"]);
+    commit_tree(&repo, "base", None);
 }
 
 /// Stages everything and commits on the current branch.
 pub(crate) fn commit_all(dir: &Path, msg: &str) {
-    run_git(dir, &["add", "-A"]);
-    run_git(dir, &["commit", "-qm", msg]);
+    commit_tree(&open(dir), msg, None);
+}
+
+/// Stages everything and commits with an explicit unix author/committer
+/// timestamp so sibling-branch ordering stays deterministic.
+pub(crate) fn commit_all_at(dir: &Path, msg: &str, epoch: i64) {
+    commit_tree(&open(dir), msg, Some(epoch));
+}
+
+/// Rewrites HEAD's commit message and timestamps in place (amend).
+pub(crate) fn amend_head_at(dir: &Path, msg: &str, epoch: i64) {
+    let repo = open(dir);
+    let head = repo.head().expect("head").peel_to_commit().expect("commit");
+    let sig = sig(Some(epoch));
+    head.amend(Some("HEAD"), Some(&sig), Some(&sig), None, Some(msg), None)
+        .expect("amend");
 }
 
 /// Creates and checks out a topic branch off the current HEAD.
 pub(crate) fn checkout_new_branch(dir: &Path, name: &str) {
-    run_git(dir, &["checkout", "-qb", name]);
+    let repo = open(dir);
+    let commit = repo.head().expect("head").peel_to_commit().expect("commit");
+    repo.branch(name, &commit, false).expect("branch");
+    checkout_branch(&repo, name);
+}
+
+/// Checks out an existing local branch by short name.
+pub(crate) fn checkout_branch_named(dir: &Path, name: &str) {
+    checkout_branch(&open(dir), name);
 }
 
 /// One file edited (unstaged), one added (staged), one untracked.
 pub(crate) fn stage_three_kinds_of_uncommitted_work(dir: &Path) {
     std::fs::write(dir.join("a.rb"), "def base\n  x = 1\nend\n").unwrap();
     std::fs::write(dir.join("b.rb"), "def staged_new\nend\n").unwrap();
-    run_git(dir, &["add", "b.rb"]);
+    stage_paths(&open(dir), &["b.rb"]);
     std::fs::write(dir.join("c.rb"), "def untracked_new\nend\n").unwrap();
 }
+
+fn checkout_branch(repo: &Repository, name: &str) {
+    let branch = repo
+        .find_branch(name, git2::BranchType::Local)
+        .expect("find branch");
+    let reference = branch.into_reference();
+    let treeish = reference.peel_to_tree().expect("tree");
+    repo.checkout_tree(treeish.as_object(), None)
+        .expect("checkout tree");
+    repo.set_head(reference.name().expect("ref name"))
+        .expect("set head");
+}
+
+fn stage_paths(repo: &Repository, paths: &[&str]) {
+    let mut idx = repo.index().expect("index");
+    for p in paths {
+        idx.add_path(Path::new(p)).expect("add path");
+    }
+    idx.write().expect("write index");
+}
+
+fn stage_all(repo: &Repository) -> git2::Tree<'_> {
+    let mut idx = repo.index().expect("index");
+    idx.add_all(["*"], git2::IndexAddOption::DEFAULT, None)
+        .expect("add all");
+    idx.write().expect("write index");
+    let oid = idx.write_tree().expect("write tree");
+    repo.find_tree(oid).expect("find tree")
+}
+
+fn head_parent(repo: &Repository) -> Option<git2::Commit<'_>> {
+    repo.head().ok()?.peel_to_commit().ok()
+}
+
+fn commit_tree(repo: &Repository, msg: &str, when: Option<i64>) {
+    let tree = stage_all(repo);
+    let sig = sig(when);
+    let parent = head_parent(repo);
+    let parents: Vec<_> = parent.iter().collect();
+    repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parents)
+        .expect("commit");
+}
+

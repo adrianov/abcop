@@ -2,12 +2,11 @@
 //! lines of which files a base ref differs from the current worktree.
 //!
 //! Everything runs through the built-in `git2` binding (libgit2): no
-//! external `git` process is ever spawned at runtime. Semantics mirror
+//! external `git` process is ever spawned. Semantics mirror
 //! refactor_gpt quality gates: compare the working tree against a base
 //! ref with zero context lines, so a recorded line range IS a touched
 //! line stretch; untracked files count as fully changed (see
-//! [`crate::untracked_scan`]); test fixtures still seed their repos
-//! through the real git CLI, which is setup, not product behaviour.
+//! [`crate::untracked_scan`]).
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
