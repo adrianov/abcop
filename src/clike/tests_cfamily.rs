@@ -88,3 +88,13 @@ fn header_extension_uses_cpp_so_class_fields_stay_clean() {
     let src = "class MainWindowPrivate {\npublic:\n  int life;\n  QWidget *presence;\n  Arena *arena = nullptr;\n};\n";
     assert_eq!(dead(Lang::Cpp, src), Vec::<String>::new());
 }
+
+#[test]
+fn export_macro_class_is_not_a_function_of_locals() {
+    // `class UTIL_EXPORT Foo { ... }` is misparsed as a function_definition;
+    // members (and a phantom empty declarator on `class Impl;`) must not
+    // surface as NeverUsed.
+    let src = "class UTIL_EXPORT SaxParser {\nprivate:\n  class Impl;\n  std::unique_ptr<Impl> m_impl;\nprotected:\n  bool m_processed { true };\n};\n";
+    assert_eq!(dead(Lang::Cpp, src), Vec::<String>::new());
+    assert_eq!(used(Lang::Cpp, src), Vec::<String>::new());
+}
