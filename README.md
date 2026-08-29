@@ -22,9 +22,10 @@ Three questions come up constantly during code review:
 
 1. *How big is this function, really?* Line counts lie. The ABC metric counts
    what actually does work: assignments, branches and conditions.
-2. *How big is this file, really?* The same metric, rolled up across the
-   module — sum every method's `<A, B, C>`, then one magnitude — so a sparse
-   200-line wrapper and a dense 200-line god-object are not treated the same.
+2. *How big is this module, really?* The same metric, rolled up across the
+   file — sum every method's `<A, B, C>`, then one magnitude. A sparse
+   wrapper and a dense god-object with the same line count are not the same
+   size; ABC separates them, so abcop never gates on lines of code.
 3. *Can this variable just be inlined?* A local assigned once and read once is
    an indirection with no payoff — but inlining must not change behavior.
 
@@ -36,11 +37,11 @@ abcop exists to gate AI-written code in CI pipelines. That mission dictates
 the rules it ships:
 
 - **Short modules, low complexity — enforced, not wished for.** Per-function
-  AbcSize (`--max-abc`, default 17) and file-level ModuleAbcSize (fixed at 120,
-  ~a typical 200-line Ruby module) keep every unit small enough to hold in a
-  human's head and inside an LLM's context window at once. Small, simple units
-  are what models modify most reliably and what reviewers can actually read;
-  when something breaks, the debugging surface is tiny by construction.
+  AbcSize (`--max-abc`, default 17) and file-level ModuleAbcSize (fixed at
+  120) keep every unit small enough to hold in a human's head and inside an
+  LLM's context window at once. Small, simple units are what models modify
+  most reliably and what reviewers can actually read; when something breaks,
+  the debugging surface is tiny by construction.
 - **Fast enough to run on every push.** Sub-second whole-tree scans make
   linting free at the exact moment code is written — including code written
   by an agent that will never re-read it tomorrow.
@@ -49,6 +50,9 @@ the rules it ships:
 
 abcop takes sides and does not apologize for them:
 
+- **ABC over line counts — deliberately.** A 200-line file can be trivial or
+  unreviewable; counting lines cannot tell them apart. Module size is gated
+  by Fitzpatrick ABC (`Metrics/ModuleAbcSize`), not by a line budget.
 - **No formatting or style rules — deliberately.** Formatting carries no
   signal about defects; it cannot catch a single bug, only generate churn,
   bikeshedding and diff noise. Formatting belongs to formatters, style to
@@ -59,6 +63,7 @@ abcop takes sides and does not apologize for them:
   minutes and your attention belong to production code. Name such a path
   explicitly when you genuinely want it reviewed.
 - **One threshold to argue about (`--max-abc`), not fifty knobs.**
+  ModuleAbcSize's ceiling is fixed at 120.
 
 ## Inspiration
 
@@ -101,10 +106,10 @@ tools stop where we wanted to start.
   write, straight-line dominance, single read outside macro input tokens.
   Parameters, pattern bindings, reassignments and shadowed names never qualify.
 - **ModuleAbcSize**: warns when a production module's Fitzpatrick total
-  (sum of method `<A,B,C>`, then `sqrt(A²+B²+C²)`) exceeds **120** — looser
-  than the ~90 median of ~200-line Ruby lib modules. Same score and
-  vector shape as method AbcSize. Test suites, fixtures, lockfiles and schema
-  dumps are exempt; Rust `#[cfg(test)]` tails don't count toward the budget.
+  (sum of method `<A,B,C>`, then `sqrt(A²+B²+C²)`) exceeds **120**. Same
+  score and vector shape as method AbcSize — the module gate, not a line
+  budget. Test suites, fixtures, lockfiles and schema dumps are exempt; Rust
+  `#[cfg(test)]` tails don't count toward the budget.
 - **One tool, zero dependencies.** A single self-contained binary replaces
   the per-language linter fleet — no Ruby gems, no pip/npm packages, no
   plugins, no version drift between machines. Every grammar is compiled
@@ -137,7 +142,7 @@ cargo build --release
 | `--mr` | off | select the current-MR scope explicitly (uncommitted plus branch commits vs base); the bare default picks uncommitted-only when the tree is dirty |
 | `--uncommitted` | off | scan only uncommitted work: working-tree and index edits vs `HEAD` plus untracked files — no branch/base diff; requires a repository |
 | `--no-cache` | off | skip the on-disk result cache for this run |
-| `--dump-tree FILE` | — | debug: print the syntax tree of a single file
+| `--dump-tree FILE` | — | debug: print the syntax tree of a single file |
 
 ### Scope selection
 
@@ -182,8 +187,8 @@ as fully changed) — and this applies to **any** module, spec/test files
 included: a hundred changed lines in a spec means the extraction
 conversation is on the table there too. Rationale: scoped reviews exist to
 keep changes compact — easier to review and less likely to drift out of
-the MR's task scope. A three-line patch into a 500-line legacy module
-should not gate your review for a size problem you did not cause;
+the MR's task scope. A three-line patch into an already-oversized legacy
+module should not gate your review for a size problem you did not cause;
 refactor-scale diffs are exactly where extracting a coherent subunit is
 expected. Full scans (`--full`, `--everything`) keep reporting every
 module whose ABC exceeds 120.
