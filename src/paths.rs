@@ -40,8 +40,11 @@ pub fn lang_for(path: &std::path::Path) -> Lang {
         Some("js" | "mjs" | "cjs" | "jsx") => Lang::Js,
         Some("ts" | "mts" | "cts") => Lang::Ts,
         Some("tsx") => Lang::Tsx,
-        Some("c" | "h") => Lang::C,
-        Some("cc" | "cpp" | "cxx" | "hpp" | "hxx" | "hh") => Lang::Cpp,
+        Some("c") => Lang::C,
+        // `.h` is shared by C and C++; the C grammar misreads `class` /
+        // `namespace` bodies as function definitions and then NeverUsed
+        // fires on every member. tree-sitter-cpp covers both dialects.
+        Some("h" | "cc" | "cpp" | "cxx" | "hpp" | "hxx" | "hh") => Lang::Cpp,
         Some("m" | "mm") => Lang::ObjC,
         Some("swift") => Lang::Swift,
         Some("py" | "pyi" | "pyw") => Lang::Py,
