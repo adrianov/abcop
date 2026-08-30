@@ -3,6 +3,7 @@
 #
 # The .deb is built on Ubuntu 22.04 (glibc 2.35) so it installs on Ubuntu
 # 22.04/24.04 LTS and Debian bookworm/trixie (and other Debian-like amd64).
+# macOS .tar.gz archives ship the binary and man page for Apple Silicon and Intel.
 name: publish
 
 on:
@@ -52,35 +53,97 @@ jobs:
           name: abcop-deb
           path: target/debian/*.deb
 
+  tarball:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Pack .tar.gz
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          stage="abcop-${version}-${{ matrix.target }}"
+          mkdir -p "$stage"
+          cp "target/${{ matrix.target }}/release/abcop" "$stage/abcop"
+          cp man/abcop.1 "$stage/abcop.1"
+          tar -czf "${stage}.tar.gz" "$stage"
+          mkdir -p dist
+          mv "${stage}.tar.gz" dist/
+      - name: Upload .tar.gz artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: abcop-tarball-${{ matrix.target }}
+          path: dist/*.tar.gz
+
   github-release:
-    needs: deb
+    needs: [deb, tarball]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Download .deb
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: abcop-deb
           path: dist
+          pattern: abcop-*
+          merge-multiple: true
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          deb=(dist/*.deb)
-          name=$(basename "${deb[0]}")
-          gh release create "$GITHUB_REF_NAME" "${deb[@]}" \
-            --title "abcop $version" \
-            --notes "## Install (Ubuntu / Debian)
+          shopt -s nullglob
+          assets=(dist/*)
+          test "${#assets[@]}" -gt 0
 
-          Works on **Ubuntu 22.04+** and **Debian bookworm+** (amd64).
+          deb_name=""
+          for f in "${assets[@]}"; do
+            case "$f" in
+              *.deb) deb_name=$(basename "$f") ;;
+            esac
+          done
 
+          notes="## Install
+
+          ### macOS (binary + man)
+
+          Apple Silicon:
           \`\`\`sh
-          curl -LO https://github.com/adrianov/abcop/releases/download/${GITHUB_REF_NAME}/${name}
-          sudo dpkg -i ${name}
+          curl -LO https://github.com/adrianov/abcop/releases/download/${GITHUB_REF_NAME}/abcop-${version}-aarch64-apple-darwin.tar.gz
+          tar -xzf abcop-${version}-aarch64-apple-darwin.tar.gz
+          sudo cp abcop-${version}-aarch64-apple-darwin/abcop /usr/local/bin/
+          sudo mkdir -p /usr/local/share/man/man1
+          sudo cp abcop-${version}-aarch64-apple-darwin/abcop.1 /usr/local/share/man/man1/
           \`\`\`
 
-          Installs \`/usr/bin/abcop\` and the \`abcop(1)\` man page.
+          Or via Homebrew: \`brew install adrianov/abcop/abcop\`.
+
+          ### Ubuntu / Debian (amd64)
+
+          Works on **Ubuntu 22.04+** and **Debian bookworm+**.
+
+          \`\`\`sh
+          curl -LO https://github.com/adrianov/abcop/releases/download/${GITHUB_REF_NAME}/${deb_name}
+          sudo dpkg -i ${deb_name}
+          \`\`\`
 
           Also available via crates.io: \`cargo install abcop\`."
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+            gh release edit "$GITHUB_REF_NAME" --notes "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+              --title "abcop $version" \
+              --notes "$notes"
+          fi
