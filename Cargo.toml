@@ -63,7 +63,8 @@ copyright = "Peter M Adrianov"
 license-file = ["LICENSE", "0"]
 extended-description = """Must-have ABC complexity gate for AI-written code.
 One self-contained binary across Ruby, Rust, Python, Go, PHP, Java, C#,
-Dart, JavaScript, TypeScript, C, C++, Objective-C, Swift, Solidity and Zig."""
+Dart, JavaScript, TypeScript, C, C++, Objective-C, Swift, Solidity and Zig.
+Built for Ubuntu 22.04+ and Debian bookworm+ (amd64)."""
 depends = "$auto"
 assets = [
     ["target/release/abcop", "usr/bin/", "755"],

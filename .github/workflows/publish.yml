@@ -1,5 +1,8 @@
 # Publish abcop to crates.io and GitHub Releases when a version tag is pushed
 # (e.g. v0.16.2). Requires repository secret CARGO_REGISTRY_TOKEN.
+#
+# The .deb is built on Ubuntu 22.04 (glibc 2.35) so it installs on Ubuntu
+# 22.04/24.04 LTS and Debian bookworm/trixie (and other Debian-like amd64).
 name: publish
 
 on:
@@ -22,8 +25,10 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish --locked
 
+  # Build on Jammy so the binary's glibc requirement stays at 2.35 (not Noble's
+  # newer symbols), which keeps Ubuntu 22.04+ and current Debian installable.
   deb:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -33,6 +38,14 @@ jobs:
         run: cargo install cargo-deb --locked
       - name: Build .deb
         run: cargo deb --locked
+      - name: Smoke-test .deb install
+        run: |
+          set -euo pipefail
+          deb=(target/debian/*.deb)
+          sudo dpkg -i "${deb[0]}"
+          abcop --help >/dev/null
+          man -w abcop
+          dpkg -L abcop | grep -E '/usr/bin/abcop|/usr/share/man/man1/abcop\.1'
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
@@ -59,7 +72,9 @@ jobs:
           name=$(basename "${deb[0]}")
           gh release create "$GITHUB_REF_NAME" "${deb[@]}" \
             --title "abcop $version" \
-            --notes "## Install (Debian / Ubuntu)
+            --notes "## Install (Ubuntu / Debian)
+
+          Works on **Ubuntu 22.04+** and **Debian bookworm+** (amd64).
 
           \`\`\`sh
           curl -LO https://github.com/adrianov/abcop/releases/download/${GITHUB_REF_NAME}/${name}
