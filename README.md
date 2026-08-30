@@ -19,6 +19,15 @@ whole trees in milliseconds.
 cargo install abcop
 ```
 
+Debian / Ubuntu (`.deb` from [GitHub Releases](https://github.com/adrianov/abcop/releases)):
+
+```sh
+# example for v0.16.2 amd64 — use the asset name from the release page
+curl -LO https://github.com/adrianov/abcop/releases/download/v0.16.2/abcop_0.16.2-1_amd64.deb
+sudo dpkg -i abcop_0.16.2-1_amd64.deb
+man abcop
+```
+
 ## Example run
 
 ```text

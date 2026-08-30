@@ -54,3 +54,18 @@ git2 = { version = "0.20", default-features = false }
 [profile.release]
 lto = true
 codegen-units = 1
+
+[package.metadata.deb]
+section = "utils"
+priority = "optional"
+maintainer = "Peter M Adrianov <peter.adrianov@gmail.com>"
+copyright = "Peter M Adrianov"
+license-file = ["LICENSE", "0"]
+extended-description = """Must-have ABC complexity gate for AI-written code.
+One self-contained binary across Ruby, Rust, Python, Go, PHP, Java, C#,
+Dart, JavaScript, TypeScript, C, C++, Objective-C, Swift, Solidity and Zig."""
+depends = "$auto"
+assets = [
+    ["target/release/abcop", "usr/bin/", "755"],
+    ["man/abcop.1", "usr/share/man/man1/", "644"],
+]
