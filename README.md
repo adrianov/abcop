@@ -16,6 +16,10 @@ whole trees in milliseconds.
 ## Install
 
 ```sh
+brew install adrianov/abcop/abcop
+```
+
+```sh
 cargo install abcop
 ```
 
