@@ -13,6 +13,12 @@ no runtimes, no plugins, no per-language installs. Written in Rust for
 speed: one parse per file, one walk per metric, grammars compiled in;
 whole trees in milliseconds.
 
+## Install
+
+```sh
+cargo install abcop
+```
+
 ```text
 lib/sinatra/base.rb:1254:0: C: Metrics/AbcSize: Assignment Branch Condition size for `error_block!` is too high. [<7, 14, 9> 18.06/17]
 src/main.rs: W: Metrics/ModuleAbcSize: Assignment Branch Condition size for module is too high. [<80, 200, 60> 228.04/120] -- extract a coherent subunit
@@ -68,15 +74,6 @@ Ruby's counting matches RuboCop 1.89 byte-for-byte
   toolchains.
 - **Deterministic** — same findings every run; text / JSON / JSONL stream
   as files finish; `--sort-by-score` buffers for worst-first emit.
-
-## Install
-
-```sh
-cargo install abcop
-```
-
-Requires Rust 1.85+. Builds from [crates.io](https://crates.io/crates/abcop)
-and installs the `abcop` binary into `~/.cargo/bin`.
 
 ## Usage
 
