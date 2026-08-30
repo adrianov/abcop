@@ -69,11 +69,19 @@ Ruby's counting matches RuboCop 1.89 byte-for-byte
 - **Deterministic** — same findings every run; text / JSON / JSONL stream
   as files finish; `--sort-by-score` buffers for worst-first emit.
 
+## Install
+
+```sh
+cargo install abcop
+```
+
+Requires Rust 1.85+. Builds from [crates.io](https://crates.io/crates/abcop)
+and installs the `abcop` binary into `~/.cargo/bin`.
+
 ## Usage
 
 ```sh
-cargo build --release
-./target/release/abcop [OPTIONS] PATH...
+abcop [OPTIONS] PATH...
 ```
 
 | Option | Default | Meaning |

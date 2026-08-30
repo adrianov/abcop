@@ -2,11 +2,24 @@
 name = "abcop"
 version = "0.16.0"
 edition = "2024"
+rust-version = "1.85"
 authors = ["Peter Adrianov"]
 license = "GPL-3.0-or-later"
 repository = "https://github.com/adrianov/abcop"
+homepage = "https://github.com/adrianov/abcop"
+documentation = "https://github.com/adrianov/abcop"
 description = "Blazing-fast, opinionated ABC complexity linter for humans and LLM agents"
 readme = "README.md"
+keywords = ["linter", "complexity", "abc", "static-analysis", "ci"]
+categories = ["command-line-utilities", "development-tools"]
+include = [
+    "src/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "LICENSE",
+    "man/**",
+]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -16,25 +29,25 @@ rayon = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tree-sitter = "0.26"
-tree-sitter-ruby = { path = "vendor/tree-sitter-ruby" }
-tree-sitter-rust = { path = "vendor/tree-sitter-rust" }
-tree-sitter-javascript = { path = "vendor/tree-sitter-javascript" }
-tree-sitter-typescript = { path = "vendor/tree-sitter-typescript" }
-tree-sitter-cpp = { path = "vendor/tree-sitter-cpp" }
-tree-sitter-objc = { path = "vendor/tree-sitter-objc" }
+tree-sitter-ruby = { version = "0.23.1", path = "vendor/tree-sitter-ruby" }
+tree-sitter-rust = { version = "0.24.2", path = "vendor/tree-sitter-rust" }
+tree-sitter-javascript = { version = "0.25.0", path = "vendor/tree-sitter-javascript" }
+tree-sitter-typescript = { version = "0.23.2", path = "vendor/tree-sitter-typescript" }
+tree-sitter-cpp = { version = "0.23.4", path = "vendor/tree-sitter-cpp" }
+tree-sitter-objc = { version = "3.0.2", path = "vendor/tree-sitter-objc" }
 sha2 = "0.10"
 memmap2 = "0.9"
-tree-sitter-c = { path = "vendor/tree-sitter-c" }
-tree-sitter-swift = { path = "vendor/tree-sitter-swift" }
-tree-sitter-python = { path = "vendor/tree-sitter-python" }
+tree-sitter-c = { version = "0.24.2", path = "vendor/tree-sitter-c" }
+tree-sitter-swift = { version = "0.7.3", path = "vendor/tree-sitter-swift" }
+tree-sitter-python = { version = "0.25.0", path = "vendor/tree-sitter-python" }
 redb = "4.2"
-tree-sitter-go = { path = "vendor/tree-sitter-go" }
-tree-sitter-php = { path = "vendor/tree-sitter-php" }
-tree-sitter-java = { path = "vendor/tree-sitter-java" }
-tree-sitter-c-sharp = { path = "vendor/tree-sitter-c-sharp" }
-tree-sitter-solidity = { path = "vendor/tree-sitter-solidity" }
-tree-sitter-dart = { path = "vendor/tree-sitter-dart" }
-tree-sitter-zig = { path = "vendor/tree-sitter-zig" }
+tree-sitter-go = { version = "0.25.0", path = "vendor/tree-sitter-go" }
+tree-sitter-php = { version = "0.24.2", path = "vendor/tree-sitter-php" }
+tree-sitter-java = { version = "0.23.5", path = "vendor/tree-sitter-java" }
+tree-sitter-c-sharp = { version = "0.23.5", path = "vendor/tree-sitter-c-sharp" }
+tree-sitter-solidity = { version = "1.2.13", path = "vendor/tree-sitter-solidity" }
+tree-sitter-dart = { version = "0.2.0", path = "vendor/tree-sitter-dart" }
+tree-sitter-zig = { version = "1.1.2", path = "vendor/tree-sitter-zig" }
 git2 = { version = "0.20", default-features = false }
 
 
