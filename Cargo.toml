@@ -1,6 +1,6 @@
 [package]
 name = "abcop"
-version = "0.16.1"
+version = "0.16.2"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Peter Adrianov"]
@@ -10,7 +10,7 @@ homepage = "https://github.com/adrianov/abcop"
 documentation = "https://github.com/adrianov/abcop"
 description = "Must-have ABC complexity gate for AI development. Ruby, Rust, Python, Go, JS/TS, C/C++, PHP, Java, C#, Swift, Zig, Dart, Solidity, ObjC"
 readme = "README.md"
-keywords = ["linter", "complexity", "abc", "static-analysis", "ci"]
+keywords = ["linter", "complexity", "static-analysis", "ai", "llm"]
 categories = ["command-line-utilities", "development-tools"]
 include = [
     "src/**",
