@@ -19,6 +19,8 @@ whole trees in milliseconds.
 cargo install abcop
 ```
 
+## Example run
+
 ```text
 lib/sinatra/base.rb:1254:0: C: Metrics/AbcSize: Assignment Branch Condition size for `error_block!` is too high. [<7, 14, 9> 18.06/17]
 src/main.rs: W: Metrics/ModuleAbcSize: Assignment Branch Condition size for module is too high. [<80, 200, 60> 228.04/120] -- extract a coherent subunit
