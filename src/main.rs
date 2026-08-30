@@ -1,4 +1,4 @@
-//! abcop — blazing-fast, opinionated ABC complexity linter for humans and LLM agents.
+//! abcop — must-have ABC complexity gate for AI development.
 
 mod abc;
 mod cache;
@@ -51,7 +51,7 @@ use clap::Parser as ClapParser;
 #[command(
     name = "abcop",
     version,
-    about = "Blazing-fast, opinionated ABC complexity linter for humans and LLM agents"
+    about = "Must-have ABC complexity gate for AI development. Ruby, Rust, Python, Go, JS/TS, C/C++, PHP, Java, C#, Swift, Zig, Dart, Solidity, ObjC"
 )]
 pub(crate) struct Cli {
     /// Files or directories to analyse; omitted means the auto-selected
