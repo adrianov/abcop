@@ -85,7 +85,7 @@ pub struct FileModel<'s> {
     /// `(receiver start byte, receiver name, owning scope)`
     pub csend_sites: Vec<(usize, Box<str>, ScopeId)>,
     /// bare identifiers that did NOT resolve to locals — zero-arity method
-    /// calls (parser-gem `:send` vcalls)
+    /// calls (parser-gem `:send` vcalls). Excludes `__FILE__`/`__LINE__`/`__ENCODING__`.
     pub vcall_sites: Vec<usize>,
 }
 

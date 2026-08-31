@@ -198,4 +198,11 @@ mod tests {
         assert!(names.contains(&"str"), "got {names:?}");
         assert!(!names.iter().any(|n| n.contains('(')), "got {names:?}");
     }
+
+    #[test]
+    fn magic_constants_are_not_branches() {
+        // RuboCop treats __FILE__/__LINE__/__ENCODING__ as constants, not sends.
+        let s = scores("def f\n  __FILE__\n  __LINE__\n  __ENCODING__\n  bar\nend\n");
+        assert_eq!(s[0].vector, "<0, 1, 0>");
+    }
 }
