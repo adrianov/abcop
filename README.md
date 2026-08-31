@@ -119,6 +119,7 @@ abcop [OPTIONS] PATH...
 | `--sort-by-score` | off | highest ABC first |
 | `--mr` | off | MR scope (uncommitted + branch vs base) |
 | `--uncommitted` | off | working-tree + index + untracked vs `HEAD` only |
+| `--size-gate specs\|both\|none` | `both` | scoped ≥100-line gate for AbcSize + ModuleAbcSize |
 | `--no-cache` | off | skip on-disk cache |
 | `--dump-tree FILE` | — | debug syntax tree |
 
@@ -160,13 +161,16 @@ Default walks prune test/fixture trees, vendored/build output
 Third-party and route-table paths are never scoped review surface — a
 diff through `vendor/` does not make it owned code.
 
-**Scoped ModuleAbcSize** fires only when the diff touches ≥100 lines of
-that module (any file, including specs; untracked = fully changed). A
-three-line patch into an oversized legacy file should not block you; a
-refactor-scale diff should invite extraction. Full scans (`--full`,
-`--everything`) report every module over `--max-module-abc` (default 120).
-AbcSize / UsedOnce / NeverUsed still run in tests; only ModuleAbcSize
-exempts test trees by default (lifted once the 100-line threshold hits).
+**Scoped size gate** (`--size-gate`, default `both`): AbcSize and
+ModuleAbcSize fire only when the diff touches ≥100 lines of that file
+(untracked = fully changed). A three-line patch into an oversized legacy
+method or module stays quiet; a refactor-scale diff invites extraction.
+`--size-gate specs` applies the threshold only to test trees (production
+always reports intersecting size findings). `--size-gate none` never
+suppresses by line count. UsedOnce / NeverUsed always follow the changed
+lines. Full scans (`--full`, `--everything`) report every module over
+`--max-module-abc` (default 120); ModuleAbcSize still exempts test trees
+on full scans.
 
 On a dirty tree the bare default is uncommitted-only; `--mr` takes the
 full branch union. Commits straight to main use a 36-hour window when no

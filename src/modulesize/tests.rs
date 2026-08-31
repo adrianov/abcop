@@ -1,8 +1,19 @@
 //! Classification behavior for route tables and third-party trees.
 
 use super::classify::{is_route_table, is_third_party};
-use super::{ModuleAbc, from_scores};
+use super::{ModuleAbc, SizeGate, from_scores};
 use crate::abc::AbcOffense;
+
+#[test]
+fn size_gate_covers_matches_scope() {
+    assert!(!SizeGate::Never.covers("app/models/x.rb"));
+    assert!(!SizeGate::Never.covers("spec/models/x_spec.rb"));
+    assert!(SizeGate::Both.covers("app/models/x.rb"));
+    assert!(SizeGate::Both.covers("spec/models/x_spec.rb"));
+    assert!(!SizeGate::Specs.covers("app/models/x.rb"));
+    assert!(SizeGate::Specs.covers("spec/models/x_spec.rb"));
+    assert!(SizeGate::Specs.covers("test/foo_test.rb"));
+}
 
 #[test]
 fn rails_route_tables_are_route_files() {

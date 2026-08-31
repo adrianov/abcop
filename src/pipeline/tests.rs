@@ -1,12 +1,11 @@
 //! End-to-end pipeline contracts: cache round-trips stay scope-narrowed,
-//! and the ModuleAbcSize refactor-scale rule behaves identically for prod
-//! and spec trees.
+//! and the size gate (`--size-gate`) behaves for prod and spec trees.
 
 use super::analyze_one;
 use super::narrow::apply;
-use crate::abc::Limits;
+use crate::abc::{AbcOffense, Limits};
 use crate::git_changes::{Changeset, Lines};
-use crate::modulesize::{self, ModuleAbc};
+use crate::modulesize::{self, ModuleAbc, SizeGate};
 use crate::output::FileResult;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -35,22 +34,38 @@ fn sample_module_abc() -> ModuleAbc {
     }
 }
 
-fn result_with_module_abc() -> FileResult {
+fn sample_abc() -> AbcOffense {
+    AbcOffense {
+        name: "call".into(),
+        line: 5,
+        end_line: 20,
+        column: 2,
+        score: 50.0,
+        vector: "<10, 40, 20>".into(),
+    }
+}
+
+fn result_with_size_findings(path: &str) -> FileResult {
     FileResult {
-        path: "/repo/app/models/big.rb".into(),
-        abc: Vec::new(),
+        path: path.into(),
+        abc: vec![sample_abc()],
         used_once: Vec::new(),
         never_used: Vec::new(),
         module_abc: Some(sample_module_abc()),
     }
 }
 
+fn result_with_module_abc() -> FileResult {
+    result_with_size_findings("/repo/app/models/big.rb")
+}
+
 #[test]
 fn small_diffs_into_large_modules_are_not_flagged() {
     let cs = cs_with_ranges("app/models/big.rb", 3, 9);
     let mut r = result_with_module_abc();
-    apply(Some(&cs), &mut r, b"");
+    apply(Some(&cs), &mut r, SizeGate::Both, b"");
     assert_eq!(r.module_abc, None);
+    assert!(r.abc.is_empty(), "AbcSize must clear under both-gate");
 }
 
 #[test]
@@ -58,23 +73,51 @@ fn refactor_scale_diffs_keep_module_abc() {
     let set: BTreeSet<usize> = (1..=120).collect();
     let cs = cs_with("app/models/big.rb", Lines::Ranges(set));
     let mut r = result_with_module_abc();
-    apply(Some(&cs), &mut r, b"");
+    apply(Some(&cs), &mut r, SizeGate::Both, b"");
     assert_eq!(r.module_abc, Some(sample_module_abc()));
+    assert_eq!(r.abc, vec![sample_abc()]);
 }
 
 #[test]
 fn new_files_count_as_fully_changed() {
     let cs = cs_with("app/models/big.rb", Lines::All);
     let mut r = result_with_module_abc();
-    apply(Some(&cs), &mut r, b"");
+    apply(Some(&cs), &mut r, SizeGate::Both, b"");
     assert_eq!(r.module_abc, Some(sample_module_abc()));
 }
 
 #[test]
 fn full_scans_keep_module_abc() {
     let mut r = result_with_module_abc();
-    apply(None, &mut r, b"");
+    apply(None, &mut r, SizeGate::Both, b"");
     assert_eq!(r.module_abc, Some(sample_module_abc()));
+}
+
+#[test]
+fn size_gate_none_keeps_small_diff_findings() {
+    let cs = cs_with_ranges("app/models/big.rb", 3, 9);
+    let mut r = result_with_module_abc();
+    apply(Some(&cs), &mut r, SizeGate::Never, b"");
+    assert_eq!(r.module_abc, Some(sample_module_abc()));
+    assert_eq!(r.abc, vec![sample_abc()]);
+}
+
+#[test]
+fn size_gate_specs_leaves_production_ungated() {
+    let cs = cs_with_ranges("app/models/big.rb", 3, 9);
+    let mut r = result_with_module_abc();
+    apply(Some(&cs), &mut r, SizeGate::Specs, b"");
+    assert_eq!(r.module_abc, Some(sample_module_abc()));
+    assert_eq!(r.abc, vec![sample_abc()]);
+}
+
+#[test]
+fn size_gate_specs_still_gates_test_trees() {
+    let cs = cs_with_ranges("spec/models/big_spec.rb", 3, 9);
+    let mut r = result_with_size_findings("/repo/spec/models/big_spec.rb");
+    apply(Some(&cs), &mut r, SizeGate::Specs, b"");
+    assert_eq!(r.module_abc, None);
+    assert!(r.abc.is_empty());
 }
 
 /// A 60-function Ruby fixture under `dir/rel` with `template` bodies.
@@ -133,8 +176,8 @@ fn warm_narrowed(
     cache_dir: &std::path::Path,
 ) -> FileResult {
     let cache = crate::cache::Cache::open_at(cache_dir).expect("cache");
-    let _ = analyze_one(file, None, test_limits(), Some(cs), Some(&cache));
-    analyze_one(file, None, test_limits(), Some(cs), Some(&cache))
+    let _ = analyze_one(file, None, test_limits(), Some(cs), Some(&cache), SizeGate::Both);
+    analyze_one(file, None, test_limits(), Some(cs), Some(&cache), SizeGate::Both)
 }
 
 fn assert_same_diagnostics(a: &FileResult, b: &FileResult) {
@@ -144,7 +187,7 @@ fn assert_same_diagnostics(a: &FileResult, b: &FileResult) {
 }
 /// Fresh analysis path for the fixture: a 3-line diff must not flag size.
 fn assert_fresh_unflagged(file: &std::path::Path, cs: &Changeset) -> FileResult {
-    let r = analyze_one(file, None, test_limits(), Some(cs), None);
+    let r = analyze_one(file, None, test_limits(), Some(cs), None, SizeGate::Both);
     assert_eq!(r.module_abc, None, "3-line diff must not flag size");
     r
 }
@@ -168,8 +211,8 @@ fn spec_fixture(tag: &str) -> (std::path::PathBuf, std::path::PathBuf, String) {
 fn small_spec_diff_keeps_the_test_tree_exemption() {
     let (dir, file, src) = spec_fixture("small");
     let cs = scoped_changeset(&dir, "test/commit_plan_finalize_test.rb", 3);
-    let mut r = analyze_one(&file, None, test_limits(), Some(&cs), None);
-    apply(Some(&cs), &mut r, src.as_bytes());
+    let mut r = analyze_one(&file, None, test_limits(), Some(&cs), None, SizeGate::Both);
+    apply(Some(&cs), &mut r, SizeGate::Both, src.as_bytes());
     assert_eq!(r.module_abc, None, "small diff keeps spec-tree exemption");
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -179,10 +222,12 @@ fn small_spec_diff_keeps_the_test_tree_exemption() {
 fn refactor_scale_spec_diff_is_size_accountable() {
     let (dir, file, src) = spec_fixture("big");
     let cs = scoped_changeset(&dir, "test/commit_plan_finalize_test.rb", 120);
-    let mut r = analyze_one(&file, None, test_limits(), Some(&cs), None);
-    apply(Some(&cs), &mut r, src.as_bytes());
+    let mut r = analyze_one(&file, None, test_limits(), Some(&cs), None, SizeGate::Both);
+    apply(Some(&cs), &mut r, SizeGate::Both, src.as_bytes());
     assert!(
-        r.module_abc.as_ref().is_some_and(|m| m.score > modulesize::MAX_ABC),
+        r.module_abc
+            .as_ref()
+            .is_some_and(|m| m.score > modulesize::MAX_ABC),
         "refactor-scale spec diff must surface ModuleAbcSize, got {:?}",
         r.module_abc
     );
@@ -193,7 +238,7 @@ fn refactor_scale_spec_diff_is_size_accountable() {
 #[test]
 fn full_scan_drops_module_abc_on_test_trees() {
     let (dir, file, _) = spec_fixture("full");
-    let r = analyze_one(&file, None, test_limits(), None, None);
+    let r = analyze_one(&file, None, test_limits(), None, None, SizeGate::Both);
     assert_eq!(r.module_abc, None, "full scans keep the test-tree exemption");
     let _ = std::fs::remove_dir_all(&dir);
 }

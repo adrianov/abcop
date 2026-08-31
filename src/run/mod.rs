@@ -8,6 +8,7 @@ use std::sync::Mutex;
 use rayon::prelude::*;
 
 use crate::abc::Limits;
+use crate::modulesize::SizeGate;
 use crate::output::{FileResult, JsonStream, RunStats};
 use crate::walker::collect_files;
 use crate::{git_changes, pipeline, scan_scope};
@@ -25,6 +26,7 @@ pub(crate) struct ScanRun<'a> {
     everything: bool,
     no_cache: bool,
     sort_by_score: bool,
+    size_gate: SizeGate,
 }
 
 impl<'a> From<&'a super::Cli> for ScanRun<'a> {
@@ -43,6 +45,7 @@ impl<'a> From<&'a super::Cli> for ScanRun<'a> {
             everything: cli.everything,
             no_cache: cli.no_cache,
             sort_by_score: cli.sort_by_score,
+            size_gate: cli.size_gate,
         }
     }
 }
@@ -156,7 +159,9 @@ impl ScanRun<'_> {
     ) -> Vec<FileResult> {
         files
             .par_iter()
-            .map(|p| pipeline::analyze_one(p, self.only, self.limits, changeset, cache))
+            .map(|p| {
+                pipeline::analyze_one(p, self.only, self.limits, changeset, cache, self.size_gate)
+            })
             .collect()
     }
 
@@ -170,6 +175,7 @@ impl ScanRun<'_> {
                 self.limits,
                 prepared.changeset.as_ref(),
                 prepared.cache.as_ref(),
+                self.size_gate,
             );
             on_file(&r);
         });

@@ -94,6 +94,12 @@ pub(crate) struct Cli {
     /// Buffer all findings and print highest-score first
     #[arg(long)]
     pub(crate) sort_by_score: bool,
+    /// On scoped runs, suppress AbcSize and ModuleAbcSize unless the diff
+    /// touches at least 100 lines of the file. Chooses which paths that
+    /// threshold covers: specs (test trees only), both (production and
+    /// tests; default), or none (always report intersecting size findings)
+    #[arg(long, value_enum, default_value_t = modulesize::SizeGate::Both)]
+    pub(crate) size_gate: modulesize::SizeGate,
     /// Debug: dump the syntax tree of a single file
     #[arg(long, hide = true)]
     dump_tree: bool,

@@ -21,17 +21,26 @@ Feature: Default skip policy
   Scenario: Scoped runs keep code rules but drop route tables
     Given a branch whose changed files include tests and "config/routes.rb"
     When an "--mr" scope resolves its file list
-    Then AbcSize, UsedOnce and NeverUsed still run on the test files
-    And only ModuleAbcSize exempts test trees by default
+    Then UsedOnce and NeverUsed still run on the test files
+    And AbcSize and ModuleAbcSize follow --size-gate (default both: silent under 100 changed lines)
     And route tables are excluded entirely
     And the goal is compact reviews that stay within the MR's task scope
 
-  Scenario: ModuleAbcSize gates scoped reviews only on refactor-scale diffs
-    Given a production module whose ABC exceeds 90 where the branch changed 4 lines
-    When an "--mr" scope runs
-    Then no ModuleAbcSize warning is reported for that module
+  Scenario: Size gate suppresses AbcSize and ModuleAbcSize on small scoped diffs
+    Given a production module whose method and module ABC exceed the ceilings
+    And the branch changed only 4 lines of it
+    When an "--mr" scope runs with the default "--size-gate both"
+    Then no AbcSize or ModuleAbcSize finding is reported for that file
     But when the diff touches at least 100 lines of it
-    Then the ModuleAbcSize warning is reported
+    Then both size findings are reported
+
+  Scenario: Size gate can target specs only or be disabled
+    Given the same oversized production module with a 4-line diff
+    When "--size-gate specs" is set
+    Then production size findings still report
+    And spec trees stay silent until a 100-line diff
+    When "--size-gate none" is set
+    Then every intersecting AbcSize and ModuleAbcSize finding reports
 
   Scenario: Default invocation prefers uncommitted work
     Given uncommitted edits against HEAD and commits on the branch

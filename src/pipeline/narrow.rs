@@ -1,14 +1,19 @@
 //! Changeset narrowing: a fresh or cached result is trimmed to the lines
-//! this working-tree change actually touches, and ModuleAbcSize follows the
-//! refactor-scale rule.
+//! this working-tree change actually touches, and size metrics follow the
+//! refactor-scale [`crate::modulesize::SizeGate`] rule.
 
 use crate::git_changes;
-use crate::modulesize;
+use crate::modulesize::{self, SizeGate};
 use crate::output::FileResult;
 
 /// Drops diagnostics outside the changed lines of this file, then applies
-/// ModuleAbcSize's scoped-run policy.
-pub(super) fn apply(changeset: Option<&git_changes::Changeset>, r: &mut FileResult, _src: &[u8]) {
+/// the scoped-run size gate for AbcSize and ModuleAbcSize.
+pub(super) fn apply(
+    changeset: Option<&git_changes::Changeset>,
+    r: &mut FileResult,
+    size_gate: SizeGate,
+    _src: &[u8],
+) {
     let Some(cs) = changeset else {
         modulesize::drop_non_production(&r.path, &mut r.module_abc);
         return;
@@ -20,20 +25,22 @@ pub(super) fn apply(changeset: Option<&git_changes::Changeset>, r: &mut FileResu
     r.abc.retain(|o| cs.span_selected(&rel, o.line, o.end_line));
     r.used_once.retain(|o| cs.line_selected(&rel, o.line));
     r.never_used.retain(|o| cs.line_selected(&rel, o.line));
-    apply_module_abc_policy(cs, &rel, r);
+    apply_size_gate(cs, &rel, r, size_gate);
 }
 
-/// Scoped runs gate ModuleAbcSize on refactor-scale diffs only -- for any
-/// module, spec or production: a >=100-line diff invites the size
-/// conversation even in tests, while small patches into legacy giants do
-/// not. Oversized test files keep their ModuleAbcSize hit once the diff
-/// itself is refactor-scale (analysis already scored them).
-fn apply_module_abc_policy(cs: &git_changes::Changeset, rel: &str, r: &mut FileResult) {
-    let refactor_scale =
-        changed_line_count(cs, rel) >= modulesize::MIN_REVIEW_REFACTOR_LINES;
-    if r.module_abc.is_some() && !refactor_scale {
-        r.module_abc = None;
+/// Scoped runs can suppress AbcSize and ModuleAbcSize until the diff is
+/// refactor-scale (≥100 touched lines). [`SizeGate`] selects which paths
+/// that threshold covers: specs only, both production and specs, or none.
+fn apply_size_gate(cs: &git_changes::Changeset, rel: &str, r: &mut FileResult, gate: SizeGate) {
+    if !gate.covers(rel) {
+        return;
     }
+    let refactor_scale = changed_line_count(cs, rel) >= modulesize::MIN_REVIEW_REFACTOR_LINES;
+    if refactor_scale {
+        return;
+    }
+    r.module_abc = None;
+    r.abc.clear();
 }
 
 /// Touched-line count for a repo-relative path; untracked files count as

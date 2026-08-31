@@ -103,8 +103,11 @@ Production modules whose summed method ABC exceeds
 .I max\-module\-abc
 (default 120) are flagged for
 extraction (Fitzpatrick total of method vectors). Test suites and test
-directories, lockfiles, schema dumps and documentation trees are exempt.
-For Rust files the trailing
+directories, lockfiles, schema dumps and documentation trees are exempt
+on full scans. On scoped runs the
+.B \-\-size\-gate
+threshold (default: both AbcSize and ModuleAbcSize need ≥100 touched
+lines) further limits when size findings report. For Rust files the trailing
 .B #[cfg(test)]
 module does not count toward the budget.
 .SS UsedOnce
@@ -242,6 +245,22 @@ plus untracked files. No branch/base diff is computed, so the scope is
 exactly what would be staged or committed next \-\- what the bare default
 already prefers when such work exists. Fails outside a repository
 instead of widening to a full\-tree scan.
+.TP
+.BI \-\-size\-gate " SCOPE"
+On scoped runs, suppress
+.B AbcSize
+and
+.B ModuleAbcSize
+unless the diff touches at least 100 lines of the file.
+.I SCOPE
+selects which paths that threshold covers:
+.B specs
+(test trees only; production always reports),
+.B both
+(production and tests; the default),
+or
+.B none
+(never suppress by line count). UsedOnce and NeverUsed are unaffected.
 .TP
 .B \-\-full
 Scan the whole production tree instead of the scoped run; the default
