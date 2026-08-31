@@ -1,17 +1,17 @@
 //! Changeset narrowing: a fresh or cached result is trimmed to the lines
-//! this working-tree change actually touches, and size metrics follow the
-//! refactor-scale [`crate::modulesize::SizeGate`] rule.
+//! this working-tree change actually touches, and ModuleAbcSize is
+//! re-scored from changed methods only.
 
 use crate::git_changes;
-use crate::modulesize::{self, SizeGate};
+use crate::modulesize;
 use crate::output::FileResult;
 
-/// Drops diagnostics outside the changed lines of this file, then applies
-/// the scoped-run size gate for AbcSize and ModuleAbcSize.
+/// Drops diagnostics outside the changed lines of this file, then
+/// re-scores ModuleAbcSize from methods that intersect the diff.
 pub(super) fn apply(
     changeset: Option<&git_changes::Changeset>,
     r: &mut FileResult,
-    size_gate: SizeGate,
+    max_module: f64,
     _src: &[u8],
 ) {
     let Some(cs) = changeset else {
@@ -25,30 +25,7 @@ pub(super) fn apply(
     r.abc.retain(|o| cs.span_selected(&rel, o.line, o.end_line));
     r.used_once.retain(|o| cs.line_selected(&rel, o.line));
     r.never_used.retain(|o| cs.line_selected(&rel, o.line));
-    apply_size_gate(cs, &rel, r, size_gate);
-}
-
-/// Scoped runs can suppress AbcSize and ModuleAbcSize until the diff is
-/// refactor-scale (≥100 touched lines). [`SizeGate`] selects which paths
-/// that threshold covers: specs only, both production and specs, or none.
-fn apply_size_gate(cs: &git_changes::Changeset, rel: &str, r: &mut FileResult, gate: SizeGate) {
-    if !gate.covers(rel) {
-        return;
-    }
-    let refactor_scale = changed_line_count(cs, rel) >= modulesize::MIN_REVIEW_REFACTOR_LINES;
-    if refactor_scale {
-        return;
-    }
-    r.module_abc = None;
-    r.abc.clear();
-}
-
-/// Touched-line count for a repo-relative path; untracked files count as
-/// fully changed.
-fn changed_line_count(cs: &git_changes::Changeset, rel: &str) -> usize {
-    match cs.files.get(rel) {
-        Some(git_changes::Lines::All) => usize::MAX,
-        Some(git_changes::Lines::Ranges(set)) => set.len(),
-        None => 0,
-    }
+    modulesize::rescope(&mut r.module_abc, max_module, |o| {
+        cs.span_selected(&rel, o.line, o.end_line)
+    });
 }

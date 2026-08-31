@@ -344,6 +344,7 @@ mod tests {
                 module_abc: Some(ModuleAbc {
                     score: 130.0,
                     vector: "<50, 80, 60>".into(),
+                    methods: vec![],
                 }),
             },
         ]
