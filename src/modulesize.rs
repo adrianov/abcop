@@ -8,7 +8,8 @@ mod classify;
 mod tests;
 
 pub(crate) use classify::{
-    GENERATED_DIR_PAIRS, GENERATED_DIRS, is_generated_name, is_route_table, is_third_party,
+    GENERATED_DIR_PAIRS, GENERATED_DIRS, is_fixture_tree, is_generated_name, is_route_table,
+    is_third_party,
 };
 
 use crate::abc::{self, AbcOffense};

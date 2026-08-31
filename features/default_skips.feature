@@ -27,6 +27,13 @@ Feature: Default skip policy
     And route tables are excluded entirely
     And the goal is compact reviews that stay within the MR's task scope
 
+  Scenario: Fixture sample trees stay out of scoped runs
+    Given a branch whose changed files include "tests/fixtures/cops/x.rb"
+    When an "--mr" or uncommitted scope resolves its file list
+    Then that fixture path is dropped from analysis
+    And real test files outside fixtures/ are still analysed
+    And naming "tests/fixtures" on the CLI (without a scope flag) opts back in
+
   Scenario: Scoped ModuleAbcSize uses changed methods, AbcSize stays per-method
     Given a production module whose full ABC exceeds the module ceiling
     And the branch changed only a few lines inside one medium method

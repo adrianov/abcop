@@ -138,3 +138,11 @@ fn third_party_tree(path: &std::path::Path) -> bool {
 pub(crate) fn is_third_party(path: &std::path::Path) -> bool {
     third_party_tree(path) || path.file_name().is_some_and(is_generated_name)
 }
+
+/// `fixtures/` path component: intentional offense samples. Scoped runs
+/// drop these (walker already prunes via `NON_PROD_DIRS`); name the tree
+/// on the CLI to scan it.
+pub(crate) fn is_fixture_tree(path: &std::path::Path) -> bool {
+    path.components()
+        .any(|c| lowercased(c.as_os_str()) == "fixtures")
+}

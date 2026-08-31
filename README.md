@@ -157,8 +157,9 @@ Default walks prune test/fixture trees, vendored/build output
 (`vendor/`, `node_modules/`, `target/`, …), `db/migrate/`, route tables
 (`config/routes.rb`, `config/routes/*.rb`), and generated names
 (`*.min.js`, `*_pb.go`, …). Name a path explicitly to scan it anyway.
-Third-party and route-table paths are never scoped review surface — a
-diff through `vendor/` does not make it owned code.
+Third-party, route-table, and fixture paths are never scoped review
+surface — a diff through `vendor/` or `tests/fixtures/` does not make
+that material owned code.
 
 **Scoped ModuleAbcSize** re-sums only methods that intersect the diff and
 compares that total to `--max-module-abc` (default 120; untracked =

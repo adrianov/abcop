@@ -1,6 +1,6 @@
 //! Classification and ModuleAbcSize scoring (including scoped rescope).
 
-use super::classify::{is_route_table, is_third_party};
+use super::classify::{is_fixture_tree, is_route_table, is_third_party};
 use super::{ModuleAbc, from_scores, rescope};
 use crate::abc::AbcOffense;
 
@@ -56,6 +56,19 @@ fn owned_sources_stay_in_scope() {
         "lib/pb.rb",
     ] {
         assert!(!is_third_party(std::path::Path::new(p)), "{p}");
+        assert!(!is_fixture_tree(std::path::Path::new(p)), "{p}");
+    }
+}
+
+#[test]
+fn fixture_trees_are_dropped_from_scope() {
+    for p in [
+        "tests/fixtures/cops/style/global_vars/no_offense.rb",
+        "fixtures/probe.rb",
+        "spec/fixtures/users.yml.rb",
+        "/repo/tests/fixtures/x.go",
+    ] {
+        assert!(is_fixture_tree(std::path::Path::new(p)), "{p}");
     }
 }
 

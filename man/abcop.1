@@ -36,7 +36,10 @@ sequence, framework route tables
 .IR config/routes/*.rb ),
 and minified bundles
 .RB ( *.min.js, " *.bundle.js ).
-MR scopes also drop framework route tables, and a bare invocation
+MR scopes also drop framework route tables and fixture trees
+.RB ( fixtures/ ),
+as do uncommitted and bare dirty\-tree scopes.
+A bare invocation
 prefers uncommitted work against HEAD when the tree is dirty, covering
 the branch's changes against its base otherwise.
 A path named explicitly on the command line is walked in full regardless.

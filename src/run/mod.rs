@@ -205,6 +205,7 @@ fn collect_targets(
             .into_iter()
             .filter(|p| !crate::modulesize::is_route_table(p))
             .filter(|p| !crate::modulesize::is_third_party(p))
+            .filter(|p| !crate::modulesize::is_fixture_tree(p))
             .collect(),
         None if explicit_paths => collect_files(run.paths, run.everything),
         None => collect_files(&[String::from(".")], run.everything),
