@@ -1,19 +1,8 @@
-//! Classification behavior for route tables and third-party trees.
+//! Classification and ModuleAbcSize scoring (including scoped rescope).
 
 use super::classify::{is_route_table, is_third_party};
-use super::{ModuleAbc, SizeGate, from_scores};
+use super::{ModuleAbc, from_scores, rescope};
 use crate::abc::AbcOffense;
-
-#[test]
-fn size_gate_covers_matches_scope() {
-    assert!(!SizeGate::Never.covers("app/models/x.rb"));
-    assert!(!SizeGate::Never.covers("spec/models/x_spec.rb"));
-    assert!(SizeGate::Both.covers("app/models/x.rb"));
-    assert!(SizeGate::Both.covers("spec/models/x_spec.rb"));
-    assert!(!SizeGate::Specs.covers("app/models/x.rb"));
-    assert!(SizeGate::Specs.covers("spec/models/x_spec.rb"));
-    assert!(SizeGate::Specs.covers("test/foo_test.rb"));
-}
 
 #[test]
 fn rails_route_tables_are_route_files() {
@@ -71,10 +60,14 @@ fn owned_sources_stay_in_scope() {
 }
 
 fn offense(a: u32, b: u32, c: u32) -> AbcOffense {
+    offense_at(1, 1, a, b, c)
+}
+
+fn offense_at(line: usize, end_line: usize, a: u32, b: u32, c: u32) -> AbcOffense {
     let raw = ((a * a + b * b + c * c) as f64).sqrt();
     AbcOffense {
-        line: 1,
-        end_line: 1,
+        line,
+        end_line,
         column: 0,
         name: "m".into(),
         score: (raw * 100.0).round() / 100.0,
@@ -91,6 +84,7 @@ fn module_abc_sums_method_vectors() {
         ModuleAbc {
             score: 130.0,
             vector: "<30, 40, 120>".into(),
+            methods: scores,
         }
     );
 }
@@ -131,4 +125,39 @@ fn rust_cfg_test_tail_is_excluded_from_module_abc() {
         },
     ];
     assert!(from_scores(&scores, "src/lib.rs", src, super::MAX_ABC).is_none());
+}
+
+#[test]
+fn rescope_keeps_only_intersecting_methods() {
+    let mut module_abc = from_scores(
+        &[
+            offense_at(1, 10, 40, 0, 0),
+            offense_at(20, 30, 0, 80, 0),
+            offense_at(40, 50, 0, 0, 90),
+        ],
+        "app/models/user.rb",
+        "",
+        50.0,
+    );
+    assert!(module_abc.is_some());
+    rescope(&mut module_abc, 50.0, |o| o.line >= 20 && o.end_line <= 30);
+    let hit = module_abc.expect("touched method still over max");
+    assert_eq!(hit.vector, "<0, 80, 0>");
+    assert_eq!(hit.methods.len(), 1);
+}
+
+#[test]
+fn rescope_clears_when_touched_methods_are_under_max() {
+    let mut module_abc = from_scores(
+        &[
+            offense_at(1, 10, 40, 0, 0),
+            offense_at(20, 30, 0, 80, 0),
+            offense_at(40, 50, 0, 0, 90),
+        ],
+        "app/models/user.rb",
+        "",
+        50.0,
+    );
+    rescope(&mut module_abc, 50.0, |o| o.line <= 10);
+    assert_eq!(module_abc, None);
 }

@@ -47,6 +47,7 @@ fn roundtrip_returns_stored_diagnostics() {
     let module_abc = crate::modulesize::ModuleAbc {
         score: 120.5,
         vector: "<40, 100, 40>".into(),
+        methods: vec![],
     };
     let diags = sample(Some(module_abc.clone()));
     let key = "a".repeat(64);

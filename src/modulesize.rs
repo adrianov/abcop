@@ -1,7 +1,7 @@
 //! Metrics/ModuleAbcSize: production modules must stay under MAX_ABC.
 //! Classification mirrors refactor_gpt quality standards: spec/test trees,
 //! test-file suffixes, lockfiles, docs and schema dumps are exempt.
-//! Scoped runs also share a refactor-scale size gate (see [`SizeGate`]).
+//! Scoped runs re-score from methods that intersect the diff only.
 
 mod classify;
 #[cfg(test)]
@@ -17,38 +17,6 @@ use crate::abc::{self, AbcOffense};
 /// in RuboCop/Sinatra lib trees (~85–90 median); 120 is a looser default
 /// so typical mid-size files stay quiet while still flagging oversized ones.
 pub const MAX_ABC: f64 = 120.0;
-
-/// In scoped runs, AbcSize and ModuleAbcSize only fire when the diff itself
-/// touches at least this many lines of the file (when [`SizeGate`] covers
-/// that path): a refactor-scale change invites the size conversation, while
-/// a three-line patch into an already-large legacy module should not.
-pub(crate) const MIN_REVIEW_REFACTOR_LINES: usize = 100;
-
-/// Which paths the scoped ≥100-line size gate covers for AbcSize and
-/// ModuleAbcSize. Small edits into oversized legacy files stay silent when
-/// the gate applies; UsedOnce / NeverUsed are unaffected.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
-pub enum SizeGate {
-    /// Gate only test/spec trees; production size findings always report.
-    Specs,
-    /// Never suppress by line count; report every intersecting size finding.
-    #[value(name = "none")]
-    Never,
-    /// Gate production and test paths (default for foreign / legacy trees).
-    #[default]
-    Both,
-}
-
-impl SizeGate {
-    /// True when this gate's ≥100-line threshold applies to `path`.
-    pub(crate) fn covers(self, path: &str) -> bool {
-        match self {
-            Self::Never => false,
-            Self::Both => true,
-            Self::Specs => is_test_path(path),
-        }
-    }
-}
 
 pub(crate) const NON_PROD_DIRS: [&str; 9] = [
     "spec/",
@@ -66,6 +34,10 @@ pub(crate) const NON_PROD_DIRS: [&str; 9] = [
 pub struct ModuleAbc {
     pub score: f64,
     pub vector: String,
+    /// Method ABC parts that formed this total. Scoped runs re-sum the
+    /// subset intersecting the diff against the same ceiling.
+    #[serde(default)]
+    pub(crate) methods: Vec<AbcOffense>,
 }
 
 pub(crate) fn is_test_path(path: &str) -> bool {
@@ -108,10 +80,29 @@ pub fn from_scores(
     max: f64,
 ) -> Option<ModuleAbc> {
     let filtered = rust_prod_scores(scores, path, src);
-    let (a, b, c, score) = abc::module_score(filtered.as_ref());
+    scored(filtered.into_owned(), max)
+}
+
+/// Re-sum `module_abc` from methods that `keep` accepts; clear when the
+/// rescored total no longer exceeds `max`.
+pub(crate) fn rescope(
+    module_abc: &mut Option<ModuleAbc>,
+    max: f64,
+    keep: impl Fn(&AbcOffense) -> bool,
+) {
+    let Some(m) = module_abc.take() else {
+        return;
+    };
+    let methods: Vec<_> = m.methods.into_iter().filter(|o| keep(o)).collect();
+    *module_abc = scored(methods, max);
+}
+
+fn scored(methods: Vec<AbcOffense>, max: f64) -> Option<ModuleAbc> {
+    let (a, b, c, score) = abc::module_score(&methods);
     (score > max).then(|| ModuleAbc {
         score,
         vector: abc::fmt_vector(a, b, c),
+        methods,
     })
 }
 

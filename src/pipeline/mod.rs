@@ -5,7 +5,6 @@
 use crate::abc::Limits;
 use crate::cache;
 use crate::git_changes;
-use crate::modulesize::SizeGate;
 use crate::paths::{Lang, lang_for, parse_file_lang};
 use crate::srcbuf::{SrcBuf, load_src};
 mod backends;
@@ -53,7 +52,6 @@ pub(crate) fn analyze_one(
     limits: Limits,
     changeset: Option<&git_changes::Changeset>,
     cache: Option<&cache::Cache>,
-    size_gate: SizeGate,
 ) -> crate::output::FileResult {
     let Some((mut r, src_buf)) = loaded_result(path) else {
         return blank_with(path);
@@ -62,7 +60,7 @@ pub(crate) fn analyze_one(
     // must also apply when the analysis itself comes from the cache.
     let hit = cache.and_then(|c| cache_hit(c, path, &src_buf, only, limits));
     if let Some(mut hit) = hit {
-        narrow::apply(changeset, &mut hit, size_gate, &src_buf);
+        narrow::apply(changeset, &mut hit, limits.module, &src_buf);
         return hit;
     }
 
@@ -78,7 +76,7 @@ pub(crate) fn analyze_one(
         return r;
     }
     store_result(cache, path, &src_buf, only, limits, &r);
-    narrow::apply(changeset, &mut r, size_gate, &src_buf);
+    narrow::apply(changeset, &mut r, limits.module, &src_buf);
     r
 }
 

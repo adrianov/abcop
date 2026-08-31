@@ -22,25 +22,19 @@ Feature: Default skip policy
     Given a branch whose changed files include tests and "config/routes.rb"
     When an "--mr" scope resolves its file list
     Then UsedOnce and NeverUsed still run on the test files
-    And AbcSize and ModuleAbcSize follow --size-gate (default both: silent under 100 changed lines)
+    And AbcSize reports changed methods over the method ceiling
+    And ModuleAbcSize re-scores from changed methods only
     And route tables are excluded entirely
     And the goal is compact reviews that stay within the MR's task scope
 
-  Scenario: Size gate suppresses AbcSize and ModuleAbcSize on small scoped diffs
-    Given a production module whose method and module ABC exceed the ceilings
-    And the branch changed only 4 lines of it
-    When an "--mr" scope runs with the default "--size-gate both"
-    Then no AbcSize or ModuleAbcSize finding is reported for that file
-    But when the diff touches at least 100 lines of it
-    Then both size findings are reported
-
-  Scenario: Size gate can target specs only or be disabled
-    Given the same oversized production module with a 4-line diff
-    When "--size-gate specs" is set
-    Then production size findings still report
-    And spec trees stay silent until a 100-line diff
-    When "--size-gate none" is set
-    Then every intersecting AbcSize and ModuleAbcSize finding reports
+  Scenario: Scoped ModuleAbcSize uses changed methods, AbcSize stays per-method
+    Given a production module whose full ABC exceeds the module ceiling
+    And the branch changed only a few lines inside one medium method
+    When an "--mr" scope runs
+    Then no ModuleAbcSize finding is reported for that file
+    But AbcSize still reports if that changed method exceeds --max-abc
+    And when the diff intersects methods whose ABC sum exceeds --max-module-abc
+    Then the ModuleAbcSize warning is reported with that changed-method total
 
   Scenario: Default invocation prefers uncommitted work
     Given uncommitted edits against HEAD and commits on the branch
