@@ -1,0 +1,4 @@
+{
+  "name": "abcop",
+  "install": "rustup default stable && rustup component add rustfmt clippy && cargo build --locked --all-targets"
+}
