@@ -1,12 +1,12 @@
 //! Untracked work-file detection: which files exist in the working
-//! directory outside git's knowledge. The `ignore` crate walks the tree
-//! honouring `.gitignore`-style filters; anything the index already
-//! knows about is subtracted, so only genuinely untracked paths remain.
+//! directory outside git's knowledge. libgit2 status is the source of
+//! truth so `.gitignore`, `$GIT_DIR/info/exclude`, and the global
+//! excludes file all apply — including submodule / gitfile layouts
+//! where the `ignore` crate never loads `info/exclude`.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
-use git2::Repository;
+use git2::{Repository, StatusOptions, Statuses};
 
 use crate::git_changes::Lines;
 
@@ -16,60 +16,26 @@ pub(crate) fn add_untracked(
     repo: &Repository,
     files: &mut BTreeMap<String, Lines>,
 ) -> Result<(), String> {
-    for rel in untracked_rel_paths(repo) {
-        if !files.contains_key(&rel) {
-            files.insert(rel, Lines::All);
-        }
+    for rel in untracked_rel_paths(repo)? {
+        files.entry(rel).or_insert(Lines::All);
     }
     Ok(())
 }
 
-/// Workdir-relative paths of untracked, not-ignored files: everything
-/// the walker finds minus every path the index knows about.
-fn untracked_rel_paths(repo: &Repository) -> Vec<String> {
-    let Some(root) = repo.workdir() else {
-        return Vec::new();
-    };
-    let tracked = index_paths(repo);
-    untracked_walker(root)
-        .filter_map(Result::ok)
-        .filter_map(|e| untracked_rel_of(&e, root, &tracked))
+/// Workdir-relative paths of untracked, not-ignored files, matching
+/// `git status --porcelain` (no ignored paths).
+fn untracked_rel_paths(repo: &Repository) -> Result<Vec<String>, String> {
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true).recurse_untracked_dirs(true);
+    Ok(wt_new_paths(
+        &repo.statuses(Some(&mut opts)).map_err(|e| e.to_string())?,
+    ))
+}
+
+fn wt_new_paths(statuses: &Statuses<'_>) -> Vec<String> {
+    statuses
+        .iter()
+        .filter(|s| s.status().is_wt_new())
+        .filter_map(|s| s.path().map(|p| p.replace('\\', "/")))
         .collect()
-}
-
-/// Workdir-relative path when the entry is a regular file outside the
-/// index; `None` for directories, tracked files and unreadable paths.
-fn untracked_rel_of(
-    entry: &ignore::DirEntry,
-    root: &Path,
-    tracked: &std::collections::HashSet<Vec<u8>>,
-) -> Option<String> {
-    if !entry.file_type()?.is_file() {
-        return None;
-    }
-    let rel = normalize(entry.path().strip_prefix(root).ok()?.to_str()?);
-    (!tracked.contains(rel.as_bytes())).then_some(rel)
-}
-
-/// Walk builder for workdir contents: dotfiles are untracked candidates
-/// like any other, but the git store itself never is.
-fn untracked_walker(root: &Path) -> ignore::Walk {
-    let mut builder = ignore::WalkBuilder::new(root);
-    builder
-        .standard_filters(true)
-        .hidden(false)
-        .filter_entry(|e| e.file_name() != std::ffi::OsStr::new(".git"));
-    builder.build()
-}
-
-/// Byte paths known to the index -- the tracked-universe reference set.
-fn index_paths(repo: &Repository) -> std::collections::HashSet<Vec<u8>> {
-    repo.index()
-        .map(|idx| idx.iter().map(|e| e.path.to_vec()).collect())
-        .unwrap_or_default()
-}
-
-/// Repo-style path separators on any platform.
-fn normalize(path: &str) -> String {
-    path.replace('\\', "/")
 }
