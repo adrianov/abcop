@@ -1,6 +1,6 @@
 [package]
 name = "abcop"
-version = "0.16.4"
+version = "0.16.5"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Peter Adrianov"]
