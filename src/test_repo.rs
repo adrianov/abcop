@@ -123,6 +123,56 @@ fn checkout_branch(repo: &Repository, name: &str) {
         .expect("set head");
 }
 
+/// Gitfile workdir whose `info/exclude` lists editor files, plus one
+/// real untracked source file.
+pub(crate) fn seed_gitfile_exclude(root: &Path) -> PathBuf {
+    let workdir = root.join("work");
+    std::fs::create_dir_all(&workdir).unwrap();
+    seed_repo_with_base_commit(&workdir);
+    relocate_to_gitfile(&workdir, &root.join("store"));
+    write_info_exclude(&workdir, "AGENTS.md\n.cursor/\n");
+    write_exclude_bait(&workdir);
+    workdir
+}
+
+/// Relocate `.git` to `git_dir` and leave a gitfile in the workdir,
+/// matching submodule / `--separate-git-dir` layout (no `commondir`).
+fn relocate_to_gitfile(workdir: &Path, git_dir: &Path) {
+    ensure_parent(git_dir);
+    std::fs::rename(workdir.join(".git"), git_dir).unwrap();
+    std::fs::write(
+        workdir.join(".git"),
+        format!("gitdir: {}\n", git_dir.display()),
+    )
+    .unwrap();
+    Repository::open(git_dir)
+        .expect("open relocated git dir")
+        .config()
+        .expect("config")
+        .set_str("core.worktree", workdir.to_str().expect("workdir is utf-8"))
+        .expect("set worktree");
+}
+
+/// Write `$GIT_DIR/info/exclude` for the opened workdir.
+fn write_info_exclude(dir: &Path, patterns: &str) {
+    let path = open(dir).path().join("info/exclude");
+    ensure_parent(&path);
+    std::fs::write(path, patterns).unwrap();
+}
+
+fn ensure_parent(path: &Path) {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+}
+
+fn write_exclude_bait(workdir: &Path) {
+    std::fs::write(workdir.join("AGENTS.md"), "notes\n").unwrap();
+    std::fs::create_dir_all(workdir.join(".cursor/rules")).unwrap();
+    std::fs::write(workdir.join(".cursor/rules/ruby-style.mdc"), "rule\n").unwrap();
+    std::fs::write(workdir.join("new.rb"), "def extra\nend\n").unwrap();
+}
+
 fn stage_paths(repo: &Repository, paths: &[&str]) {
     let mut idx = repo.index().expect("index");
     for p in paths {
@@ -152,4 +202,3 @@ fn commit_tree(repo: &Repository, msg: &str, when: Option<i64>) {
     repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parents)
         .expect("commit");
 }
-
