@@ -1,0 +1,24 @@
+---
+description: Cloud Agents auto-merge their own PR once the work is finished and green.
+alwaysApply: true
+---
+
+# Cloud auto-merge
+
+When running as a Cloud Agent, enable auto-merge on the PR you opened once the
+work is finished, so it merges on its own after checks pass.
+
+A PR is finished when:
+
+- every requested change is implemented and validated;
+- `cargo build --locked --all-targets`, `cargo test`, and `cargo clippy` pass;
+- the PR is marked ready for review (not draft) and CI is green or expected to go green.
+
+Then run:
+
+```sh
+gh pr merge --auto --squash <pr-number>
+```
+
+Use squash so `main` keeps one commit per PR. Do not auto-merge while work is
+incomplete, tests fail, the PR is still a draft, or the user asked to hold it.
