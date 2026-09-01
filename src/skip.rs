@@ -192,5 +192,11 @@ mod tests {
         assert!(skipped_by_default(Path::new("./.terraform/main.tf.rb"), &r));
         assert!(skipped_by_default(Path::new("./app/models/user_pb.rb"), &r));
         assert!(!skipped_by_default(Path::new("./app/models/user.rb"), &r));
+        assert!(skipped_by_default(
+            Path::new("./lib/models/user.freezed.dart"),
+            &r
+        ));
+        assert!(skipped_by_default(Path::new("./lib/models/user.g.dart"), &r));
+        assert!(!skipped_by_default(Path::new("./lib/models/user.dart"), &r));
     }
 }

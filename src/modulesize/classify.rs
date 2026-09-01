@@ -41,7 +41,14 @@ pub(crate) const GENERATED_DIRS: [&str; 31] = [
 
 /// Codegen file-name suffixes across ecosystems (protobuf et al). Matched
 /// against the lowercased full file name.
-pub(crate) const GENERATED_FILE_SUFFIXES: [&str; 3] = ["_pb.rb", "_pb2.py", ".pb.go"];
+pub(crate) const GENERATED_FILE_SUFFIXES: [&str; 6] = [
+    "_pb.rb",
+    "_pb2.py",
+    ".pb.go",
+    ".freezed.dart",
+    ".g.dart",
+    ".mocks.dart",
+];
 
 /// Multi-component generated trees, matched as an exact directory sequence
 /// below the walked root. Rails migrations are history, not review surface.
