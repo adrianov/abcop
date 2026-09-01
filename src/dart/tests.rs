@@ -180,6 +180,47 @@ fn pattern_destructured_unused_names_reported() {
 }
 
 #[test]
+fn never_used_parameter_member_access_is_a_real_use() {
+    assert_eq!(
+        dead("class C {\n  int m(Obj dto) {\n    return dto.x;\n  }\n}"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        dead("class C {\n  void m(Obj dto) {\n    print(dto.images.map((e) => e.x));\n  }\n}"),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn never_used_factory_constructor_formals_are_protocol() {
+    assert_eq!(
+        dead(
+            r#"@freezed
+class E with _$E {
+  const factory E.f({required int barcode}) = _F;
+}"#,
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn never_used_constructor_formals_with_body_are_reported() {
+    assert_eq!(
+        dead("class Foo {\n  int x;\n  Foo(int spare, this.x) {\n    print(x);\n  }\n}"),
+        vec!["spare"]
+    );
+}
+
+#[test]
+fn never_used_unimplemented_stub_formals_are_protocol() {
+    assert_eq!(
+        dead("abstract class M {\n  int toModel(int dto) => throw UnimplementedError();\n}"),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
 fn cascade_member_slots_do_not_shadow_reads() {
     // cascade property writes are instance state; obj itself is read
     assert_eq!(
