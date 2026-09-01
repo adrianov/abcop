@@ -77,7 +77,7 @@ fn walk_excluding_field_slot(
     let mut cursor = n.walk();
     for child in n.children(&mut cursor) {
         if child.id() != excluded {
-            b.custom(child, scope);
+            dispatch(b, child, scope);
         }
     }
     true

@@ -99,37 +99,57 @@ impl Backend for Collector<'_> {
     }
 
     fn custom(&mut self, n: Node, scope: usize) {
-        match n.kind() {
-            // `var x = ...` / `int b = a++`: name + optional value field
-            "initialized_variable_definition" => self.bind_declarator_with_rhs_field(n, scope),
-            // plain/compound assignments to bare identifiers
-            "assignment_expression" => self.walk_assignment(n, scope),
-            // default-value expressions must keep producing their reads
-            "formal_parameter" => self.bind_parameter(n, scope),
-            // class/file state slots bind nothing local; only their
-            // initializer values are real expression contexts
-            "initialized_identifier" | "static_final_declaration" | "field_initializer" => {
-                self.walk_state_initializer(n, scope)
-            }
-            // irrefutable `final [p, q] = list;`
-            "pattern_variable_declaration" => self.walk_pattern_declaration(n, scope),
-            // destructuring assignment `[a, b] = pair;`
-            "pattern_assignment" => self.walk_pattern_assignment(n, scope),
-            // one shared block over all clauses so catch exception and
-            // stack-trace names scope across their handler blocks
-            "try_statement" => self.walk_try(n, scope),
-            // bodyless constructor headers need their own scope so their
-            // parameters never leak into the enclosing context
-            "declaration" if is_ctor_header(n) => {
-                let s = self.model.open_scope(ScopeKind::Block, scope);
-                self.walk_children(n, s);
-            }
-            _ => self.walk_children(n, scope),
-        }
+        self.dispatch_custom(n, scope);
     }
 }
 
 impl Collector<'_> {
+    fn dispatch_custom(&mut self, n: Node, scope: usize) {
+        if self.dispatch_binding(n, scope) || self.dispatch_structure(n, scope) {
+            return;
+        }
+        self.walk_children(n, scope);
+    }
+
+    fn dispatch_binding(&mut self, n: Node, scope: usize) -> bool {
+        match n.kind() {
+            "initialized_variable_definition" => {
+                self.bind_declarator_with_rhs_field(n, scope);
+                self.walk_children_excluding_field(n, scope, "name");
+            }
+            "assignment_expression" => self.walk_assignment(n, scope),
+            "formal_parameter" if !self.is_protocol_param(n) => self.bind_parameter(n, scope),
+            "formal_parameter" => {}
+            "initialized_identifier" | "static_final_declaration" | "field_initializer" => {
+                self.walk_state_initializer(n, scope)
+            }
+            "pattern_variable_declaration" => self.walk_pattern_declaration(n, scope),
+            "pattern_assignment" => self.walk_pattern_assignment(n, scope),
+            _ => return false,
+        }
+        true
+    }
+
+    fn dispatch_structure(&mut self, n: Node, scope: usize) -> bool {
+        match n.kind() {
+            "try_statement" => self.walk_try(n, scope),
+            "declaration" if is_ctor_header(n) => {
+                let s = self.model.open_scope(ScopeKind::Block, scope);
+                self.walk_children(n, s);
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Redirecting factory formals and abstract `throw UnimplementedError()`
+    /// stubs declare protocol names: generated code or overrides consume
+    /// them, so single-file analysis must not treat them as dead locals.
+    fn is_protocol_param(&self, param: Node) -> bool {
+        in_redirecting_factory_signature(param)
+            || enclosing_callable(param).is_some_and(|n| throws_unimplemented(&self, n))
+    }
+
     /// Bind a declared parameter; the remaining children (type, default
     /// value) walk on with the name slot suppressed.
     fn bind_parameter(&mut self, n: Node, scope: usize) {
@@ -187,4 +207,41 @@ fn is_ctor_header(declaration: Node<'_>) -> bool {
     CTOR_SIG_KINDS
         .iter()
         .any(|k| child_of_kind(declaration, k).is_some())
+}
+
+fn in_redirecting_factory_signature(mut param: Node<'_>) -> bool {
+    while let Some(parent) = param.parent() {
+        if parent.kind() == "redirecting_factory_constructor_signature" {
+            return true;
+        }
+        param = parent;
+    }
+    false
+}
+
+fn enclosing_callable(mut param: Node<'_>) -> Option<Node<'_>> {
+    while let Some(parent) = param.parent() {
+        match parent.kind() {
+            "method_declaration" | "function_declaration" => return Some(parent),
+            "source_file" | "program" => return None,
+            _ => param = parent,
+        }
+    }
+    None
+}
+
+fn throws_unimplemented(c: &Collector<'_>, callable: Node<'_>) -> bool {
+    let Some(body) = callable.child_by_field_name("body") else {
+        return false;
+    };
+    let Some(throw_node) = body.named_child(0).filter(|n| n.kind() == "throw_expression") else {
+        return false;
+    };
+    let Some(value) = throw_node.child_by_field_name("value") else {
+        return false;
+    };
+    let Some(func) = value.child_by_field_name("function") else {
+        return false;
+    };
+    func.kind() == "identifier" && c.text_of(func) == "UnimplementedError"
 }
