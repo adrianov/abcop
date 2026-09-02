@@ -205,4 +205,12 @@ mod tests {
         let s = scores("def f\n  __FILE__\n  __LINE__\n  __ENCODING__\n  bar\nend\n");
         assert_eq!(s[0].vector, "<0, 1, 0>");
     }
+
+    #[test]
+    fn signed_number_literals_are_not_branches() {
+        // parser/RuboCop keeps signed numerics as literals; tree-sitter
+        // emits unary + operand (integer/float/rational/complex).
+        let s = scores("def f(x)\n  -1\n  +2.5\n  -1r\n  -1i\n  -x\n  !true\nend\n");
+        assert_eq!(s[0].vector, "<0, 2, 0>"); // -x and !true only
+    }
 }

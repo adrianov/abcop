@@ -93,12 +93,13 @@ impl<'f> Calc<'f> {
     }
 
     fn count_unary(&mut self, n: Node) {
-        // `defined?` is a dedicated parser node type: neither branch nor
-        // condition. `-1` folds into the literal. Others are one branch.
+        // `defined?` is neither branch nor condition. Signed numerics are
+        // literals in parser/RuboCop but `unary`+operand here — fold them.
         let op = self.field(n, "operator");
         let folded_number = matches!(op, "-" | "+")
-            && n.child_by_field_name("operand")
-                .is_some_and(|o| matches!(o.kind(), "integer_literal" | "float_literal"));
+            && n.child_by_field_name("operand").is_some_and(|o| {
+                matches!(o.kind(), "integer" | "float" | "rational" | "complex")
+            });
         if op != "defined?" && !folded_number {
             self.b += 1;
         }
