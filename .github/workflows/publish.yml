@@ -1,5 +1,5 @@
 # Publish abcop to crates.io and GitHub Releases when a version tag is pushed
-# (e.g. v0.16.5). Requires repository secret CARGO_REGISTRY_TOKEN.
+# (e.g. v0.16.6). Requires repository secret CARGO_REGISTRY_TOKEN.
 #
 # workflow_dispatch re-runs publish for an existing tag (crates.io retry /
 # asset refresh) without retagging — use after setting CARGO_REGISTRY_TOKEN.
@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing version tag to (re)publish, e.g. v0.16.5"
+        description: "Existing version tag to (re)publish, e.g. v0.16.6"
         required: true
         type: string
 
