@@ -129,7 +129,7 @@ fn paren_pure(fm: &FileModel, n: Node) -> bool {
 }
 
 /// A bare `tmp = source` alias is safe only when `source` is not written
-/// between the alias assignment and its single read (vcalls have no local writes).
+/// between the alias assignment and its single read.
 fn alias_source_stable(
     fm: &FileModel,
     scope: usize,
@@ -152,7 +152,12 @@ fn inlinable_rhs(
         return immediate_substitutable(write_site, read_byte);
     }
     if n.kind() == RUBY_IDENT {
-        return alias_source_stable(fm, scope, fm.text(n), write_byte, read_byte);
+        let name = fm.text(n);
+        // Bare `foo` with no local binding is a vcall — same effect rules as `foo()`.
+        if fm.lookup(scope, write_byte, name).is_none() {
+            return immediate_substitutable(write_site, read_byte);
+        }
+        return alias_source_stable(fm, scope, name, write_byte, read_byte);
     }
     pure(fm, n)
 }
@@ -299,9 +304,52 @@ mod tests {
     }
 
     #[test]
+    fn vcall_rhs_rejected_with_intervening_statement() {
+        // `compute` without () is an identifier vcall, not a local alias.
+        let f = flags("def k\n  tmp = compute\n  side_effect()\n  use(tmp)\nend\n");
+        assert!(f.is_empty(), "vcall RHS must not cross statements: {f:?}");
+    }
+
+    #[test]
     fn call_chain_in_block_read_rejected() {
         let f = flags("def k(arr)\n  tmp = compute()\n  arr.each { |i| p tmp }\nend\n");
         assert!(f.is_empty(), "read inside loop block must not inline calls: {f:?}");
+    }
+
+    #[test]
+    fn call_in_modifier_value_rejected() {
+        let f = flags("def k\n  tmp = compute()\n  return tmp if ok?\nend\n");
+        assert!(
+            f.is_empty(),
+            "inlining into modifier value runs the call after the condition: {f:?}"
+        );
+    }
+
+    #[test]
+    fn call_in_conditional_body_rejected() {
+        let f = flags("def k(c)\n  tmp = compute()\n  if c\n    use(tmp)\n  end\nend\n");
+        assert!(f.is_empty(), "inlining into if body skips the call when false: {f:?}");
+    }
+
+    #[test]
+    fn call_in_ternary_arm_rejected() {
+        let f = flags("def k(c)\n  tmp = compute()\n  c ? use(tmp) : other\nend\n");
+        assert!(f.is_empty(), "inlining into ternary arm is conditional: {f:?}");
+    }
+
+    #[test]
+    fn call_in_condition_still_flagged() {
+        // Condition always evaluates, so `if compute().empty?` matches the binding.
+        let f = flags("def k\n  tmp = compute()\n  if tmp.empty?\n    bar\n  end\nend\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].name, "tmp");
+    }
+
+    #[test]
+    fn call_in_modifier_condition_still_flagged() {
+        let f = flags("def k\n  tmp = compute()\n  warn \"x\" unless tmp\nend\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].name, "tmp");
     }
 
     #[test]

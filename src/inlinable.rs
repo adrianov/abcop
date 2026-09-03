@@ -120,8 +120,14 @@ const REPEAT_ANCESTORS: &[&str] = &[
     "foreach_statement",
 ];
 
+/// Branch bodies that may skip evaluating the read (Ruby `then`/`when`, etc.).
+const BRANCH_BODY_KINDS: &[&str] = &[
+    "then", "else", "elsif", "when", "in_clause", "rescue", "ensure",
+];
+
 /// Effectful RHS may move to the read only when it is the next statement and
-/// the read is not under a repeated body (loop/block) in that statement.
+/// the read always runs there (not under a loop, conditional branch, or
+/// modifier body — those change when/whether the call executes).
 pub fn immediate_substitutable(write_site: Node, read_byte: usize) -> bool {
     let Some(read_site) = root_of(write_site).descendant_for_byte_range(read_byte, read_byte) else {
         return false;
@@ -140,7 +146,7 @@ pub fn immediate_substitutable(write_site: Node, read_byte: usize) -> bool {
     if write_parent.id() != read_parent.id() || read_idx != write_idx + 1 {
         return false;
     }
-    !read_under_repeat(read_site, read_stmt)
+    !read_may_skip(read_site, read_stmt)
 }
 
 fn root_of(mut node: Node) -> Node {
@@ -177,14 +183,54 @@ fn sibling_index(parent: Node, child: Node) -> Option<usize> {
     None
 }
 
-fn read_under_repeat(read_site: Node, read_stmt: Node) -> bool {
+/// True when the read sits under control flow that may skip it relative to
+/// `read_stmt` (loops, `then`/`else`, modifier bodies, ternary arms).
+/// Reads only in a condition stay reachable — the condition always runs.
+fn read_may_skip(read_site: Node, read_stmt: Node) -> bool {
     let mut cur = Some(read_site);
     while let Some(n) = cur {
         if n.id() == read_stmt.id() {
             return false;
         }
-        if REPEAT_ANCESTORS.contains(&n.kind()) {
+        if REPEAT_ANCESTORS.contains(&n.kind()) || BRANCH_BODY_KINDS.contains(&n.kind()) {
             return true;
+        }
+        if let Some(parent) = n.parent() {
+            if modifier_body_child(parent, n) || conditional_branch_child(parent, n) {
+                return true;
+            }
+        }
+        cur = n.parent();
+    }
+    false
+}
+
+fn modifier_body_child(parent: Node, child: Node) -> bool {
+    matches!(
+        parent.kind(),
+        "if_modifier" | "unless_modifier" | "while_modifier" | "until_modifier" | "rescue_modifier"
+    ) && under_field(parent, "body", child)
+}
+
+fn conditional_branch_child(parent: Node, child: Node) -> bool {
+    matches!(parent.kind(), "if" | "unless" | "conditional")
+        && (under_field(parent, "consequence", child) || under_field(parent, "alternative", child))
+}
+
+fn under_field(parent: Node, field: &str, child: Node) -> bool {
+    let Some(field_node) = parent.child_by_field_name(field) else {
+        return false;
+    };
+    if child.id() == field_node.id() {
+        return true;
+    }
+    let mut cur = child.parent();
+    while let Some(n) = cur {
+        if n.id() == field_node.id() {
+            return true;
+        }
+        if n.id() == parent.id() {
+            return false;
         }
         cur = n.parent();
     }
