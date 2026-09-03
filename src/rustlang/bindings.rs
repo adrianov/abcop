@@ -41,22 +41,24 @@ impl<'m> Builder<'m> {
     }
 
     fn bind_let_ids(&mut self, p: Node, value: Option<Node>, scope: usize) {
-        let mut ids = Vec::new();
-        pattern_identifiers(p, self.src, &mut ids);
-        for id in ids {
-            let name = self.text(id).to_string();
+        // Only `let name = expr` is an inline candidate. Tuple / struct /
+        // `Some(x)` patterns bind protocol names that cannot be substituted
+        // for the whole RHS.
+        if p.kind() == "identifier" {
             self.record_write(
                 scope,
-                &name,
+                &self.text(p).to_string(),
                 Write {
-                    byte: id.start_byte(),
-                    node_id: id.id(),
+                    byte: p.start_byte(),
+                    node_id: p.id(),
                     plain: true,
                     rhs: value.map(|v| (v.id(), v.start_byte())),
                 },
                 IntroKind::Assign,
             );
+            return;
         }
+        self.bind_pattern(Some(p), scope, IntroKind::Binding);
     }
 
     pub(super) fn handle_assign(&mut self, n: Node, scope: usize) {

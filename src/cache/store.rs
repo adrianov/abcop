@@ -15,7 +15,7 @@ use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinitio
 
 /// Bump whenever counting rules or output shape change so stale entries are
 /// never served.
-pub(crate) const RULES_REV: u32 = 26;
+pub(crate) const RULES_REV: u32 = 27;
 
 pub(crate) const MAX_ENTRIES: usize = 20_000;
 const ENTRIES: TableDefinition<&str, &[u8]> = TableDefinition::new("entries");
@@ -75,12 +75,14 @@ impl EntryStore {
         }
         let mut newest_first = by_age;
         newest_first.sort_by_key(|(t, _)| std::cmp::Reverse(*t));
-        let stale: Vec<String> = newest_first
+
+        self.remove_keys(
+            &newest_first
             .iter()
             .skip(MAX_ENTRIES)
             .map(|(_, k)| k.clone())
-            .collect();
-        self.remove_keys(&stale);
+                .collect::<Vec<_>>(),
+        );
     }
 
     /// `(timestamp, key)` for every parseable entry, in storage order.
@@ -123,17 +125,26 @@ impl EntryStore {
     /// Raw row lookup for tests: the store is the unit that owns layout.
     #[cfg(test)]
     pub(super) fn raw_get(&self, key: &str) -> Option<usize> {
-        let rtx = self.db.begin_read().unwrap();
-        let table = rtx.open_table(ENTRIES).unwrap();
-        table.get(key).unwrap().map(|_| 1_usize)
+        self.db
+            .begin_read()
+            .unwrap()
+            .open_table(ENTRIES)
+            .unwrap()
+            .get(key)
+            .unwrap()
+            .map(|_| 1_usize)
     }
 
     /// Row count for tests.
     #[cfg(test)]
     pub(super) fn raw_len(&self) -> usize {
-        let rtx = self.db.begin_read().unwrap();
-        let table = rtx.open_table(ENTRIES).unwrap();
-        table.len().unwrap() as usize
+        self.db
+            .begin_read()
+            .unwrap()
+            .open_table(ENTRIES)
+            .unwrap()
+            .len()
+            .unwrap() as usize
     }
 
     /// Direct insert bypassing the codec, for tests seeding malformed or

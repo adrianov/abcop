@@ -54,17 +54,72 @@ fn single_use<'t>(
     let (rhs_node, write_node) = resolved_rhs(nodes, w)?;
     if !inlinable_rhs(fm, rhs_node, scope, w.byte, Some(e.reads[0]), Some(write_node))
         || !unconditionally_executed(write_node)
+        || reborrow_blocks(fm, rhs_node, e.reads[0])
     {
         return None;
     }
     Some(offense_at_write(fm, name, w.byte))
 }
 
+/// `let s = b.foo(); use(b, s)` / `let s = self.foo(); self.bar(s)` cannot be
+/// inlined: the call that produced `s` and the call that consumes it both
+/// need the same receiver.
+fn reborrow_blocks(fm: &RustFile, rhs: Node, read_byte: usize) -> bool {
+    let Some(root) = call_root_name(fm, rhs) else {
+        return false;
+    };
+    fm.tree
+        .root_node()
+        .descendant_for_byte_range(read_byte, read_byte)
+        .and_then(enclosing_call)
+        .is_some_and(|call| call_mentions_name(fm, call, &root))
+}
+
+fn call_root_name(fm: &RustFile, n: Node) -> Option<String> {
+    match n.kind() {
+        "call_expression" => call_root_through(fm, n, "function"),
+        "method_call_expression" => call_root_through(fm, n, "receiver"),
+        "field_expression" => call_root_through(fm, n, "value"),
+        "await_expression" => call_root_name(fm, n.named_child(0)?),
+        "self" | "identifier" => Some(fm.text(n).to_string()),
+        _ => None,
+    }
+}
+
+fn call_root_through(fm: &RustFile, n: Node, field: &str) -> Option<String> {
+    call_root_name(fm, n.child_by_field_name(field)?)
+}
+
+fn enclosing_call(read: Node) -> Option<Node> {
+    let mut cur = read;
+    while let Some(parent) = cur.parent() {
+        if parent.kind() == "arguments" {
+            return parent.parent();
+        }
+        if parent.kind() == "let_declaration" || parent.kind() == "function_item" {
+            return None;
+        }
+        cur = parent;
+    }
+    None
+}
+
+fn call_mentions_name(fm: &RustFile, call: Node, name: &str) -> bool {
+    if call_root_name(fm, call).as_deref() == Some(name) {
+        return true;
+    }
+    let Some(args) = call.child_by_field_name("arguments") else {
+        return false;
+    };
+    args.children(&mut args.walk()).any(|ch| {
+        ch.is_named() && ((ch.kind() == "identifier" && fm.text(ch) == name) || call_root_name(fm, ch).as_deref() == Some(name))
+    })
+}
+
 fn offense_at_write(fm: &RustFile, name: &str, byte: usize) -> UsedOnceOffense {
-    let (line, column) = fm.line_col(byte);
     UsedOnceOffense {
-        line,
-        column,
+        line: fm.line_col(byte).0,
+        column: fm.line_col(byte).1,
         name: name.to_string(),
     }
 }

@@ -8,8 +8,11 @@ fn build_str(src: &str) -> RustFile<'_> {
     parser
         .set_language(&tree_sitter_rust::LANGUAGE.into())
         .expect("rust grammar");
-    let tree = parser.parse(src, None).expect("syntax tree");
-    build(src.as_bytes(), tree)
+
+    build(
+        src.as_bytes(),
+        parser.parse(src, None).expect("syntax tree"),
+    )
 }
 
 fn scores(src: &str) -> Vec<AbcOffense> {
@@ -144,6 +147,30 @@ fn second_read_rejected() {
 fn if_let_binding_never_candidate() {
     let f = flags("fn g(o: Option<u32>) {\n  if let Some(v) = o {\n    p(v);\n  }\n}");
     assert!(f.is_empty());
+}
+
+#[test]
+fn tuple_and_struct_let_patterns_never_candidates() {
+    let f = flags(
+        "fn f() {\n  let (a, b) = (1, 2);\n  p(a + b);\n  let Some(x) = Some(3) else { return };\n  p(x);\n}",
+    );
+    assert!(f.is_empty(), "pattern lets are not inlineable: {f:?}");
+}
+
+#[test]
+fn self_reborrow_keeps_binding() {
+    let f = flags(
+        "impl K {\n  fn f(&mut self) {\n    let s = self.scope_for();\n    self.declare(s);\n    let t = self.model().open();\n    self.use_t(t);\n  }\n  fn scope_for(&mut self) -> usize { 0 }\n  fn declare(&mut self, _s: usize) {}\n  fn model(&mut self) -> K { K }\n  fn open(&mut self) -> usize { 0 }\n  fn use_t(&mut self, _t: usize) {}\n}",
+    );
+    assert!(f.is_empty(), "mut self reborrow cannot inline: {f:?}");
+}
+
+#[test]
+fn param_reborrow_keeps_binding() {
+    let f = flags(
+        "fn walk(b: &mut K, n: u32) {\n  let s = b.open_scope();\n  use_both(b, s);\n}\nfn use_both(_b: &mut K, _s: usize) {}\nimpl K {\n  fn open_scope(&mut self) -> usize { 0 }\n}",
+    );
+    assert!(f.is_empty(), "receiver reborrow cannot inline: {f:?}");
 }
 
 #[test]

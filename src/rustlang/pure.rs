@@ -2,7 +2,7 @@
 
 use tree_sitter::Node;
 
-use crate::inlinable::{immediate_substitutable, keep_init_kind, RUST_IDENT, RUST_UNITS};
+use crate::inlinable::{RUST_IDENT, RUST_UNITS, immediate_substitutable, keep_init_kind};
 
 use super::scope::{Entry, RustFile, Scope, ScopeKind, Write};
 
@@ -38,9 +38,8 @@ pub(super) fn inlinable_rhs(
         };
     }
     if n.kind() == RUST_IDENT {
-        let name = fm.text(n);
         return match read_byte {
-            Some(end) => alias_stable(fm, scope, write_byte, name, write_byte, end),
+            Some(end) => alias_stable(fm, scope, write_byte, fm.text(n), write_byte, end),
             None => true,
         };
     }
@@ -87,8 +86,7 @@ fn lookup(scopes: &[Scope], scope: usize, pos: usize, name: &str) -> Option<usiz
 }
 
 fn children_pure<'t>(fm: &RustFile, n: Node<'t>) -> bool {
-    let mut c = n.walk();
-    n.children(&mut c)
+    n.children(&mut n.walk())
         .filter(|ch| ch.is_named())
         .all(|ch| pure(fm, ch))
 }
@@ -179,7 +177,8 @@ fn keep_init_for_dead(
         Some(nodes) => nodes,
         None => return false,
     };
-    inlinable_rhs(fm, rhs, scope, w.byte, None, None) && unconditionally_executed(write_node)
+    inlinable_rhs(fm, rhs, scope, w.byte, None, None)
+        && unconditionally_executed(write_node)
         && keep_init(rhs)
 }
 
@@ -208,8 +207,7 @@ fn index_nodes<'t>(root: Node<'t>) -> std::collections::HashMap<usize, Node<'t>>
 
 fn rec<'t>(n: Node<'t>, map: &mut std::collections::HashMap<usize, Node<'t>>) {
     map.insert(n.id(), n);
-    let mut cursor = n.walk();
-    for child in n.children(&mut cursor) {
+    for child in n.children(&mut n.walk()) {
         rec(child, map);
     }
 }
@@ -242,7 +240,6 @@ fn offense_at_write(
 }
 
 fn contains_macro(n: Node) -> bool {
-    let mut cursor = n.walk();
-    n.children(&mut cursor)
+    n.children(&mut n.walk())
         .any(|c| c.kind() == "macro_invocation" || contains_macro(c))
 }
