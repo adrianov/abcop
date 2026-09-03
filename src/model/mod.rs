@@ -203,16 +203,18 @@ mod tests {
 
     #[test]
     fn local_read_after_introduction_is_tracked() {
-        let fm = build_from_str("def m\n  x = 1\n  p x\nend\n");
-        let e = fm
-            .scopes
-            .iter()
-            .find(|s| s.kind == ScopeKind::Method)
-            .expect("method scope")
-            .entries
-            .get("x")
-            .expect("entry");
-        assert_eq!((e.writes.len(), e.reads.len()), (1, 1));
+        assert_eq!(
+            build_from_str("def m\n  x = 1\n  p x\nend\n")
+                .scopes
+                .into_iter()
+                .find(|s| s.kind == ScopeKind::Method)
+                .expect("method scope")
+                .entries
+                .remove("x")
+                .map(|e| (e.writes.len(), e.reads.len()))
+                .expect("entry"),
+            (1, 1)
+        );
     }
 
     #[test]

@@ -82,10 +82,13 @@ pub(crate) fn commit_all_at(dir: &Path, msg: &str, epoch: i64) {
 
 /// Rewrites HEAD's commit message and timestamps in place (amend).
 pub(crate) fn amend_head_at(dir: &Path, msg: &str, epoch: i64) {
-    let repo = open(dir);
-    let head = repo.head().expect("head").peel_to_commit().expect("commit");
     let sig = sig(Some(epoch));
-    head.amend(Some("HEAD"), Some(&sig), Some(&sig), None, Some(msg), None)
+    open(dir)
+        .head()
+        .expect("head")
+        .peel_to_commit()
+        .expect("commit")
+        .amend(Some("HEAD"), Some(&sig), Some(&sig), None, Some(msg), None)
         .expect("amend");
 }
 
@@ -202,7 +205,6 @@ fn head_parent(repo: &Repository) -> Option<git2::Commit<'_>> {
 fn commit_tree(repo: &Repository, msg: &str, when: Option<i64>) {
     let tree = stage_all(repo);
     let sig = sig(when);
-    let parent = head_parent(repo);
 
     repo.commit(
         Some("HEAD"),
@@ -210,7 +212,7 @@ fn commit_tree(repo: &Repository, msg: &str, when: Option<i64>) {
         &sig,
         msg,
         &tree,
-        &parent.iter().collect::<Vec<_>>(),
+        &head_parent(repo).iter().collect::<Vec<_>>(),
     )
-        .expect("commit");
+    .expect("commit");
 }

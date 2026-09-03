@@ -13,6 +13,8 @@ mod non_clike;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_fs;
 
 #[derive(Debug)]
 pub(crate) struct Checks {
