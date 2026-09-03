@@ -89,6 +89,7 @@ pub const RUST_IDENT: &str = "identifier";
 /// Parents whose named children are sequential statements.
 const STMT_LIST_PARENTS: &[&str] = &[
     "body_statement",
+    "block_body",
     "statement_block",
     "block",
     "compound_statement",
@@ -118,8 +119,7 @@ const REPEAT_ANCESTORS: &[&str] = &[
 /// Effectful RHS may move to the read only when it is the next statement and
 /// the read is not under a repeated body (loop/block) in that statement.
 pub fn immediate_substitutable(write_site: Node, read_byte: usize) -> bool {
-    let root = root_of(write_site);
-    let Some(read_site) = root.descendant_for_byte_range(read_byte, read_byte) else {
+    let Some(read_site) = root_of(write_site).descendant_for_byte_range(read_byte, read_byte) else {
         return false;
     };
     let (write_stmt, write_idx) = match list_member(write_site) {
@@ -197,16 +197,18 @@ pub fn alias_stable(
     write_byte: usize,
     read_byte: usize,
 ) -> bool {
-    let Some(bind_scope) = lookup_binding(scopes, scope, pos, name) else {
-        return true;
-    };
-    let Some(entry) = scopes[bind_scope].entries.get(name) else {
-        return true;
-    };
-    !entry
-        .writes
-        .iter()
-        .any(|w| w.byte > write_byte && w.byte < read_byte)
+    match lookup_binding(scopes, scope, pos, name) {
+        None => true,
+        Some(bind_scope) => scopes[bind_scope]
+            .entries
+            .get(name)
+            .is_none_or(|entry| {
+                !entry
+                    .writes
+                    .iter()
+                    .any(|w| w.byte > write_byte && w.byte < read_byte)
+            }),
+    }
 }
 
 /// RHS may replace a read site or stand alone when the binding is dropped.
@@ -227,9 +229,15 @@ pub fn rhs_inlinable(
         };
     }
     if n.kind() == sem.ident_kind {
-        let name = n.utf8_text(src).unwrap_or("");
         return match read_byte {
-            Some(end) => alias_stable(scopes, scope, write_byte, name, write_byte, end),
+            Some(end) => alias_stable(
+                scopes,
+                scope,
+                write_byte,
+                n.utf8_text(src).unwrap_or(""),
+                write_byte,
+                end,
+            ),
             None => true,
         };
     }
@@ -252,16 +260,18 @@ pub fn ruby_alias_stable(
     write_byte: usize,
     read_byte: usize,
 ) -> bool {
-    let Some(bind_scope) = fm.lookup(scope, write_byte, name) else {
-        return true;
-    };
-    let Some(entry) = fm.scopes[bind_scope].entries.get(name) else {
-        return true;
-    };
-    !entry
-        .writes
-        .iter()
-        .any(|w| w.byte > write_byte && w.byte < read_byte)
+    match fm.lookup(scope, write_byte, name) {
+        None => true,
+        Some(bind_scope) => fm.scopes[bind_scope]
+            .entries
+            .get(name)
+            .is_none_or(|entry| {
+                !entry
+                    .writes
+                    .iter()
+                    .any(|w| w.byte > write_byte && w.byte < read_byte)
+            }),
+    }
 }
 
 fn lookup_binding(scopes: &[Scope], scope: usize, pos: usize, name: &str) -> Option<usize> {

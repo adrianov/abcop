@@ -90,8 +90,9 @@ fn pure(fm: &FileModel, n: Node) -> bool {
 }
 
 fn named_children<'t>(n: Node<'t>) -> Vec<Node<'t>> {
-    let mut cur = n.walk();
-    n.children(&mut cur).filter(|c| c.is_named()).collect()
+    (0..n.named_child_count())
+        .filter_map(|i| n.named_child(i as u32))
+        .collect()
 }
 
 /// Every named child is pure.
@@ -100,8 +101,9 @@ fn all_named_pure(fm: &FileModel, n: Node) -> bool {
 }
 
 fn string_without_interpolation(n: Node) -> bool {
-    let mut cur = n.walk();
-    !n.children(&mut cur).any(|c| c.kind() == "interpolation")
+    !(0..n.named_child_count())
+        .filter_map(|i| n.named_child(i as u32))
+        .any(|c| c.kind() == "interpolation")
         && n.child_by_field_name("interpolation").is_none()
 }
 
@@ -115,11 +117,10 @@ fn hash_pure(fm: &FileModel, n: Node) -> bool {
 
 /// `defined?` results depend on scope state, so they are never pure.
 fn unary_pure(fm: &FileModel, n: Node) -> bool {
-    let op = n
-        .child_by_field_name("operator")
+    n.child_by_field_name("operator")
         .map(|o| fm.text(o))
-        .unwrap_or("");
-    op != "defined?" && all_named_pure(fm, n)
+        .unwrap_or("") != "defined?"
+        && all_named_pure(fm, n)
 }
 
 fn paren_pure(fm: &FileModel, n: Node) -> bool {
@@ -188,12 +189,15 @@ fn single_use_offense<'t>(
         || !unconditionally_executed(write_node) {
         return None;
     }
-    let (line, column) = fm.line_col(w.byte);
-    Some(UsedOnceOffense {
-        line,
-        column,
+    Some(offense_at(fm, name, w.byte))
+}
+
+fn offense_at(fm: &FileModel, name: &str, byte: usize) -> UsedOnceOffense {
+    UsedOnceOffense {
+        line: fm.line_col(byte).0,
+        column: fm.line_col(byte).1,
         name: name.to_string(),
-    })
+    }
 }
 
 /// Tree nodes for a write's RHS expression and for the write itself.
@@ -274,6 +278,15 @@ mod tests {
     fn call_chain_with_block_is_flagged() {
         let f = flags(
             "def k(number)\n  matching_ids = pluck(:id).filter_map do |id|\n    id\n  end\n  where(id: matching_ids)\nend\n",
+        );
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].name, "matching_ids");
+    }
+
+    #[test]
+    fn call_chain_in_scope_lambda_is_flagged() {
+        let f = flags(
+            "class K < ApplicationRecord\n  scope :for_shop, lambda { |shop_id|\n    matching_ids = pluck(:id).filter_map { |id| id }\n    where(id: matching_ids)\n  }\nend\n",
         );
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].name, "matching_ids");
