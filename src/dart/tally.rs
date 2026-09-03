@@ -117,11 +117,12 @@ impl Tally<'_> {
     /// (mirrors the C# backend).
     fn add_assignment(&mut self, n: Node<'_>) {
         let plain = self.op_of(n) == Some("=");
-        let bare = n
-            .child_by_field_name("left")
+
+        if n.child_by_field_name("left")
             .and_then(bare_target)
-            .is_some();
-        if bare || !plain {
+            .is_some()
+            || !plain
+        {
             self.a += 1;
         }
     }

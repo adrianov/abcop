@@ -62,8 +62,7 @@ fn declarator_name(n: Node, src: &[u8]) -> Option<String> {
 /// `method_parameter` identifiers — that wrongly picked `items` / `y`.
 fn selector_name(n: Node, src: &[u8]) -> Option<String> {
     let mut name = String::new();
-    let mut cursor = n.walk();
-    for c in n.children(&mut cursor) {
+    for c in n.children(&mut n.walk()) {
         match c.kind() {
             "compound_statement" | "body" => break,
             "method_type" => {}
@@ -129,7 +128,7 @@ pub(crate) fn unit_body<'t>(n: Node<'t>) -> Option<Node<'t>> {
     if let Some(b) = n.child_by_field_name("body") {
         return Some(b);
     }
-    let mut cursor = n.walk();
-    n.children(&mut cursor)
+
+    n.children(&mut n.walk())
         .find(|ch| ch.kind() == "compound_statement")
 }

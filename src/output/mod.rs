@@ -223,8 +223,8 @@ fn severity_rank(severity: &str) -> u8 {
 fn sort_text_lines(lines: &mut [TextLine]) {
     lines.sort_by(|a, b| {
         score_order(
-            a.score, a.severity, &a.file, a.line, a.column, a.rule, b.score, b.severity,
-            &b.file, b.line, b.column, b.rule,
+            a.score, a.severity, &a.file, a.line, a.column, a.rule, b.score, b.severity, &b.file,
+            b.line, b.column, b.rule,
         )
     });
 }
@@ -358,9 +358,8 @@ mod tests {
 
     #[test]
     fn sort_by_score_puts_biggest_first() {
-        let results = sample_results();
         let mut lines = text_lines(
-            &results,
+            &sample_results(),
             abc::Limits {
                 method: 17.0,
                 module: crate::modulesize::MAX_ABC,

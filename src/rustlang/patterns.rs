@@ -54,8 +54,7 @@ pub(super) fn match_binders<'t>(pattern: Node<'t>, src: &[u8], out: &mut Vec<Nod
         match child.kind() {
             "if" => return,
             "identifier" => {
-                let name = child.utf8_text(src).unwrap_or("");
-                if binds_value(name) {
+                if binds_value(child.utf8_text(src).unwrap_or("")) {
                     out.push(child);
                 }
             }

@@ -52,6 +52,9 @@ impl PhpFile<'_> {
 }
 
 pub fn build(src: &[u8], tree: Tree) -> PhpFile<'_> {
-    let scopes = scope::collect(tree.root_node(), src);
-    PhpFile { src, tree, scopes }
+    PhpFile {
+        src,
+        scopes: scope::collect(tree.root_node(), src),
+        tree,
+    }
 }

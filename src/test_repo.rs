@@ -41,8 +41,7 @@ fn open(dir: &Path) -> Repository {
 }
 
 fn sig(when: Option<i64>) -> Signature<'static> {
-    let time = Time::new(when.unwrap_or_else(now_secs), 0);
-    Signature::new("t", "t@t", &time).expect("signature")
+    Signature::new("t", "t@t", &Time::new(when.unwrap_or_else(now_secs), 0)).expect("signature")
 }
 
 fn now_secs() -> i64 {
@@ -93,8 +92,13 @@ pub(crate) fn amend_head_at(dir: &Path, msg: &str, epoch: i64) {
 /// Creates and checks out a topic branch off the current HEAD.
 pub(crate) fn checkout_new_branch(dir: &Path, name: &str) {
     let repo = open(dir);
-    let commit = repo.head().expect("head").peel_to_commit().expect("commit");
-    repo.branch(name, &commit, false).expect("branch");
+
+    repo.branch(
+        name,
+        &repo.head().expect("head").peel_to_commit().expect("commit"),
+        false,
+    )
+    .expect("branch");
     checkout_branch(&repo, name);
 }
 
@@ -112,12 +116,12 @@ pub(crate) fn stage_three_kinds_of_uncommitted_work(dir: &Path) {
 }
 
 fn checkout_branch(repo: &Repository, name: &str) {
-    let branch = repo
+    let reference = repo
         .find_branch(name, git2::BranchType::Local)
-        .expect("find branch");
-    let reference = branch.into_reference();
-    let treeish = reference.peel_to_tree().expect("tree");
-    repo.checkout_tree(treeish.as_object(), None)
+        .expect("find branch")
+        .into_reference();
+
+    repo.checkout_tree(reference.peel_to_tree().expect("tree").as_object(), None)
         .expect("checkout tree");
     repo.set_head(reference.name().expect("ref name"))
         .expect("set head");
@@ -186,8 +190,9 @@ fn stage_all(repo: &Repository) -> git2::Tree<'_> {
     idx.add_all(["*"], git2::IndexAddOption::DEFAULT, None)
         .expect("add all");
     idx.write().expect("write index");
-    let oid = idx.write_tree().expect("write tree");
-    repo.find_tree(oid).expect("find tree")
+
+    repo.find_tree(idx.write_tree().expect("write tree"))
+        .expect("find tree")
 }
 
 fn head_parent(repo: &Repository) -> Option<git2::Commit<'_>> {
@@ -198,7 +203,14 @@ fn commit_tree(repo: &Repository, msg: &str, when: Option<i64>) {
     let tree = stage_all(repo);
     let sig = sig(when);
     let parent = head_parent(repo);
-    let parents: Vec<_> = parent.iter().collect();
-    repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parents)
+
+    repo.commit(
+        Some("HEAD"),
+        &sig,
+        &sig,
+        msg,
+        &tree,
+        &parent.iter().collect::<Vec<_>>(),
+    )
         .expect("commit");
 }

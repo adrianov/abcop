@@ -3,9 +3,14 @@
 use crate::paths::{Lang, parse_file_lang};
 
 fn used(lang: Lang, src: &'static str) -> Vec<String> {
-    let tree = parse_file_lang(src.as_bytes(), lang).expect("fixture parses");
-    let sc = super::collect_scopes(src.as_bytes(), &tree, lang);
-    let mut v: Vec<_> = super::used_once_offenses(&sc, lang)
+    let mut v: Vec<_> = super::used_once_offenses(
+        &super::collect_scopes(
+            src.as_bytes(),
+            &parse_file_lang(src.as_bytes(), lang).expect("fixture parses"),
+            lang,
+        ),
+        lang,
+    )
         .into_iter()
         .map(|o| o.name)
         .collect();
@@ -14,9 +19,14 @@ fn used(lang: Lang, src: &'static str) -> Vec<String> {
 }
 
 fn dead(lang: Lang, src: &'static str) -> Vec<String> {
-    let tree = parse_file_lang(src.as_bytes(), lang).expect("fixture parses");
-    let sc = super::collect_scopes(src.as_bytes(), &tree, lang);
-    let mut v: Vec<_> = super::never_used_offenses(&sc, lang)
+    let mut v: Vec<_> = super::never_used_offenses(
+        &super::collect_scopes(
+            src.as_bytes(),
+            &parse_file_lang(src.as_bytes(), lang).expect("fixture parses"),
+            lang,
+        ),
+        lang,
+    )
         .into_iter()
         .map(|o| o.name)
         .collect();
@@ -48,9 +58,12 @@ fn swift_reassigned_var_is_not_inline_candidate() {
 #[test]
 fn swift_member_reads_are_not_variable_reads() {
     let src = "class C {\n  func f() {\n    let x = 1\n    return self.helper + x\n  }\n  func helper() -> Int { 0 }\n}";
-    let tree = parse_file_lang(src.as_bytes(), Lang::Swift).unwrap();
-    let sc = super::collect_scopes(src.as_bytes(), &tree, Lang::Swift);
-    let bindings: Vec<String> = sc
+
+    let bindings: Vec<String> = super::collect_scopes(
+        src.as_bytes(),
+        &parse_file_lang(src.as_bytes(), Lang::Swift).unwrap(),
+        Lang::Swift,
+    )
         .scopes
         .iter()
         .flat_map(|s| s.entries.keys())

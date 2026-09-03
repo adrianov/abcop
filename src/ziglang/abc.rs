@@ -39,18 +39,16 @@ fn unit_offense(fm: &ZigFile, unit: Node, name: &str) -> Option<AbcOffense> {
 
 fn unit_body(unit: Node<'_>) -> Option<Node<'_>> {
     unit.child_by_field_name("body").or_else(|| {
-        let mut cursor = unit.walk();
-        unit.children(&mut cursor).find(|c| c.kind() == "block")
+        unit.children(&mut unit.walk())
+            .find(|c| c.kind() == "block")
     })
 }
 
 fn visit_units<'t>(n: Node<'t>, src: &'t [u8], f: &mut impl FnMut(Node<'t>, &str)) {
     if UNIT_KINDS.contains(&n.kind()) {
-        let name = unit_name(n, src);
-        f(n, &name);
+        f(n, &unit_name(n, src));
     }
-    let mut cursor = n.walk();
-    for child in n.children(&mut cursor) {
+    for child in n.children(&mut n.walk()) {
         visit_units(child, src, f);
     }
 }
@@ -108,14 +106,10 @@ impl Tally<'_> {
             "variable_declaration" => self.a += var_decl_a_count(n, self.src),
             "assignment_expression" => self.tally_assignment(n),
             "payload" => self.a += payload_a(n, self.src),
-            "if_statement"
-            | "if_expression"
-            | "for_statement"
-            | "for_expression"
-            | "while_statement"
-            | "while_expression"
-            | "switch_case"
-            | "catch_expression" => self.c += 1,
+            "if_statement" | "if_expression" | "for_statement" | "for_expression"
+            | "while_statement" | "while_expression" | "switch_case" | "catch_expression" => {
+                self.c += 1
+            }
             "binary_expression" => self.tally_binary(n),
             "call_expression" | "builtin_function" | "unary_expression" | "try_expression" => {
                 self.b += 1
@@ -149,8 +143,7 @@ impl Tally<'_> {
 }
 
 fn payload_a(n: Node<'_>, src: &[u8]) -> u32 {
-    let mut cursor = n.walk();
-    n.children(&mut cursor)
+    n.children(&mut n.walk())
         .filter(|ch| ch.kind() == "identifier" && !ignored_name(*ch, src))
         .count() as u32
 }

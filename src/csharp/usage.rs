@@ -45,7 +45,10 @@ pub fn never_used_offenses(fm: &CSharpFile) -> Vec<crate::never_used::NeverUsedO
     scope_model::never_used_offenses(
         fm.tree.root_node(),
         fm.src,
-        &|byte| fm.line_col(byte), &fm.scopes, &CSHARP_SEMANTICS)
+        &|byte| fm.line_col(byte),
+        &fm.scopes,
+        &CSHARP_SEMANTICS,
+    )
 }
 
 /// Conservative RHS purity: literals, arrays of literals, and operator
@@ -65,8 +68,7 @@ fn pure(n: Node) -> bool {
 }
 
 fn children_pure(n: Node) -> bool {
-    let mut c = n.walk();
-    n.children(&mut c)
+    n.children(&mut n.walk())
         .filter(|ch| ch.is_named())
         .all(|ch| pure(ch))
 }

@@ -6,13 +6,14 @@ use crate::abc::parse_vector;
 use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::csharp::CSharpFile<'static> {
-    let tree = parse_file_lang(src.as_bytes(), Lang::CSharp).expect("csharp parses");
-    build(src.as_bytes(), tree)
+    build(
+        src.as_bytes(),
+        parse_file_lang(src.as_bytes(), Lang::CSharp).expect("csharp parses"),
+    )
 }
 
 fn scores(src: &'static str) -> Vec<(String, u32, u32, u32)> {
-    let fm = parse(src);
-    super::abc::all_scores(&fm)
+    super::abc::all_scores(&parse(src))
         .into_iter()
         .map(|o| {
             let (a, b, c) = parse_vector(&o.vector);
@@ -47,8 +48,7 @@ fn used(src: &'static str) -> Vec<String> {
 }
 
 fn dead(src: &'static str) -> Vec<String> {
-    let fm = parse(src);
-    let mut v: Vec<_> = never_used_offenses(&fm)
+    let mut v: Vec<_> = never_used_offenses(&parse(src))
         .into_iter()
         .map(|o| o.name)
         .collect();

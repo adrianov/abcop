@@ -38,10 +38,7 @@ impl<'f> Calc<'f> {
     }
 
     fn walk(&mut self, n: Node) {
-        let children: Vec<_> = {
-            let mut cursor = n.walk();
-            n.children(&mut cursor).collect()
-        };
+        let children: Vec<_> = n.children(&mut n.walk()).collect();
         for ch in children {
             self.walk(ch);
         }

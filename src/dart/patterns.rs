@@ -24,8 +24,12 @@ impl Collector<'_> {
             collect_identifiers(child, &mut targets);
         }
         for t in targets {
-            let w = Write::assign(t.start_byte(), t.id(), None);
-            self.bind_var(t, scope, w, IntroKind::Assign);
+            self.bind_var(
+                t,
+                scope,
+                Write::assign(t.start_byte(), t.id(), None),
+                IntroKind::Assign,
+            );
         }
         // the pattern side is fully consumed by the binder above;
         // walking it again would turn every target into its own reader
@@ -43,8 +47,9 @@ impl Collector<'_> {
         for t in targets {
             if !self.rebind_local(t, scope, true, None) {
                 // outer-state target: keep the operand read
-                let name = self.text_of(t).to_string();
-                self.model.record_read(scope, &name, t.start_byte());
+
+                self.model
+                    .record_read(scope, &self.text_of(t).to_string(), t.start_byte());
             }
         }
         walk_post_eq(self, n, scope);
@@ -81,8 +86,7 @@ impl Collector<'_> {
 /// -- the pattern side proper.
 fn pre_eq_nodes<'t>(n: Node<'t>) -> Vec<Node<'t>> {
     let mut out = Vec::new();
-    let mut cursor = n.walk();
-    for child in n.children(&mut cursor) {
+    for child in n.children(&mut n.walk()) {
         if child.kind() == "=" && !child.is_named() {
             break;
         }
@@ -108,12 +112,11 @@ fn walk_post_eq(b: &mut Collector<'_>, n: Node, scope: usize) {
 /// The bare identifier behind an `assignable_expression`, if the target
 /// is a plain variable rather than an index/member form.
 pub(super) fn bare_target(left: Node<'_>) -> Option<Node<'_>> {
-    let mut cursor = left.walk();
-    let named: Vec<_> = left
-        .children(&mut cursor)
+    match left
+        .children(&mut left.walk())
         .filter(|c| c.is_named())
-        .collect();
-    match named[..] {
+        .collect::<Vec<_>>()[..]
+    {
         [only] if only.kind() == "identifier" => Some(only),
         _ => None,
     }

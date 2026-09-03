@@ -40,8 +40,8 @@ fn scope_includes_unstaged_staged_and_untracked_files() {
 fn scope_skips_info_exclude_on_gitfile_workdir() {
     let root = test_repo::temp_dir("abcop_gitfile_exclude");
     let _guard = test_repo::cwd_lock();
-    let workdir = test_repo::seed_gitfile_exclude(&root);
-    let cs = load_in_dir(&workdir).expect("changeset loads");
+
+    let cs = load_in_dir(&test_repo::seed_gitfile_exclude(&root)).expect("changeset loads");
     let seen = format!("{:?}", cs.files);
     assert!(
         !cs.files.contains_key("AGENTS.md")

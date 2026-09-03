@@ -35,8 +35,11 @@ fn aged_default_base_in(dir: Option<&Path>) -> Result<(String, String), String> 
     if recent == 0 {
         return Err("no commits in the last 36 hours".to_string());
     }
-    let base = edge.unwrap_or_else(|| "HEAD".to_string());
-    Ok((base, "last 36 hours".to_string()))
+
+    Ok((
+        edge.unwrap_or_else(|| "HEAD".to_string()),
+        "last 36 hours".to_string(),
+    ))
 }
 
 /// One time-sorted walk over HEAD ancestry: counts in-window commits
@@ -92,15 +95,14 @@ fn topic_branch_base_in(
     default_branch: &str,
 ) -> Result<(String, String), String> {
     let repo = open_repo(dir)?;
-    let mb = repo
-        .merge_base(
+
+    Ok((
+        repo.merge_base(
             commit_oid(&repo, "HEAD")?,
             commit_oid(&repo, default_branch)?,
         )
         .map_err(|_| format!("no common ancestor between {branch} and {default_branch}"))?
-        .to_string();
-    Ok((
-        mb,
+        .to_string(),
         format!("branch {branch}: changes since branching from {default_branch}"),
     ))
 }

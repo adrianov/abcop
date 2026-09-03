@@ -34,12 +34,10 @@ pub(crate) fn all_scores(fm: &DartFile) -> Vec<AbcOffense> {
 
 fn visit_units<'t>(n: Node<'t>, src: &'t [u8], f: &mut impl FnMut(Node<'t>, &str)) {
     if UNIT_KINDS.contains(&n.kind()) {
-        let name = unit_name(n, src);
-        f(n, &name);
+        f(n, &unit_name(n, src));
         return;
     }
-    let mut cursor = n.walk();
-    for child in n.children(&mut cursor) {
+    for child in n.children(&mut n.walk()) {
         visit_units(child, src, f);
     }
 }
@@ -106,8 +104,7 @@ fn collect_sig_names<'t>(n: Node<'t>, out: &mut Vec<Node<'t>>) {
     if n.kind() == "identifier" && has_name_slot(n) {
         out.push(n);
     }
-    let mut c = n.walk();
-    for ch in n.children(&mut c) {
+    for ch in n.children(&mut n.walk()) {
         collect_sig_names(ch, out);
     }
 }
@@ -119,17 +116,15 @@ fn has_name_slot(n: Node<'_>) -> bool {
 }
 
 fn index_in_parent(parent: Node<'_>, child: Node<'_>) -> u32 {
-    let mut c = parent.walk();
     parent
-        .children(&mut c)
+        .children(&mut parent.walk())
         .position(|ch| ch.id() == child.id())
         .unwrap_or(0) as u32
 }
 
 /// First descendant of the given kind, document order.
 fn desc_of_kind<'t>(n: Node<'t>, kind: &str) -> Option<Node<'t>> {
-    let mut cursor = n.walk();
-    n.children(&mut cursor).find_map(|c| {
+    n.children(&mut n.walk()).find_map(|c| {
         if c.kind() == kind {
             return Some(c);
         }

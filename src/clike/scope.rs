@@ -110,18 +110,26 @@ impl Collector<'_> {
                 "property_identifier" | "shorthand_property_identifier"
             )
         {
-            let name = self.text_of(key).to_string();
-            self.model.record_read(scope, &name, key.start_byte());
+            self.model
+                .record_read(scope, &self.text_of(key).to_string(), key.start_byte());
         }
     }
 
     /// ++/-- reads and rewrites the operand in place.
     fn bind_inc_dec(&mut self, n: Node, scope: usize) {
         if let Some(operand) = n.named_child(0).filter(|o| o.kind() == "identifier") {
-            let w = Write::rewrite(operand.start_byte(), operand.id());
-            self.bind_var(operand, scope, w, IntroKind::Binding);
-            let name = self.text_of(operand).to_string();
-            self.model.record_read(scope, &name, operand.end_byte());
+            self.bind_var(
+                operand,
+                scope,
+                Write::rewrite(operand.start_byte(), operand.id()),
+                IntroKind::Binding,
+            );
+
+            self.model.record_read(
+                scope,
+                &self.text_of(operand).to_string(),
+                operand.end_byte(),
+            );
         } else {
             self.walk_children(n, scope);
         }
@@ -133,12 +141,15 @@ impl Collector<'_> {
     fn bind_pattern_elements(&mut self, n: Node, scope: usize) {
         match n.kind() {
             "identifier" | "shorthand_property_identifier_pattern" => {
-                let w = Write::assign(n.start_byte(), n.id(), None);
-                self.bind_var(n, scope, w, IntroKind::Assign);
+                self.bind_var(
+                    n,
+                    scope,
+                    Write::assign(n.start_byte(), n.id(), None),
+                    IntroKind::Assign,
+                );
             }
             "rest_pattern" | "assignment_pattern" | "object_pattern" | "array_pattern" => {
-                let mut cursor = n.walk();
-                let children: Vec<_> = n.children(&mut cursor).collect();
+                let children: Vec<_> = n.children(&mut n.walk()).collect();
                 for child in children {
                     self.bind_pattern_elements(child, scope);
                 }

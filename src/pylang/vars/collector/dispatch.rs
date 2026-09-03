@@ -35,6 +35,7 @@ impl Collector<'_> {
             "class_definition" => (ScopeKind::Class, "name"),
             _ => (ScopeKind::Block, "parameters"),
         };
+
         let s = self.open_scope(kind, parent);
         self.walk_except(n, s, skip_field);
     }
@@ -75,13 +76,11 @@ impl Collector<'_> {
 
     /// A bare identifier outside any write head is an ordinary read.
     fn read_identifier(&mut self, n: Node, scope: usize) {
-        let name = self.text(n).to_string();
-        self.record_read(scope, &name, n.start_byte());
+        self.record_read(scope, &self.text(n).to_string(), n.start_byte());
     }
 
     pub(super) fn walk_children(&mut self, n: Node, scope: usize) {
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
+        for child in n.children(&mut n.walk()) {
             self.walk(child, scope);
         }
     }
@@ -89,8 +88,7 @@ impl Collector<'_> {
     /// Walk every child except the given field's subtree.
     fn walk_except(&mut self, n: Node, scope: usize, skip_field: &str) {
         let skipped = n.child_by_field_name(skip_field).map(|s| s.id());
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
+        for child in n.children(&mut n.walk()) {
             if Some(child.id()) == skipped {
                 continue;
             }
@@ -104,8 +102,7 @@ impl Collector<'_> {
         let right = n.child_by_field_name("right");
         if let Some(left) = left {
             if left.kind() == "identifier" {
-                let rhs = right.map(|r| r.id());
-                self.bind_name(left, scope, IntroKind::Assign, rhs);
+                self.bind_name(left, scope, IntroKind::Assign, right.map(|r| r.id()));
             } else {
                 self.bind_targets(left, scope);
             }
@@ -148,8 +145,7 @@ impl Collector<'_> {
     /// Value walks normally; everything after the `as` token is the
     /// alias binding.
     fn walk_as_pattern(&mut self, n: Node, scope: usize) {
-        let mut cursor = n.walk();
-        let children: Vec<_> = n.children(&mut cursor).collect();
+        let children: Vec<_> = n.children(&mut n.walk()).collect();
         let mut after_as = false;
         for child in children {
             if child.kind() == "as" {
@@ -164,8 +160,7 @@ impl Collector<'_> {
 
     /// Pattern captures bind names; guard and body are code.
     fn walk_case_clause(&mut self, n: Node, scope: usize) {
-        let mut cursor = n.walk();
-        let children: Vec<_> = n.children(&mut cursor).collect();
+        let children: Vec<_> = n.children(&mut n.walk()).collect();
         for child in children {
             if child.kind() == "case_pattern" {
                 self.bind_captures(child, scope);

@@ -25,15 +25,14 @@ fn suppressed<T>(v: Vec<T>, keep: impl Fn(&T) -> bool) -> Vec<T> {
 }
 
 fn set_module_abc(r: &mut FileResult, src: &[u8], all: &[AbcOffense], max: f64) {
-    let text = std::str::from_utf8(src).unwrap_or("");
-    r.module_abc = modulesize::from_scores(all, &r.path, text, max);
+    r.module_abc =
+        modulesize::from_scores(all, &r.path, std::str::from_utf8(src).unwrap_or(""), max);
 }
 
 fn keep_abc(dirs: &Directives, all: Vec<AbcOffense>, max: f64) -> Vec<AbcOffense> {
-    suppressed(
-        all.into_iter().filter(|o| o.score > max).collect(),
-        |o| dirs.suppresses_abc(o.line),
-    )
+    suppressed(all.into_iter().filter(|o| o.score > max).collect(), |o| {
+        dirs.suppresses_abc(o.line)
+    })
 }
 
 /// Run the clike scope-model family (JS/TS, Swift and the plain-C trio):
@@ -123,13 +122,7 @@ fn non_clike_directed<B: NonClike>(
 
 /// Rust backend: no inline directives (rustc/clippy own that noise); all
 /// three rules run.
-fn rust_arm(
-    r: &mut FileResult,
-    src: &[u8],
-    tree: Tree,
-    checks: &Checks,
-    limits: Limits,
-) -> bool {
+fn rust_arm(r: &mut FileResult, src: &[u8], tree: Tree, checks: &Checks, limits: Limits) -> bool {
     let fm = crate::rustlang::build(src, tree);
     let all = crate::rustlang::all_scores(&fm);
     set_module_abc(r, src, &all, limits.module);

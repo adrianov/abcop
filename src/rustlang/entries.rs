@@ -39,8 +39,7 @@ impl<'m> Builder<'m> {
         }
         match self.lookup(scope, w.byte, name) {
             Some(s) => {
-                let e = self.scopes[s].entries.get_mut(name).unwrap();
-                e.writes.push(w);
+                self.scopes[s].entries.get_mut(name).unwrap().writes.push(w);
             }
             None => {
                 let e = Entry {

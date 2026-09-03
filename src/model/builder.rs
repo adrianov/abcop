@@ -52,8 +52,7 @@ impl<'m> Builder<'m> {
         let pos = w.byte;
         match self.lookup(scope, pos, name) {
             Some(s) => {
-                let e = self.scopes[s].entries.get_mut(name).unwrap();
-                e.writes.push(w);
+                self.scopes[s].entries.get_mut(name).unwrap().writes.push(w);
             }
             None => {
                 let e = Entry {
@@ -71,8 +70,8 @@ impl<'m> Builder<'m> {
         let Some(s) = self.lookup(scope, r.byte, name) else {
             return;
         };
-        let e = self.scopes[s].entries.get_mut(name).unwrap();
-        e.reads.push(r);
+
+        self.scopes[s].entries.get_mut(name).unwrap().reads.push(r);
     }
 
     /// Bind a parameter-style entry only when no binding exists yet.
@@ -104,8 +103,7 @@ impl<'m> Builder<'m> {
 
     /// Generic descent.
     fn walk_children(&mut self, n: Node, scope: ScopeId, under_defined: bool) {
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
+        for child in n.children(&mut n.walk()) {
             if child.kind() == "method_parameters"
                 || child.kind() == "block_parameters"
                 || child.kind() == "lambda_parameters"
@@ -142,7 +140,6 @@ pub(super) fn declared_name(child: Node, src: &[u8]) -> Option<String> {
 
 /// Body of a block-ish node regardless of brace/do form.
 pub(super) fn body_of(n: Node) -> Option<Node> {
-    let mut cursor = n.walk();
-    n.children(&mut cursor)
+    n.children(&mut n.walk())
         .find(|c| c.kind() == "body_statement" || c.kind() == "block_body")
 }

@@ -125,8 +125,13 @@ impl Collector<'_> {
             } else {
                 None
             };
-            let w = Write::assign(t.start_byte(), t.id(), rhs);
-            self.bind_var(*t, scope, w, IntroKind::Assign);
+
+            self.bind_var(
+                *t,
+                scope,
+                Write::assign(t.start_byte(), t.id(), rhs),
+                IntroKind::Assign,
+            );
             if !plain {
                 self.read_at(scope, *t, t.end_byte());
             }
@@ -134,7 +139,7 @@ impl Collector<'_> {
     }
 
     fn read_at(&mut self, scope: usize, name_node: Node, byte: usize) {
-        let name = self.text_of(name_node).to_string();
-        self.model.record_read(scope, &name, byte);
+        self.model
+            .record_read(scope, &self.text_of(name_node).to_string(), byte);
     }
 }

@@ -179,6 +179,5 @@ impl Model {
 /// First child of the given kind -- the small lookup every collector
 /// ends up needing for protocol heads and bindings.
 pub(crate) fn child_of_kind<'t>(n: Node<'t>, kind: &str) -> Option<Node<'t>> {
-    let mut c = n.walk();
-    n.children(&mut c).find(|ch| ch.kind() == kind)
+    n.children(&mut n.walk()).find(|ch| ch.kind() == kind)
 }

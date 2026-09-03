@@ -123,22 +123,17 @@ fn dead_binding(
     if !e.reads.is_empty() || e.writes.is_empty() {
         return None;
     }
-    let first = e.writes.iter().map(|w| w.byte).min().unwrap_or(0);
-    let (line, column) = fm.line_col(first);
+
+    let byte = e.writes.iter().map(|w| w.byte).min().unwrap_or(0);
     Some(NeverUsedOffense {
-        line,
-        column,
+        line: fm.line_col(byte).0,
+        column: fm.line_col(byte).1,
         name: name.to_string(),
         keep_init: keep_init_for_dead(fm, nodes, scope, e),
     })
 }
 
-fn keep_init_for_dead(
-    fm: &PyFile,
-    nodes: &HashMap<usize, Node>,
-    scope: usize,
-    e: &Entry,
-) -> bool {
+fn keep_init_for_dead(fm: &PyFile, nodes: &HashMap<usize, Node>, scope: usize, e: &Entry) -> bool {
     let w = match plain_write(e) {
         Some(w) => w,
         None => return false,
@@ -199,10 +194,9 @@ fn single_use<'t>(
     {
         return None;
     }
-    let (line, column) = fm.line_col(e.writes[0].byte);
     Some(UsedOnceOffense {
-        line,
-        column,
+        line: fm.line_col(e.writes[0].byte).0,
+        column: fm.line_col(e.writes[0].byte).1,
         name: name.to_string(),
     })
 }

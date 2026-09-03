@@ -55,8 +55,7 @@ pub(crate) fn offense_at(unit: Node<'_>, name: &str, a: u32, b: u32, c: u32) -> 
 /// Parse an `"<A, B, C>"` metric vector into its three numbers; the
 /// inverse of [`fmt_vector`].
 pub(crate) fn parse_vector(vector: &str) -> (u32, u32, u32) {
-    let nums = vector.trim_matches(|c| c == '<' || c == '>');
-    let mut it = nums.split(", ");
+    let mut it = vector.trim_matches(|c| c == '<' || c == '>').split(", ");
     (
         it.next().unwrap().parse().unwrap(),
         it.next().unwrap().parse().unwrap(),
@@ -73,8 +72,13 @@ pub(crate) fn module_score(scores: &[AbcOffense]) -> (u32, u32, u32, f64) {
         b += ob;
         c += oc;
     }
-    let raw = ((a * a + b * b + c * c) as f64).sqrt();
-    (a, b, c, (raw * 100.0).round() / 100.0)
+
+    (
+        a,
+        b,
+        c,
+        (((a * a + b * b + c * c) as f64).sqrt() * 100.0).round() / 100.0,
+    )
 }
 
 /// C `%g`-style formatting with 4 significant digits.
@@ -190,12 +194,15 @@ mod tests {
     #[test]
     fn define_method_uses_symbol_or_string_name_not_paren() {
         // Regression: `argument_list.child(0)` is the anonymous `(`.
-        let s = scores(
+
+        let names: Vec<_> = scores(
             "define_method(:dyn) do |x|\n  x ? 1 : 0\nend\ndefine_method(\"str\") { |y| y ? 1 : 0 }\n",
-        );
-        let names: Vec<_> = s.iter().map(|o| o.name.as_str()).collect();
-        assert!(names.contains(&"dyn"), "got {names:?}");
-        assert!(names.contains(&"str"), "got {names:?}");
+        )
+        .into_iter()
+        .map(|o| o.name)
+        .collect();
+        assert!(names.iter().any(|n| n == "dyn"), "got {names:?}");
+        assert!(names.iter().any(|n| n == "str"), "got {names:?}");
         assert!(!names.iter().any(|n| n.contains('(')), "got {names:?}");
     }
 

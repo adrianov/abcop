@@ -94,16 +94,23 @@ impl SwiftCollector<'_> {
     fn swift_bind(&mut self, n: Node, scope: usize) {
         // `@name` is a `pattern` node wrapping a `bound_identifier`
         // `simple_identifier`; walk its named children to find the name.
-        let name = n.child_by_field_name("name").and_then(|p| {
-            let mut c = p.walk();
-            p.named_children(&mut c).next()
-        });
+        let name = n
+            .child_by_field_name("name")
+            .and_then(|p| p.named_children(&mut p.walk()).next());
         let Some(name) = name else {
             return;
         };
-        let rhs = n.child_by_field_name("value").map(|v| v.id());
-        let w = Write::assign(name.start_byte(), name.id(), rhs);
-        self.bind_var(name, scope, w, IntroKind::Assign);
+
+        self.bind_var(
+            name,
+            scope,
+            Write::assign(
+                name.start_byte(),
+                name.id(),
+                n.child_by_field_name("value").map(|v| v.id()),
+            ),
+            IntroKind::Assign,
+        );
         if let Some(value) = n.child_by_field_name("value") {
             dispatch(self, value, scope);
         }

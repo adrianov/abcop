@@ -51,6 +51,9 @@ impl JavaFile<'_> {
 }
 
 pub fn build(src: &[u8], tree: Tree) -> JavaFile<'_> {
-    let scopes = scope::collect(tree.root_node(), src);
-    JavaFile { src, tree, scopes }
+    JavaFile {
+        src,
+        scopes: scope::collect(tree.root_node(), src),
+        tree,
+    }
 }

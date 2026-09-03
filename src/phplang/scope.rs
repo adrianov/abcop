@@ -44,15 +44,13 @@ impl Collector<'_> {
     }
 
     fn walk_children(&mut self, n: Node, scope: usize) {
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
+        for child in n.children(&mut n.walk()) {
             self.walk(child, scope);
         }
     }
 
     fn bind_var(&mut self, name_node: Node, scope: usize, w: Write, intro: IntroKind) {
-        let name = self.var_name(name_node);
-        self.model.bind(scope, &name, w, intro);
+        self.model.bind(scope, &self.var_name(name_node), w, intro);
     }
 
     fn walk(&mut self, n: Node, scope: usize) {
@@ -86,8 +84,7 @@ impl Collector<'_> {
     /// Walks children except `excluded`, in the given scope; used where
     /// a head/binder node is handled separately from the subtree walk.
     fn walk_children_excluding(&mut self, n: Node, excluded: Option<usize>, scope: usize) {
-        let mut cursor = n.walk();
-        n.children(&mut cursor)
+        n.children(&mut n.walk())
             .filter(|c| Some(c.id()) != excluded)
             .for_each(|c| self.walk(c, scope));
     }
@@ -96,8 +93,8 @@ impl Collector<'_> {
     /// Python for-targets and Go range heads
     fn walk_foreach_head(&mut self, n: Node, scope: usize) {
         let s = self.model.open_scope(ScopeKind::Block, scope);
-        let skipped = child_of_kind(n, "pair").map(|p| p.id());
-        self.walk_children_excluding(n, skipped, s);
+
+        self.walk_children_excluding(n, child_of_kind(n, "pair").map(|p| p.id()), s);
     }
 
     /// `catch (E $e)`: bind the first variable_name, but exclude it from
@@ -105,11 +102,15 @@ impl Collector<'_> {
     fn walk_catch_clause(&mut self, n: Node, scope: usize) {
         let s = self.model.open_scope(ScopeKind::Block, scope);
         let binder = child_of_kind(n, "variable_name");
-        let skipped = binder.as_ref().map(|b| b.id());
-        self.walk_children_excluding(n, skipped, s);
+
+        self.walk_children_excluding(n, binder.as_ref().map(|b| b.id()), s);
         if let Some(b) = binder {
-            let w = Write::rewrite(b.start_byte(), b.id());
-            self.bind_var(b, s, w, IntroKind::Binding);
+            self.bind_var(
+                b,
+                s,
+                Write::rewrite(b.start_byte(), b.id()),
+                IntroKind::Binding,
+            );
         }
     }
 
@@ -140,8 +141,12 @@ impl Collector<'_> {
     fn bind_target(&mut self, target: Node, value_id: Option<usize>, scope: usize) {
         match target.kind() {
             "variable_name" => {
-                let w = Write::assign(target.start_byte(), target.id(), value_id);
-                self.bind_var(target, scope, w, IntroKind::Assign);
+                self.bind_var(
+                    target,
+                    scope,
+                    Write::assign(target.start_byte(), target.id(), value_id),
+                    IntroKind::Assign,
+                );
             }
             "list_literal" => self.expand_list(target, scope),
             _ => self.walk_children(target, scope),
@@ -154,8 +159,12 @@ impl Collector<'_> {
         for el in list.children(&mut c) {
             match el.kind() {
                 "variable_name" => {
-                    let w = Write::assign(el.start_byte(), el.id(), None);
-                    self.bind_var(el, scope, w, IntroKind::Assign);
+                    self.bind_var(
+                        el,
+                        scope,
+                        Write::assign(el.start_byte(), el.id(), None),
+                        IntroKind::Assign,
+                    );
                 }
                 "," | "[" | "]" => {}
                 _ => self.walk(el, scope),

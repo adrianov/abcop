@@ -169,10 +169,9 @@ impl ignore::ParallelVisitor for Collector<'_> {
             && is_code_path(entry.path())
             && let Ok(mut sink) = self.sink.lock()
         {
-            let depth = entry.depth();
             sink.push(Found {
+                depth: entry.depth(),
                 path: entry.into_path(),
-                depth,
             });
         }
         ignore::WalkState::Continue

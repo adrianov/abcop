@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use tree_sitter::Node;
 
-use crate::inlinable::{keep_init_kind, ruby_alias_stable, RUBY_IDENT, RUBY_UNITS};
+use crate::inlinable::{RUBY_IDENT, RUBY_UNITS, keep_init_kind, ruby_alias_stable};
 use crate::model::{Entry, FileModel, Write, WriteKind};
 
 #[derive(PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -46,13 +46,12 @@ fn dead_binding(
     if !e.reads.is_empty() || e.writes.is_empty() {
         return None;
     }
-    let first = e.writes.iter().map(|w| w.byte).min().unwrap_or(0);
-    let (line, column) = fm.line_col(first);
+    let byte = e.writes.iter().map(|w| w.byte).min().unwrap_or(0);
     Some(NeverUsedOffense {
-        line,
-        column,
+        line: fm.line_col(byte).0,
+        column: fm.line_col(byte).1,
         name: name.to_string(),
-        keep_init: keep_init_for_dead(fm, &nodes, scope, e),
+        keep_init: keep_init_for_dead(fm, nodes, scope, e),
     })
 }
 
@@ -78,7 +77,8 @@ fn keep_init_for_dead(
         Some(node) => *node,
         None => return false,
     };
-    inlinable_rhs(fm, rhs, scope, w.byte, None) && unconditionally_executed(write_node)
+    inlinable_rhs(fm, rhs, scope, w.byte, None)
+        && unconditionally_executed(write_node)
         && keep_init_kind(rhs, RUBY_UNITS)
 }
 
@@ -99,9 +99,8 @@ fn inlinable_rhs(
         return true;
     }
     if n.kind() == RUBY_IDENT {
-        let name = fm.text(n);
         return match read_byte {
-            Some(end) => ruby_alias_stable(fm, scope, name, write_byte, end),
+            Some(end) => ruby_alias_stable(fm, scope, fm.text(n), write_byte, end),
             None => true,
         };
     }
@@ -122,8 +121,7 @@ fn pure(fm: &FileModel, n: Node) -> bool {
 }
 
 fn named_children<'t>(n: Node<'t>) -> Vec<Node<'t>> {
-    let mut cur = n.walk();
-    n.children(&mut cur).filter(|c| c.is_named()).collect()
+    n.children(&mut n.walk()).filter(|c| c.is_named()).collect()
 }
 
 fn all_named_pure(fm: &FileModel, n: Node) -> bool {
@@ -131,8 +129,8 @@ fn all_named_pure(fm: &FileModel, n: Node) -> bool {
 }
 
 fn string_without_interpolation(n: Node) -> bool {
-    let mut cur = n.walk();
-    !n.children(&mut cur).any(|c| c.kind() == "interpolation")
+    !n.children(&mut n.walk())
+        .any(|c| c.kind() == "interpolation")
         && n.child_by_field_name("interpolation").is_none()
 }
 
@@ -143,11 +141,11 @@ fn hash_pure(fm: &FileModel, n: Node) -> bool {
 }
 
 fn unary_pure(fm: &FileModel, n: Node) -> bool {
-    let op = n
-        .child_by_field_name("operator")
+    n.child_by_field_name("operator")
         .map(|o| fm.text(o))
-        .unwrap_or("");
-    op != "defined?" && all_named_pure(fm, n)
+        .unwrap_or("")
+        != "defined?"
+        && all_named_pure(fm, n)
 }
 
 fn paren_pure(fm: &FileModel, n: Node) -> bool {

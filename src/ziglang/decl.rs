@@ -75,16 +75,21 @@ fn bind_decls(b: &mut Collector<'_>, parts: &DeclParts<'_>, scope: usize) {
         } else {
             None
         };
-        let w = Write::assign(d.start_byte(), d.id(), rhs_id);
-        b.bind_var(*d, scope, w, IntroKind::Assign);
+
+        b.bind_var(
+            *d,
+            scope,
+            Write::assign(d.start_byte(), d.id(), rhs_id),
+            IntroKind::Assign,
+        );
     }
 }
 
 fn rebind_assigns(b: &mut Collector<'_>, parts: &DeclParts<'_>, scope: usize) {
     for (target, plain) in &parts.assigns {
         if !b.rebind_local(*target, scope, *plain, parts.rhs.map(|r| r.id())) {
-            let name = b.text_of(*target).to_string();
-            b.model.record_read(scope, &name, target.start_byte());
+            b.model
+                .record_read(scope, &b.text_of(*target).to_string(), target.start_byte());
         }
     }
 }
@@ -131,8 +136,7 @@ fn split_var_decl<'t>(n: Node<'t>, src: &'t [u8]) -> DeclParts<'t> {
 
 fn pre_assign_nodes<'t>(n: Node<'t>) -> Vec<Node<'t>> {
     let mut out = Vec::new();
-    let mut cursor = n.walk();
-    for child in n.children(&mut cursor) {
+    for child in n.children(&mut n.walk()) {
         if is_assign_op_node(child) {
             break;
         }
@@ -162,8 +166,8 @@ fn assign_op_of<'t>(n: Node<'t>, src: &'t [u8]) -> Option<&'t str> {
     if let Some(op) = n.child_by_field_name("operator") {
         return op.utf8_text(src).ok();
     }
-    let mut cursor = n.walk();
-    n.children(&mut cursor)
+
+    n.children(&mut n.walk())
         .find(|ch| is_assign_op_node(*ch))
         .and_then(|ch| ch.utf8_text(src).ok())
 }

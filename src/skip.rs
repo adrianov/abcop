@@ -53,8 +53,10 @@ pub(crate) fn skipped_by_default(path: &std::path::Path, roots: &[std::path::Pat
     let Ok(rel) = path.strip_prefix(root.as_path()) else {
         return false;
     };
-    let file_name = rel.file_name().unwrap_or_default();
-    if is_generated_name(file_name) || crate::modulesize::is_route_table(rel) {
+
+    if is_generated_name(rel.file_name().unwrap_or_default())
+        || crate::modulesize::is_route_table(rel)
+    {
         return true;
     }
     rel.parent().is_some_and(any_component_matches)
@@ -196,7 +198,10 @@ mod tests {
             Path::new("./lib/models/user.freezed.dart"),
             &r
         ));
-        assert!(skipped_by_default(Path::new("./lib/models/user.g.dart"), &r));
+        assert!(skipped_by_default(
+            Path::new("./lib/models/user.g.dart"),
+            &r
+        ));
         assert!(!skipped_by_default(Path::new("./lib/models/user.dart"), &r));
     }
 }

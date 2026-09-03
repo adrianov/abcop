@@ -22,8 +22,13 @@ pub(super) fn bind_declaration_statement(b: &mut impl Backend, n: Node, scope: u
             } else {
                 None
             };
-            let w = Write::assign(name.start_byte(), name.id(), rhs);
-            b.bind_var(name, scope, w, IntroKind::Assign);
+
+            b.bind_var(
+                name,
+                scope,
+                Write::assign(name.start_byte(), name.id(), rhs),
+                IntroKind::Assign,
+            );
         }
     }
     if let Some(v) = value {
@@ -36,8 +41,7 @@ pub(super) fn bind_declaration_statement(b: &mut impl Backend, n: Node, scope: u
 fn split_head<'t>(n: Node<'t>) -> (Vec<Node<'t>>, Option<Node<'t>>) {
     let mut decls = Vec::new();
     let mut value = None;
-    let mut cursor = n.walk();
-    for child in n.children(&mut cursor) {
+    for child in n.children(&mut n.walk()) {
         match child.kind() {
             "variable_declaration" | "variable_declaration_tuple" => {
                 collect_decls(child, &mut decls);
@@ -53,8 +57,7 @@ fn split_head<'t>(n: Node<'t>) -> (Vec<Node<'t>>, Option<Node<'t>>) {
 /// First unnamed child's text -- Solidity exposes no `operator` field, so
 /// the punctuator token itself carries `=` vs `+=` et al.
 pub(super) fn top_level_op<'t>(n: Node<'t>, src: &'t [u8]) -> &'t str {
-    let mut cursor = n.walk();
-    n.children(&mut cursor)
+    n.children(&mut n.walk())
         .find(|ch| !ch.is_named())
         .map(|ch| ch.utf8_text(src).unwrap_or(""))
         .unwrap_or("")

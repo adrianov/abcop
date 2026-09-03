@@ -6,8 +6,11 @@ use super::*;
 use crate::paths::Lang;
 
 fn scores(lang: Lang, code: &str, max: f64) -> Vec<AbcOffense> {
-    let tree = crate::paths::parse_file_lang(code.as_bytes(), lang).unwrap();
-    all_scores(code.as_bytes(), &tree, lang)
+    all_scores(
+        code.as_bytes(),
+        &crate::paths::parse_file_lang(code.as_bytes(), lang).unwrap(),
+        lang,
+    )
         .into_iter()
         .filter(|o| o.score > max)
         .collect()
@@ -154,7 +157,8 @@ Widget* make(int n) {
 fn cpp_out_of_line_method_uses_method_name_not_parameter() {
     // Regression: qualified / ref-returning / operator= units used to report
     // the last parameter (`data`, `o`) via an ObjC-style identifier DFS.
-    let off = scores(
+
+    let names: Vec<_> = scores(
         Lang::Cpp,
         "\
 void Transfers::onGetFileListClicked_gui(GtkMenuItem*, gpointer data) {
@@ -178,19 +182,24 @@ Foo::operator int() const {
 }
 ",
         0.0,
-    );
-    let names: Vec<_> = off.iter().map(|o| o.name.as_str()).collect();
-    assert!(
-        names.contains(&"onGetFileListClicked_gui"),
-        "got {names:?}"
-    );
-    assert!(names.contains(&"get"), "got {names:?}");
-    assert!(names.contains(&"operator="), "got {names:?}");
-    assert!(names.contains(&"~Transfers"), "got {names:?}");
+    )
+    .into_iter()
+    .map(|o| o.name)
+    .collect();
+    assert!(names.iter().any(|n| n == "onGetFileListClicked_gui"), "got {names:?}");
+    assert!(names.iter().any(|n| n == "get"), "got {names:?}");
+    assert!(names.iter().any(|n| n == "operator="), "got {names:?}");
+    assert!(names.iter().any(|n| n == "~Transfers"), "got {names:?}");
     assert!(
         names.iter().any(|n| n.starts_with("operator int")),
         "got {names:?}"
     );
-    assert!(!names.contains(&"data"), "parameter must not be the unit name");
-    assert!(!names.contains(&"o"), "parameter must not be the unit name");
+    assert!(
+        names.iter().all(|n| n != "data"),
+        "parameter must not be the unit name"
+    );
+    assert!(
+        names.iter().all(|n| n != "o"),
+        "parameter must not be the unit name"
+    );
 }

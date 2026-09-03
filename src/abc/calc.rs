@@ -39,10 +39,7 @@ impl<'f> Calc<'f> {
     ];
 
     fn walk(&mut self, n: Node) {
-        let children: Vec<_> = {
-            let mut cursor = n.walk();
-            n.children(&mut cursor).collect()
-        };
+        let children: Vec<_> = n.children(&mut n.walk()).collect();
         for ch in children {
             self.walk(ch);
         }
@@ -113,8 +110,9 @@ pub(super) fn visit_units(fm: &FileModel, n: Node, f: &mut impl FnMut(Node, &str
 fn define_method_argument(fm: &FileModel, call: Node) -> Option<String> {
     let args = call.child_by_field_name("arguments")?;
     // Prefer named children: `child(0)` is the anonymous `(` of `argument_list`.
-    let raw = fm.text(args.named_child(0)?);
-    let name = raw
+
+    let name = fm
+        .text(args.named_child(0)?)
         .trim_start_matches(':')
         .trim_matches(|c| c == '\'' || c == '"');
     (!name.is_empty()).then(|| name.to_string())

@@ -35,12 +35,19 @@ pub trait Backend {
         {
             // grammars differ on exposing an initializer field; when
             // absent, it is the first named child after the `=` token
-            let rhs = n
-                .child_by_field_name("value")
+
+            self.bind_var(
+                name,
+                scope,
+                Write::assign(
+                    name.start_byte(),
+                    name.id(),
+                    n.child_by_field_name("value")
                 .map(|v| v.id())
-                .or_else(|| rhs_after_eq(self as &dyn Backend, n).map(|v| v.id()));
-            let w = Write::assign(name.start_byte(), name.id(), rhs);
-            self.bind_var(name, scope, w, IntroKind::Assign);
+                        .or_else(|| rhs_after_eq(self as &dyn Backend, n).map(|v| v.id())),
+                ),
+                IntroKind::Assign,
+            );
         }
     }
 

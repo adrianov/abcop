@@ -41,8 +41,7 @@ impl Tally {
         src: &[u8],
         roots: &std::collections::HashSet<usize>,
     ) {
-        let mut cursor = n.walk();
-        let children: Vec<_> = n.children(&mut cursor).collect();
+        let children: Vec<_> = n.children(&mut n.walk()).collect();
         for child in children {
             if !roots.contains(&child.start_byte()) {
                 self.walk(spec, child, src, roots);

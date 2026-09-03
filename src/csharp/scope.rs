@@ -73,13 +73,18 @@ impl Backend for Collector<'_> {
             // they read through the `out`, never inline candidates
             "declaration_expression" => {
                 if let Some(d) = n.child_by_field_name("name") {
-                    let w = Write::rewrite(d.start_byte(), d.id());
-                    self.bind_var(d, scope, w, IntroKind::Binding);
+                    self.bind_var(
+                        d,
+                        scope,
+                        Write::rewrite(d.start_byte(), d.id()),
+                        IntroKind::Binding,
+                    );
                 }
             }
             "foreach_statement" => {
                 // the control variable is loop protocol -- never tracked;
                 // the iterated collection still produces its reads
+
                 let s = self.model.open_scope(ScopeKind::Block, scope);
                 self.walk_children_excluding_field(n, s, "left");
             }
@@ -114,8 +119,12 @@ impl Collector<'_> {
         if let Some(decl) = decl
             && let Some(name) = decl.child_by_field_name("name")
         {
-            let w = Write::rewrite(name.start_byte(), name.id());
-            self.bind_var(name, s, w, IntroKind::Binding);
+            self.bind_var(
+                name,
+                s,
+                Write::rewrite(name.start_byte(), name.id()),
+                IntroKind::Binding,
+            );
         }
         let skipped = decl.map(|d| d.id());
         let mut cursor = n.walk();

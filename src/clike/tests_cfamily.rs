@@ -4,9 +4,14 @@
 use crate::paths::{Lang, parse_file_lang};
 
 fn used(lang: Lang, src: &'static str) -> Vec<String> {
-    let tree = parse_file_lang(src.as_bytes(), lang).expect("fixture parses");
-    let sc = super::collect_scopes(src.as_bytes(), &tree, lang);
-    let mut v: Vec<_> = super::used_once_offenses(&sc, lang)
+    let mut v: Vec<_> = super::used_once_offenses(
+        &super::collect_scopes(
+            src.as_bytes(),
+            &parse_file_lang(src.as_bytes(), lang).expect("fixture parses"),
+            lang,
+        ),
+        lang,
+    )
         .into_iter()
         .map(|o| o.name)
         .collect();
@@ -15,9 +20,14 @@ fn used(lang: Lang, src: &'static str) -> Vec<String> {
 }
 
 fn dead(lang: Lang, src: &'static str) -> Vec<String> {
-    let tree = parse_file_lang(src.as_bytes(), lang).expect("fixture parses");
-    let sc = super::collect_scopes(src.as_bytes(), &tree, lang);
-    let mut v: Vec<_> = super::never_used_offenses(&sc, lang)
+    let mut v: Vec<_> = super::never_used_offenses(
+        &super::collect_scopes(
+            src.as_bytes(),
+            &parse_file_lang(src.as_bytes(), lang).expect("fixture parses"),
+            lang,
+        ),
+        lang,
+    )
         .into_iter()
         .map(|o| o.name)
         .collect();

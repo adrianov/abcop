@@ -3,7 +3,7 @@
 
 use tree_sitter::Node;
 
-use crate::inlinable::{immediate_substitutable, keep_init_kind, PY_IDENT, PY_UNITS};
+use crate::inlinable::{PY_IDENT, PY_UNITS, immediate_substitutable, keep_init_kind};
 
 use super::Scope;
 use super::VETO_KINDS;
@@ -43,9 +43,15 @@ pub(super) fn inlinable_rhs(
         };
     }
     if n.kind() == PY_IDENT {
-        let name = n.utf8_text(src).unwrap_or("");
         return match read_byte {
-            Some(end) => alias_stable(scopes, scope, write_byte, name, write_byte, end),
+            Some(end) => alias_stable(
+                scopes,
+                scope,
+                write_byte,
+                n.utf8_text(src).unwrap_or(""),
+                write_byte,
+                end,
+            ),
             None => true,
         };
     }
@@ -92,8 +98,7 @@ fn lookup(scopes: &[Scope], scope: usize, pos: usize, name: &str) -> Option<usiz
 }
 
 fn children_pure(n: Node) -> bool {
-    let mut c = n.walk();
-    n.children(&mut c)
+    n.children(&mut n.walk())
         .filter(|ch| ch.is_named())
         .all(|ch| pure(ch))
 }

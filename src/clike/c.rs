@@ -126,6 +126,7 @@ impl Collector<'_> {
         if export_macro_class(n) {
             return;
         }
+
         let s = self.model().open_scope(ScopeKind::Function, scope);
         self.walk_children(n, s);
     }
@@ -160,8 +161,12 @@ impl Collector<'_> {
     /// inlinable RHS; a bare definition is a valueless write.
     fn bind_declarator(&mut self, d: Node, scope: usize) {
         if d.kind() == "identifier" {
-            let w = Write::assign(d.start_byte(), d.id(), None);
-            self.bind_var(d, scope, w, IntroKind::Assign);
+            self.bind_var(
+                d,
+                scope,
+                Write::assign(d.start_byte(), d.id(), None),
+                IntroKind::Assign,
+            );
             return;
         }
         let Some(name) = d
@@ -171,8 +176,13 @@ impl Collector<'_> {
             return;
         };
         let rhs = d.child_by_field_name("value");
-        let w = Write::assign(name.start_byte(), name.id(), rhs.map(|v| v.id()));
-        self.bind_var(name, scope, w, IntroKind::Assign);
+
+        self.bind_var(
+            name,
+            scope,
+            Write::assign(name.start_byte(), name.id(), rhs.map(|v| v.id())),
+            IntroKind::Assign,
+        );
         // initializer subtrees may hold nested declarations
         if let Some(value) = rhs {
             dispatch(self, value, scope);

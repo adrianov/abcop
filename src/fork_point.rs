@@ -14,8 +14,9 @@ use crate::repo_state::{commit_oid, current_branch_in, is_ancestor_in, open_repo
 pub(super) fn fork_point_in(dir: Option<&Path>) -> Result<Option<(String, String)>, String> {
     let repo = open_repo(dir)?;
     let head = commit_oid(&repo, "HEAD")?.to_string();
-    let branch = current_branch_in(dir);
-    let Some((tips, names)) = sibling_tips_in(&repo, &head, branch.as_deref())? else {
+
+    let Some((tips, names)) = sibling_tips_in(&repo, &head, current_branch_in(dir).as_deref())?
+    else {
         return Ok(None);
     };
     pick_fork_point(&repo, &head, &tips).map(|best| best.map(|b| fork_label(&b, &names)))
@@ -46,11 +47,13 @@ fn commit_ts(repo: &git2::Repository, sha: &str) -> i64 {
 }
 
 fn fork_label(sha: &str, names: &HashMap<String, String>) -> (String, String) {
-    let detail = names
+    (
+        sha.into(),
+        names
         .get(sha)
         .map(|p| format!("changes since fork point (parent {p})"))
-        .unwrap_or_else(|| "changes since fork point".into());
-    (sha.into(), detail)
+            .unwrap_or_else(|| "changes since fork point".into()),
+    )
 }
 
 /// Distinct sibling tips (own branch excluded) plus a display name per
@@ -92,8 +95,11 @@ fn tip_of(r: git2::Reference<'_>) -> Result<Option<(String, String)>, String> {
     let Some(name) = r.name().map(str::to_string) else {
         return Ok(None);
     };
-    let oid = r.resolve().map_err(|e| e.to_string())?.target();
-    Ok(oid.map(|o| (o.to_string(), name)))
+
+    Ok(r.resolve()
+        .map_err(|e| e.to_string())?
+        .target()
+        .map(|o| (o.to_string(), name)))
 }
 
 fn record_tip(
@@ -132,7 +138,10 @@ fn boundary_bases_in(
     for rev in std::iter::once(head).chain(tips.iter().map(String::as_str)) {
         set.push(commit_oid(repo, rev)?);
     }
-    Ok(drop_ancestor_bases(repo.workdir(), merge_base_shas(repo, &set)))
+    Ok(drop_ancestor_bases(
+        repo.workdir(),
+        merge_base_shas(repo, &set),
+    ))
 }
 
 fn merge_base_shas(repo: &git2::Repository, set: &[git2::Oid]) -> Vec<String> {

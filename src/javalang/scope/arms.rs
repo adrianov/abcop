@@ -19,8 +19,7 @@ impl Collector<'_> {
         if let Some((_, field)) = EXCLUDE_FIELDS.iter().find(|(k, _)| *k == kind)
             && let Some(excluded) = n.child_by_field_name(field).map(|c| c.id())
         {
-            let mut cursor = n.walk();
-            n.children(&mut cursor)
+            n.children(&mut n.walk())
                 .filter(|c| c.id() != excluded)
                 .for_each(|c| self.walk(c, scope));
             return true;
@@ -43,16 +42,15 @@ impl Collector<'_> {
             "catch_clause" => self.catch_arm(n, scope),
             "resource" => self.resource_arm(n, scope),
             "identifier" => {
-                let name = self.text(n).to_string();
-                self.model.record_read(scope, &name, n.start_byte());
+                self.model
+                    .record_read(scope, &self.text(n).to_string(), n.start_byte());
             }
             _ => self.walk_children(n, scope),
         }
     }
 
     fn declaration_arm(&mut self, n: Node, scope: usize) {
-        let mut cursor = n.walk();
-        for child in n.children(&mut cursor) {
+        for child in n.children(&mut n.walk()) {
             match child.kind() {
                 "variable_declarator" => self.bind_declarator(child, scope, true),
                 _ => self.walk(child, scope),
@@ -82,8 +80,8 @@ impl Collector<'_> {
         // subtree: its variable_name must never leak into the read path.
         let bp = child_of_kind(n, "catch_formal_parameter");
         self.bind_catch_param(bp, s);
-        let mut cursor = n.walk();
-        n.children(&mut cursor)
+
+        n.children(&mut n.walk())
             .filter(|c| Some(c.id()) != bp.map(|b| b.id()))
             .for_each(|c| self.walk(c, s));
     }
@@ -92,8 +90,12 @@ impl Collector<'_> {
         if let Some(bp) = bp
             && let Some(name) = bp.child_by_field_name("name")
         {
-            let w = Write::rewrite(name.start_byte(), name.id());
-            self.bind_var(name, scope, w, IntroKind::Binding);
+            self.bind_var(
+                name,
+                scope,
+                Write::rewrite(name.start_byte(), name.id()),
+                IntroKind::Binding,
+            );
         }
     }
 
@@ -103,8 +105,12 @@ impl Collector<'_> {
             .child_by_field_name("name")
             .filter(|n| n.kind() == "identifier")
         {
-            let w = Write::rewrite(name.start_byte(), name.id());
-            self.bind_var(name, scope, w, IntroKind::Binding);
+            self.bind_var(
+                name,
+                scope,
+                Write::rewrite(name.start_byte(), name.id()),
+                IntroKind::Binding,
+            );
         }
         if let Some(value) = n.child_by_field_name("value") {
             self.walk(value, scope);
@@ -140,9 +146,12 @@ impl Collector<'_> {
     /// operators rewrite in place.
     fn target_write(&self, n: Node, left: Node, plain: bool) -> (Write, IntroKind) {
         if plain {
-            let rhs = n.child_by_field_name("right").map(|r| r.id());
             (
-                Write::assign(left.start_byte(), left.id(), rhs),
+                Write::assign(
+                    left.start_byte(),
+                    left.id(),
+                    n.child_by_field_name("right").map(|r| r.id()),
+                ),
                 IntroKind::Assign,
             )
         } else {

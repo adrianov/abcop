@@ -19,22 +19,19 @@ impl<'f> Calc<'f> {
 
     fn count_if(&mut self, n: Node) {
         self.c += 1;
-        let has_else = {
-            let mut cur = n.walk();
-            n.children(&mut cur).any(|ch| ch.kind() == "else")
-        };
-        if has_else {
+        if n.children(&mut n.walk()).any(|ch| ch.kind() == "else") {
             self.c += 1;
         }
     }
 
     fn count_rescue(&mut self, n: Node, kind: &str) {
         // a multi-clause rescue group is ONE :rescue node; TS emits siblings
-        let first_clause = n
-            .prev_named_sibling()
+
+        if kind == "rescue_modifier"
+            || n.prev_named_sibling()
             .map(|p| p.kind() != "rescue")
-            .unwrap_or(true);
-        if kind == "rescue_modifier" || first_clause {
+                .unwrap_or(true)
+        {
             self.c += 1;
         }
         if rescue_binds_named_variable(self.fm, n) {

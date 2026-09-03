@@ -6,10 +6,10 @@ use crate::paths::lang_for;
 
 pub fn dump_tree(path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let src = fs::read(path)?;
-    let lang = lang_for(std::path::Path::new(path));
-    let tree = crate::paths::parse_file_lang(&src, lang).ok_or("parse failed")?;
-    let mut cursor = tree.walk();
-    rec(&mut cursor, 0, &src);
+
+    let tree = crate::paths::parse_file_lang(&src, lang_for(std::path::Path::new(path)))
+        .ok_or("parse failed")?;
+    rec(&mut tree.walk(), 0, &src);
     Ok(())
 }
 

@@ -63,8 +63,8 @@ impl Collector<'_> {
     }
 
     fn bind_var(&mut self, name_node: Node, scope: usize, w: Write, intro: IntroKind) {
-        let name = self.text(name_node).to_string();
-        self.model.bind(scope, &name, w, intro);
+        self.model
+            .bind(scope, &self.text(name_node).to_string(), w, intro);
     }
 
     /// Bind a `variable_declarator`'s `@name`, optionally linking its
@@ -78,8 +78,13 @@ impl Collector<'_> {
             } else {
                 None
             };
-            let w = Write::assign(name.start_byte(), name.id(), rhs);
-            self.bind_var(name, scope, w, IntroKind::Assign);
+
+            self.bind_var(
+                name,
+                scope,
+                Write::assign(name.start_byte(), name.id(), rhs),
+                IntroKind::Assign,
+            );
         }
     }
 

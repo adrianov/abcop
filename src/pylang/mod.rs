@@ -52,8 +52,11 @@ impl PyFile<'_> {
 }
 
 pub fn build(src: &[u8], tree: Tree) -> PyFile<'_> {
-    let scopes = vars::collect(tree.root_node(), src);
-    PyFile { src, tree, scopes }
+    PyFile {
+        src,
+        scopes: vars::collect(tree.root_node(), src),
+        tree,
+    }
 }
 
 use vars::Scope;

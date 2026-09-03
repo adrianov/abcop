@@ -74,14 +74,8 @@ pub fn is_production(path: &str) -> bool {
 
 /// File ABC over method scores; Rust `#[cfg(test)]` tails are omitted
 /// (same exemption the old line budget used).
-pub fn from_scores(
-    scores: &[AbcOffense],
-    path: &str,
-    src: &str,
-    max: f64,
-) -> Option<ModuleAbc> {
-    let filtered = rust_prod_scores(scores, path, src);
-    scored(filtered.into_owned(), max)
+pub fn from_scores(scores: &[AbcOffense], path: &str, src: &str, max: f64) -> Option<ModuleAbc> {
+    scored(rust_prod_scores(scores, path, src).into_owned(), max)
 }
 
 /// Re-sum `module_abc` from methods that `keep` accepts; clear when the
@@ -94,8 +88,8 @@ pub(crate) fn rescope(
     let Some(m) = module_abc.take() else {
         return;
     };
-    let methods: Vec<_> = m.methods.into_iter().filter(|o| keep(o)).collect();
-    *module_abc = scored(methods, max);
+
+    *module_abc = scored(m.methods.into_iter().filter(|o| keep(o)).collect(), max);
 }
 
 fn scored(methods: Vec<AbcOffense>, max: f64) -> Option<ModuleAbc> {
@@ -129,11 +123,5 @@ fn rust_prod_scores<'a>(
         return std::borrow::Cow::Borrowed(scores);
     };
     let cutoff = pos + 1;
-    std::borrow::Cow::Owned(
-        scores
-            .iter()
-            .filter(|o| o.line < cutoff)
-            .cloned()
-            .collect(),
-    )
+    std::borrow::Cow::Owned(scores.iter().filter(|o| o.line < cutoff).cloned().collect())
 }

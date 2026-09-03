@@ -64,14 +64,11 @@ impl Cache {
         limits: crate::abc::Limits,
     ) -> String {
         let path = path.display().to_string();
-        let rev = RULES_REV.to_le_bytes();
-        let method = limits.method.to_le_bytes();
-        let module = limits.module.to_le_bytes();
         hash_parts(&[
             env!("CARGO_PKG_VERSION").as_bytes(),
-            &rev,
-            &method,
-            &module,
+            &RULES_REV.to_le_bytes(),
+            &limits.method.to_le_bytes(),
+            &limits.module.to_le_bytes(),
             only.unwrap_or("").as_bytes(),
             path.as_bytes(),
             contents,
@@ -90,7 +87,8 @@ impl Cache {
         never_used: &[crate::never_used::NeverUsedOffense],
         module_abc: Option<crate::modulesize::ModuleAbc>,
     ) {
-        self.store.store(key, abc, used_once, never_used, module_abc)
+        self.store
+            .store(key, abc, used_once, never_used, module_abc)
     }
 
     /// Keep the newest MAX_ENTRIES entries; drop the rest.

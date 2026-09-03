@@ -112,8 +112,7 @@ impl Collector<'_> {
             // through walk(), which would treat names as reads
             "pattern_list" | "tuple_pattern" | "list_pattern" | "list_splat"
             | "dictionary_splat" => {
-                let mut cursor = n.walk();
-                let children: Vec<_> = n.children(&mut cursor).collect();
+                let children: Vec<_> = n.children(&mut n.walk()).collect();
                 for child in children {
                     self.bind_targets(child, scope);
                 }
@@ -153,7 +152,7 @@ impl Collector<'_> {
             plain: intro == IntroKind::Assign,
             rhs,
         };
-        let name = self.text(name_node).to_string();
-        self.bind(scope, &name, w, intro);
+
+        self.bind(scope, &self.text(name_node).to_string(), w, intro);
     }
 }

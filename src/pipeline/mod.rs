@@ -95,8 +95,8 @@ fn cache_hit(
     only: Option<&str>,
     limits: Limits,
 ) -> Option<crate::output::FileResult> {
-    let key = cache.file_key(path, src, only, limits);
-    let (abc, used_once, never_used, module_abc) = cache.get(&key)?;
+    let (abc, used_once, never_used, module_abc) =
+        cache.get(&cache.file_key(path, src, only, limits))?;
     Some(crate::output::FileResult {
         path: path.display().to_string(),
         abc,
@@ -115,9 +115,8 @@ fn store_result(
     r: &crate::output::FileResult,
 ) {
     if let Some(cache) = cache {
-        let key = cache.file_key(path, src, only, limits);
         cache.store(
-            &key,
+            &cache.file_key(path, src, only, limits),
             &r.abc,
             &r.used_once,
             &r.never_used,

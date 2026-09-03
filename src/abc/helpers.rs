@@ -100,10 +100,7 @@ pub(crate) fn iterating_call(fm: &FileModel, call: Node) -> bool {
     let Some(m) = call.child_by_field_name("method") else {
         return false;
     };
-    {
-        let name = fm.text(m);
-        ITERATING.binary_search(&name).is_ok()
-    }
+    ITERATING.binary_search(&fm.text(m)).is_ok()
 }
 
 /// `super` never counts; a `::`-qualified uppercase path is a constant hop.
@@ -147,9 +144,8 @@ pub(crate) fn param_names<'f>(fm: &'f FileModel, container: Node) -> Vec<&'f str
 }
 
 fn destructured_names<'f>(fm: &'f FileModel, wrapper: Node) -> Vec<&'f str> {
-    let mut sub = wrapper.walk();
     wrapper
-        .children(&mut sub)
+        .children(&mut wrapper.walk())
         .filter(|c| c.kind() == "identifier")
         .map(|c| fm.text(c))
         .collect()

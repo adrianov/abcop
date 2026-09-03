@@ -51,6 +51,9 @@ impl ZigFile<'_> {
 }
 
 pub fn build(src: &[u8], tree: Tree) -> ZigFile<'_> {
-    let scopes = scope::collect(tree.root_node(), src);
-    ZigFile { src, tree, scopes }
+    ZigFile {
+        src,
+        scopes: scope::collect(tree.root_node(), src),
+        tree,
+    }
 }

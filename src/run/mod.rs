@@ -156,9 +156,7 @@ impl ScanRun<'_> {
     ) -> Vec<FileResult> {
         files
             .par_iter()
-            .map(|p| {
-                pipeline::analyze_one(p, self.only, self.limits, changeset, cache)
-            })
+            .map(|p| pipeline::analyze_one(p, self.only, self.limits, changeset, cache))
             .collect()
     }
 
@@ -166,14 +164,13 @@ impl ScanRun<'_> {
     /// file (caller serializes shared output state).
     fn for_each_file(&self, prepared: &Prepared, on_file: impl Fn(&FileResult) + Sync) {
         prepared.files.par_iter().for_each(|p| {
-            let r = pipeline::analyze_one(
+            on_file(&pipeline::analyze_one(
                 p,
                 self.only,
                 self.limits,
                 prepared.changeset.as_ref(),
                 prepared.cache.as_ref(),
-            );
-            on_file(&r);
+            ));
         });
     }
 

@@ -80,8 +80,12 @@ impl Collector<'_> {
     /// nested expression reads.
     fn bind_parameter(&mut self, n: Node, scope: usize) {
         if let Some(name) = n.child_by_field_name("name") {
-            let w = Write::rewrite(name.start_byte(), name.id());
-            self.bind_var(name, scope, w, IntroKind::Binding);
+            self.bind_var(
+                name,
+                scope,
+                Write::rewrite(name.start_byte(), name.id()),
+                IntroKind::Binding,
+            );
             self.walk_children_excluding_field(n, scope, "name");
         } else {
             self.walk_children(n, scope);
@@ -94,8 +98,12 @@ impl Collector<'_> {
         let mut cursor = n.walk();
         for child in n.children(&mut cursor) {
             if child.kind() == "identifier" {
-                let w = Write::rewrite(child.start_byte(), child.id());
-                self.bind_var(child, scope, w, IntroKind::Binding);
+                self.bind_var(
+                    child,
+                    scope,
+                    Write::rewrite(child.start_byte(), child.id()),
+                    IntroKind::Binding,
+                );
             }
         }
     }

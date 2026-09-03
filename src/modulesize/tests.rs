@@ -77,13 +77,12 @@ fn offense(a: u32, b: u32, c: u32) -> AbcOffense {
 }
 
 fn offense_at(line: usize, end_line: usize, a: u32, b: u32, c: u32) -> AbcOffense {
-    let raw = ((a * a + b * b + c * c) as f64).sqrt();
     AbcOffense {
         line,
         end_line,
         column: 0,
         name: "m".into(),
-        score: (raw * 100.0).round() / 100.0,
+        score: (((a * a + b * b + c * c) as f64).sqrt() * 100.0).round() / 100.0,
         vector: format!("<{a}, {b}, {c}>"),
     }
 }

@@ -12,8 +12,7 @@ use tree_sitter::Node;
 /// Walk every named child, asserting `purity` over it. Shared by the
 /// language-specific `pure` predicates to avoid re-stating the traversal.
 fn children_all_pure(n: Node, purity: fn(Node) -> bool) -> bool {
-    let mut c = n.walk();
-    n.children(&mut c)
+    n.children(&mut n.walk())
         .filter(|ch| ch.is_named())
         .all(|ch| purity(ch))
 }
@@ -21,8 +20,7 @@ fn children_all_pure(n: Node, purity: fn(Node) -> bool) -> bool {
 /// True when `n`'s named children are all pure *and* carry no template
 /// substitution (Swift has no templates; JS does).
 fn children_without_substitution(n: Node, purity: fn(Node) -> bool) -> bool {
-    let mut c = n.walk();
-    n.children(&mut c)
+    n.children(&mut n.walk())
         .filter(|ch| ch.is_named())
         .all(|ch| ch.kind() != "substitution" && purity(ch))
 }

@@ -57,13 +57,13 @@ impl<'f> Calc<'f> {
     }
 
     fn count_operator_assignment(&mut self, n: Node) {
-        let lhs = n
+        self.a += n
             .child_by_field_name("left")
-            .map(|l| self.asgn_child_score(l, true));
-        let rhs = n
-            .child_by_field_name("right")
-            .map(|r| self.asgn_child_score(r, false));
-        self.a += lhs.unwrap_or(0) + rhs.unwrap_or(0);
+            .map(|l| self.asgn_child_score(l, true))
+            .unwrap_or(0)
+            + n.child_by_field_name("right")
+                .map(|r| self.asgn_child_score(r, false))
+                .unwrap_or(0);
         if matches!(self.field(n, "operator"), "||=" | "&&=") {
             self.c += 1;
         }
@@ -97,9 +97,8 @@ impl<'f> Calc<'f> {
         // literals in parser/RuboCop but `unary`+operand here — fold them.
         let op = self.field(n, "operator");
         let folded_number = matches!(op, "-" | "+")
-            && n.child_by_field_name("operand").is_some_and(|o| {
-                matches!(o.kind(), "integer" | "float" | "rational" | "complex")
-            });
+            && n.child_by_field_name("operand")
+                .is_some_and(|o| matches!(o.kind(), "integer" | "float" | "rational" | "complex"));
         if op != "defined?" && !folded_number {
             self.b += 1;
         }
@@ -126,28 +125,30 @@ impl<'f> Calc<'f> {
 
     fn count_safe_nav(&mut self, n: Node) {
         self.b += 1;
-        let discounted = n
+
+        if !n
             .child_by_field_name("receiver")
             .and_then(|r| self.csend_recv.get(&r.start_byte()))
             .map(|name| !self.seen_csend.insert(name.clone()))
-            .unwrap_or(false);
-        if !discounted {
+            .unwrap_or(false)
+        {
             self.c += 1;
         }
     }
 
     fn count_block_argument(&mut self, n: Node) {
-        let call = n.parent().and_then(|al| al.parent());
-        if call.is_some_and(|c| c.kind() == "call" && iterating_call(self.fm, c)) {
+        if n.parent()
+            .and_then(|al| al.parent())
+            .is_some_and(|c| c.kind() == "call" && iterating_call(self.fm, c))
+        {
             self.c += 1;
         }
     }
 
     fn count_block(&mut self, n: Node) {
-        let iterating = n
-            .parent()
-            .is_some_and(|p| p.kind() == "call" && iterating_call(self.fm, p));
-        if iterating {
+        if n.parent()
+            .is_some_and(|p| p.kind() == "call" && iterating_call(self.fm, p))
+        {
             self.c += 1;
         }
         self.add_param_assignments(n);

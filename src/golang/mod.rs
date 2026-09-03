@@ -45,6 +45,9 @@ impl GoFile<'_> {
 }
 
 pub fn build(src: &[u8], tree: Tree) -> GoFile<'_> {
-    let scopes = vars::collect(tree.root_node(), src);
-    GoFile { src, tree, scopes }
+    GoFile {
+        src,
+        scopes: vars::collect(tree.root_node(), src),
+        tree,
+    }
 }

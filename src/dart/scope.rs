@@ -156,8 +156,13 @@ impl Collector<'_> {
         let Some(name) = n.child_by_field_name("name") else {
             return;
         };
-        let w = Write::rewrite(name.start_byte(), name.id());
-        self.bind_var(name, scope, w, IntroKind::Binding);
+
+        self.bind_var(
+            name,
+            scope,
+            Write::rewrite(name.start_byte(), name.id()),
+            IntroKind::Binding,
+        );
         self.walk_children_excluding_field(n, scope, "name");
     }
 
@@ -192,8 +197,12 @@ impl Collector<'_> {
                 .filter(|c| c.kind() == "catch_clause")
             {
                 if let Some(id) = clause.child_by_field_name(field) {
-                    let w = Write::rewrite(id.start_byte(), id.id());
-                    self.bind_var(id, scope, w, IntroKind::Binding);
+                    self.bind_var(
+                        id,
+                        scope,
+                        Write::rewrite(id.start_byte(), id.id()),
+                        IntroKind::Binding,
+                    );
                     caught.push(id.id());
                 }
             }
@@ -231,17 +240,11 @@ fn enclosing_callable(mut param: Node<'_>) -> Option<Node<'_>> {
 }
 
 fn throws_unimplemented(c: &Collector<'_>, callable: Node<'_>) -> bool {
-    let Some(body) = callable.child_by_field_name("body") else {
-        return false;
-    };
-    let Some(throw_node) = body.named_child(0).filter(|n| n.kind() == "throw_expression") else {
-        return false;
-    };
-    let Some(value) = throw_node.child_by_field_name("value") else {
-        return false;
-    };
-    let Some(func) = value.child_by_field_name("function") else {
-        return false;
-    };
-    func.kind() == "identifier" && c.text_of(func) == "UnimplementedError"
+    callable
+        .child_by_field_name("body")
+        .and_then(|body| body.named_child(0))
+        .filter(|n| n.kind() == "throw_expression")
+        .and_then(|n| n.child_by_field_name("value"))
+        .and_then(|value| value.child_by_field_name("function"))
+        .is_some_and(|func| func.kind() == "identifier" && c.text_of(func) == "UnimplementedError")
 }

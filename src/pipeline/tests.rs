@@ -29,13 +29,12 @@ fn cs_with_ranges(rel: &str, lo: usize, hi: usize) -> Changeset {
 }
 
 fn method(line: usize, end_line: usize, a: u32, b: u32, c: u32) -> AbcOffense {
-    let raw = ((a * a + b * b + c * c) as f64).sqrt();
     AbcOffense {
         name: "m".into(),
         line,
         end_line,
         column: 0,
-        score: (raw * 100.0).round() / 100.0,
+        score: (((a * a + b * b + c * c) as f64).sqrt() * 100.0).round() / 100.0,
         vector: format!("<{a}, {b}, {c}>"),
     }
 }
@@ -79,7 +78,11 @@ fn small_diffs_still_report_method_abc() {
     let cs = cs_with_ranges("app/models/big.rb", 3, 9);
     let mut r = result_with_module_abc();
     apply(Some(&cs), &mut r, modulesize::MAX_ABC, b"");
-    assert_eq!(r.abc, vec![sample_abc()], "AbcSize keeps intersecting methods");
+    assert_eq!(
+        r.abc,
+        vec![sample_abc()],
+        "AbcSize keeps intersecting methods"
+    );
 }
 
 #[test]
@@ -108,14 +111,20 @@ fn new_files_count_as_fully_changed() {
     let cs = cs_with("app/models/big.rb", Lines::All);
     let mut r = result_with_module_abc();
     apply(Some(&cs), &mut r, modulesize::MAX_ABC, b"");
-    assert_eq!(r.module_abc.as_ref().map(|m| m.score), Some(sample_module_abc().score));
+    assert_eq!(
+        r.module_abc.as_ref().map(|m| m.score),
+        Some(sample_module_abc().score)
+    );
 }
 
 #[test]
 fn full_scans_keep_module_abc() {
     let mut r = result_with_module_abc();
     apply(None, &mut r, modulesize::MAX_ABC, b"");
-    assert_eq!(r.module_abc.as_ref().map(|m| m.score), Some(sample_module_abc().score));
+    assert_eq!(
+        r.module_abc.as_ref().map(|m| m.score),
+        Some(sample_module_abc().score)
+    );
 }
 
 /// A 60-function Ruby fixture under `dir/rel` with `template` bodies.
@@ -152,6 +161,7 @@ fn narrow_fixture() -> (std::path::PathBuf, std::path::PathBuf, Changeset) {
         rel,
         "def filler_{i}\n  x_{i} = 1\n  unused_{i} = 2\nend\n\n",
     );
+
     let cs = scoped_changeset(&dir, rel, 2);
     (dir, file, cs)
 }
@@ -244,6 +254,9 @@ fn many_changed_spec_methods_are_size_accountable() {
 fn full_scan_drops_module_abc_on_test_trees() {
     let (dir, file, _) = spec_fixture("full");
     let r = analyze_one(&file, None, test_limits(), None, None);
-    assert_eq!(r.module_abc, None, "full scans keep the test-tree exemption");
+    assert_eq!(
+        r.module_abc, None,
+        "full scans keep the test-tree exemption"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -5,8 +5,10 @@ use crate::abc::parse_vector;
 use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::dart::DartFile<'static> {
-    let tree = parse_file_lang(src.as_bytes(), Lang::Dart).expect("dart parses");
-    build(src.as_bytes(), tree)
+    build(
+        src.as_bytes(),
+        parse_file_lang(src.as_bytes(), Lang::Dart).expect("dart parses"),
+    )
 }
 
 fn scores(src: &'static str) -> Vec<(String, u32, u32, u32)> {

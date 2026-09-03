@@ -86,8 +86,8 @@ fn write_jsonl(out: &mut impl std::io::Write, r: &FileResult) {
 fn sort_diagnostics(diags: &mut [Diagnostic]) {
     diags.sort_by(|a, b| {
         score_order(
-            a.score, a.severity, &a.file, a.line, a.column, a.rule, b.score, b.severity,
-            &b.file, b.line, b.column, b.rule,
+            a.score, a.severity, &a.file, a.line, a.column, a.rule, b.score, b.severity, &b.file,
+            b.line, b.column, b.rule,
         )
     });
 }
@@ -233,8 +233,10 @@ mod tests {
 
     #[test]
     fn sort_diagnostics_matches_text_order() {
-        let results = sample_results();
-        let mut diags: Vec<_> = results.iter().flat_map(result_diagnostics).collect();
+        let mut diags: Vec<_> = sample_results()
+            .iter()
+            .flat_map(result_diagnostics)
+            .collect();
         sort_diagnostics(&mut diags);
         assert_eq!(diags[0].rule, "Metrics/ModuleAbcSize");
         assert_eq!(diags[0].score, Some(130.0));

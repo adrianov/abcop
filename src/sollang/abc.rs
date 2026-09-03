@@ -92,8 +92,7 @@ impl Tally<'_> {
     }
 
     fn anon_op(&self, n: Node) -> Option<&str> {
-        let mut c = n.walk();
-        n.children(&mut c)
+        n.children(&mut n.walk())
             .find(|ch| !ch.is_named())
             .and_then(|ch| ch.utf8_text(self.src).ok())
     }
@@ -140,11 +139,11 @@ impl Tally<'_> {
     /// Binary operators split between B and C depending on the
     /// operator.
     fn tally_binary(&mut self, n: Node) {
-        let is_c = self
+        if self
             .op_of(n)
             .or_else(|| self.anon_op(n))
-            .is_some_and(|op| C_OPERATORS.contains(&op));
-        if is_c {
+            .is_some_and(|op| C_OPERATORS.contains(&op))
+        {
             self.c += 1;
         } else {
             self.b += 1;

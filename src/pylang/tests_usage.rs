@@ -4,8 +4,10 @@ use super::{build, never_used_offenses, used_once_offenses};
 use crate::paths::{Lang, parse_file_lang};
 
 fn parse(src: &'static str) -> crate::pylang::PyFile<'static> {
-    let tree = parse_file_lang(src.as_bytes(), Lang::Py).expect("python parses");
-    build(src.as_bytes(), tree)
+    build(
+        src.as_bytes(),
+        parse_file_lang(src.as_bytes(), Lang::Py).expect("python parses"),
+    )
 }
 
 fn used(src: &'static str) -> Vec<String> {

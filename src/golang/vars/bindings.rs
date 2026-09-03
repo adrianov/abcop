@@ -52,8 +52,7 @@ impl Collector<'_> {
         };
         self.bind_targets(left, n.child_by_field_name("right"), scope);
         // reference-style elements (t.n = ..., m[k] = ...): operand reads
-        let mut cursor = left.walk();
-        for element in left.children(&mut cursor) {
+        for element in left.children(&mut left.walk()) {
             if element.kind() != "identifier" {
                 self.walk(element, scope);
             }
@@ -85,8 +84,8 @@ impl Collector<'_> {
             plain: true,
             rhs,
         };
-        let name = self.text(t).to_string();
-        self.bind(scope, &name, w, IntroKind::Assign);
+
+        self.bind(scope, &self.text(t).to_string(), w, IntroKind::Assign);
     }
 
     /// Identifier targets nested inside an expression list element.
@@ -116,8 +115,7 @@ impl Collector<'_> {
     }
 
     fn bind_inc_dec(&mut self, n: Node, scope: usize) {
-        let mut cursor = n.walk();
-        let children: Vec<_> = n.children(&mut cursor).collect();
+        let children: Vec<_> = n.children(&mut n.walk()).collect();
         for child in children {
             if child.kind() == "identifier" {
                 self.bind_rewrite(child, scope);
@@ -150,8 +148,7 @@ impl Collector<'_> {
     }
 
     fn record_identifier_read(&mut self, n: Node, scope: usize) {
-        let name = self.text(n).to_string();
-        self.record_read(scope, &name, n.start_byte());
+        self.record_read(scope, &self.text(n).to_string(), n.start_byte());
     }
 
     /// Split a var spec into declared identifier names before the `=`

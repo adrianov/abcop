@@ -50,6 +50,9 @@ impl SolFile<'_> {
 }
 
 pub fn build(src: &[u8], tree: Tree) -> SolFile<'_> {
-    let scopes = scope::collect(tree.root_node(), src);
-    SolFile { src, tree, scopes }
+    SolFile {
+        src,
+        scopes: scope::collect(tree.root_node(), src),
+        tree,
+    }
 }

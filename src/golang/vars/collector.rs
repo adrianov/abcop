@@ -151,8 +151,7 @@ impl Collector<'_> {
     }
 
     pub(super) fn first_anon_op<'s>(&'s self, n: Node<'s>) -> Option<&'s str> {
-        let mut c = n.walk();
-        n.children(&mut c)
+        n.children(&mut n.walk())
             .find(|ch| !ch.is_named())
             .map(|ch| ch.utf8_text(self.src).unwrap_or(""))
     }

@@ -60,6 +60,9 @@ impl DartFile<'_> {
 }
 
 pub fn build(src: &[u8], tree: Tree) -> DartFile<'_> {
-    let scopes = scope::collect(tree.root_node(), src);
-    DartFile { src, tree, scopes }
+    DartFile {
+        src,
+        scopes: scope::collect(tree.root_node(), src),
+        tree,
+    }
 }

@@ -51,31 +51,25 @@ pub fn never_used_offenses(fm: &ZigFile) -> Vec<crate::never_used::NeverUsedOffe
     scope_model::never_used_offenses(
         fm.tree.root_node(),
         fm.src,
-        &|byte| fm.line_col(byte), &fm.scopes, &ZIG_SEMANTICS)
+        &|byte| fm.line_col(byte),
+        &fm.scopes,
+        &ZIG_SEMANTICS,
+    )
 }
 
 /// Conservative RHS purity: literals and operator compositions over
 /// them. Calls and identifier references fail through their children.
 fn pure(n: Node) -> bool {
     match n.kind() {
-        "integer"
-        | "float"
-        | "character"
-        | "string"
-        | "multiline_string"
-        | "boolean"
-        | "true"
-        | "false"
-        | "null"
-        | "undefined" => true,
+        "integer" | "float" | "character" | "string" | "multiline_string" | "boolean" | "true"
+        | "false" | "null" | "undefined" => true,
         "parenthesized_expression" | "binary_expression" | "unary_expression" => children_pure(n),
         _ => false,
     }
 }
 
 fn children_pure(n: Node) -> bool {
-    let mut c = n.walk();
-    n.children(&mut c)
+    n.children(&mut n.walk())
         .filter(|ch| ch.is_named())
         .all(|ch| pure(ch))
 }

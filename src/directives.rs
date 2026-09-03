@@ -116,10 +116,11 @@ fn apply_disable(
     after: &str,
 ) {
     let names = cop_names(after.trim());
-    let mentions_abc = names
+
+    let relevant = names.is_empty()
+        || names
         .iter()
         .any(|n| n == "Metrics/AbcSize" || n == "Metrics");
-    let relevant = names.is_empty() || mentions_abc;
     let trailing = !raw[..hash].trim().is_empty();
     if trailing {
         push_line(d, line_no, names.is_empty(), relevant);

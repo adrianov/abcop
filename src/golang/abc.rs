@@ -84,8 +84,7 @@ impl Tally<'_> {
         if let Some(op) = n.child_by_field_name("operator") {
             return Some(node_text(src, op));
         }
-        let mut c = n.walk();
-        n.children(&mut c)
+        n.children(&mut n.walk())
             .find(|ch| !ch.is_named())
             .map(|ch| node_text(src, ch))
     }
