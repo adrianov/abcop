@@ -148,11 +148,29 @@ fn used_once_inline_candidate_for_pure_literal() {
 }
 
 #[test]
-fn used_once_spares_impure_rhs_and_compound() {
+fn used_once_immediate_call_chain_yes_intervening_and_compound_no() {
+    assert_eq!(
+        used("fn f(b: i32) i32 {\n  const g = compute(b);\n  return g;\n}"),
+        vec!["g"]
+    );
+    assert_eq!(
+        used("fn f(b: i32) i32 {\n  const g = compute(b);\n  side();\n  return g;\n}"),
+        Vec::<String>::new()
+    );
     assert_eq!(
         used("fn f(b: i32) i32 {\n  var g = compute(b);\n  g += 1;\n  return g;\n}"),
         Vec::<String>::new()
     );
+}
+
+#[test]
+fn never_used_dead_call_keeps_initializer() {
+    let f = never_used_offenses(&parse(
+        "fn f() i32 {\n  const gone = compute(1);\n  return 0;\n}",
+    ));
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].name, "gone");
+    assert!(f[0].keep_init);
 }
 
 #[test]

@@ -63,7 +63,40 @@ fn used_once_rejections() {
                \x20       e = 1\n\
                \x20   _u = 3\n\
                \x20   return d\n";
+    // bare alias `a` is yes; `d = id(a)` has intervening statements before use
     assert_eq!(used(src), vec!["a"]);
+}
+
+#[test]
+fn used_once_immediate_call_chain_yes_intervening_and_loop_no() {
+    assert_eq!(
+        used("def ok():\n    a = id(1)\n    return a\n"),
+        vec!["a"]
+    );
+    assert_eq!(
+        used("def no():\n    a = id(1)\n    side()\n    return a\n"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        used("def loop(items):\n    a = id(1)\n    for i in items:\n        use(a)\n"),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn never_used_dead_call_keeps_initializer() {
+    let f = never_used_offenses(&parse("def dd():\n    gone = id(1)\n    return 0\n"));
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].name, "gone");
+    assert!(f[0].keep_init);
+}
+
+#[test]
+fn tuple_unpack_names_are_not_inline_candidates() {
+    assert_eq!(
+        used("def f(pair):\n    a, b = pair\n    return a + b\n"),
+        Vec::<String>::new()
+    );
 }
 
 #[test]

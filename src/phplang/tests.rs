@@ -115,6 +115,32 @@ fn used_once_rejections() {
 }
 
 #[test]
+fn used_once_immediate_call_chain_yes_loop_no() {
+    assert_eq!(
+        used("<?php\nfunction ok(): int {\n  $a = id(1);\n  return (int) $a;\n}"),
+        vec!["a"]
+    );
+    assert_eq!(
+        used(
+            "<?php\nfunction loop(array $items): void {\n\
+             \x20 $a = id(1);\n\
+             \x20 foreach ($items as $i) { echo $a; }\n}"
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn never_used_dead_call_keeps_initializer() {
+    let f = never_used_offenses(&parse(
+        "<?php\nfunction dd(): int {\n  $gone = id(1);\n  return 0;\n}",
+    ));
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].name, "gone");
+    assert!(f[0].keep_init);
+}
+
+#[test]
 fn never_used_reports_dead_writes_once() {
     let src = "<?php\nfunction dd(): int {\n\
                \x20 $unused = 1;\n\

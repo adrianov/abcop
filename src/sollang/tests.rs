@@ -109,6 +109,39 @@ fn used_once_rejections() {
 }
 
 #[test]
+fn used_once_immediate_call_chain_yes_intervening_no() {
+    assert_eq!(
+        used(
+            "contract T {\n  function ok() public returns (uint256) {\n\
+             \x20   uint256 a = id();\n\
+             \x20   return a;\n  }\n}"
+        ),
+        vec!["a"]
+    );
+    assert_eq!(
+        used(
+            "contract T {\n  function no() public returns (uint256) {\n\
+             \x20   uint256 a = id();\n\
+             \x20   side();\n\
+             \x20   return a;\n  }\n}"
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn never_used_dead_call_keeps_initializer() {
+    let f = never_used_offenses(&parse(
+        "contract T {\n  function dd() public pure returns (uint256) {\n\
+         \x20   uint256 gone = id();\n\
+         \x20   return 0;\n  }\n}",
+    ));
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].name, "gone");
+    assert!(f[0].keep_init);
+}
+
+#[test]
 fn never_used_reports_dead_writes_once() {
     let src = "contract T {\n  function dd() public pure returns (uint256) {\n\
                \x20   uint256 unused = 1;\n\

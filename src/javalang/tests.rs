@@ -111,7 +111,35 @@ fn used_once_rejections() {
                \x20   if (f) { int e = 1; }\n\
                \x20   return a;\n\
                \x20 }\n}";
+    // `a = id()` is a call chain, but an intervening write blocks substitution
     assert_eq!(used(src), Vec::<String>::new());
+}
+
+#[test]
+fn used_once_immediate_call_chain_yes_loop_no() {
+    assert_eq!(
+        used("class K {\n  int ok() {\n    int a = id();\n    return a;\n  }\n}"),
+        vec!["a"]
+    );
+    assert_eq!(
+        used(
+            "class K {\n  void loop(java.util.List<Integer> items) {\n\
+             \x20   int a = id();\n\
+             \x20   for (int i : items) { System.out.println(a); }\n\
+             \x20 }\n}"
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn never_used_dead_call_keeps_initializer() {
+    let f = never_used_offenses(&parse(
+        "class K {\n  int dd() {\n    int gone = id();\n    return 0;\n  }\n}",
+    ));
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].name, "gone");
+    assert!(f[0].keep_init);
 }
 
 #[test]

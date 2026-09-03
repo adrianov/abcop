@@ -69,6 +69,46 @@ fn js_used_once_flags_immediate_call_chain() {
 }
 
 #[test]
+fn js_call_chain_rejected_with_intervening_statement() {
+    let src = "function f() {\n  const a = helper();\n  side();\n  return a;\n}";
+    assert_eq!(used(Lang::Js, src), Vec::<String>::new());
+}
+
+#[test]
+fn js_call_chain_in_loop_read_rejected() {
+    let src = "function f(items) {\n  const a = helper();\n  for (const x of items) { use(a); }\n}";
+    assert_eq!(used(Lang::Js, src), Vec::<String>::new());
+}
+
+#[test]
+fn js_bare_alias_flagged_until_source_reassigned() {
+    assert_eq!(
+        used(Lang::Js, "function f(items) {\n  const a = items;\n  return a;\n}"),
+        vec!["a"]
+    );
+    // params are not local bindings here; reassignment guard needs a local source
+    assert_eq!(
+        used(
+            Lang::Js,
+            "function f() {\n  let items = [1];\n  let a = items;\n  items = [2];\n  return a;\n}"
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn js_dead_call_chain_keeps_initializer() {
+    let src = b"function f() {\n  const gone = helper();\n  return 1;\n}";
+    let f = super::never_used_offenses(
+        &super::collect_scopes(src, &parse_file_lang(src, Lang::Js).unwrap(), Lang::Js),
+        Lang::Js,
+    );
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].name, "gone");
+    assert!(f[0].keep_init);
+}
+
+#[test]
 fn js_loop_heads_are_protocol() {
     let src = "function f(items) {\n  for (const k in items) { items[k]; }\n}";
     assert_eq!(dead(Lang::Js, src), Vec::<String>::new());

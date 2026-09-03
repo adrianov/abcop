@@ -56,6 +56,47 @@ fn swift_reassigned_var_is_not_inline_candidate() {
 }
 
 #[test]
+fn swift_immediate_call_chain_yes_intervening_and_loop_no() {
+    assert_eq!(
+        used(
+            Lang::Swift,
+            "func f() -> Int {\n  let a = helper()\n  return a\n}"
+        ),
+        vec!["a"]
+    );
+    assert_eq!(
+        used(
+            Lang::Swift,
+            "func f() -> Int {\n  let a = helper()\n  side()\n  return a\n}"
+        ),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        used(
+            Lang::Swift,
+            "func f(_ items: [Int]) {\n  let a = helper()\n  for x in items { use(a) }\n}"
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn swift_dead_call_keeps_initializer() {
+    let src = b"func f() -> Int {\n  let gone = helper()\n  return 1\n}";
+    let f = super::never_used_offenses(
+        &super::collect_scopes(
+            src,
+            &parse_file_lang(src, Lang::Swift).unwrap(),
+            Lang::Swift,
+        ),
+        Lang::Swift,
+    );
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].name, "gone");
+    assert!(f[0].keep_init);
+}
+
+#[test]
 fn swift_member_reads_are_not_variable_reads() {
     let src = "class C {\n  func f() {\n    let x = 1\n    return self.helper + x\n  }\n  func helper() -> Int { 0 }\n}";
 

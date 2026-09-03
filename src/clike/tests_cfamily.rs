@@ -54,6 +54,40 @@ fn c_pointer_wrappers_still_bind_the_name() {
 }
 
 #[test]
+fn c_immediate_call_chain_yes_intervening_and_loop_no() {
+    assert_eq!(
+        used(Lang::C, "int f(void) {\n  int a = helper();\n  return a;\n}"),
+        vec!["a"]
+    );
+    assert_eq!(
+        used(
+            Lang::C,
+            "int f(void) {\n  int a = helper();\n  side();\n  return a;\n}"
+        ),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        used(
+            Lang::C,
+            "int f(int n) {\n  int a = helper();\n  for (int i = 0; i < n; i++) { use(a); }\n  return 0;\n}"
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn c_dead_call_keeps_initializer() {
+    let src = b"int f(void) {\n  int gone = helper();\n  return 1;\n}";
+    let f = super::never_used_offenses(
+        &super::collect_scopes(src, &parse_file_lang(src, Lang::C).unwrap(), Lang::C),
+        Lang::C,
+    );
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].name, "gone");
+    assert!(f[0].keep_init);
+}
+
+#[test]
 fn c_compound_ops_and_increments_are_not_inline_candidates() {
     let src = "int main(void) {\n  int t = 0;\n  t += 1;\n  t++;\n  return t;\n}";
     assert_eq!(used(Lang::C, src), Vec::<String>::new());

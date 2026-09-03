@@ -133,6 +133,33 @@ fn used_once_rejections() {
 }
 
 #[test]
+fn used_once_immediate_call_chain_yes_loop_no() {
+    assert_eq!(
+        used("class K {\n  int Ok() {\n    var a = Id();\n    return a;\n  }\n}"),
+        vec!["a"]
+    );
+    assert_eq!(
+        used(
+            "class K {\n  void Loop(System.Collections.Generic.List<int> items) {\n\
+             \x20   var a = Id();\n\
+             \x20   foreach (var i in items) { System.Console.WriteLine(a); }\n\
+             \x20 }\n}"
+        ),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn never_used_dead_call_keeps_initializer() {
+    let f = never_used_offenses(&parse(
+        "class K {\n  int Dd() {\n    var gone = Id();\n    return 0;\n  }\n}",
+    ));
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].name, "gone");
+    assert!(f[0].keep_init);
+}
+
+#[test]
 fn never_used_reports_dead_writes_once() {
     let src = "class K {\n  int Dd() {\n    var unused = 1;\n    return 0;\n  }\n}";
     assert_eq!(dead(src), vec!["unused"]);
