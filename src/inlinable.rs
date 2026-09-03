@@ -52,6 +52,7 @@ pub const PHP_UNITS: &[&str] = &[
 pub const PHP_IDENT: &str = "variable_name";
 
 pub const DART_UNITS: &[&str] = &[
+    "call_expression",
     "function_expression",
     "instance_creation_expression",
     "selector",
@@ -63,7 +64,7 @@ pub const DART_IDENT: &str = "identifier";
 pub const ZIG_UNITS: &[&str] = &["call_expression", "field_access", "array_access", "slice"];
 pub const ZIG_IDENT: &str = "identifier";
 
-pub const SOL_UNITS: &[&str] = &["function_call", "member_expression", "index_access"];
+pub const SOL_UNITS: &[&str] = &["call_expression", "member_expression", "index_access"];
 pub const SOL_IDENT: &str = "identifier";
 
 pub const PY_UNITS: &[&str] = &["call", "attribute", "subscript"];
@@ -91,8 +92,11 @@ const STMT_LIST_PARENTS: &[&str] = &[
     "body_statement",
     "block_body",
     "statement_block",
+    "statement_list",
+    "statements",
     "block",
     "compound_statement",
+    "function_body",
     "program",
     "source_file",
     "declaration_list",
@@ -211,6 +215,18 @@ pub fn alias_stable(
     }
 }
 
+/// Peel grammar wrappers (`expression`, parens) so unit-kind checks see
+/// the call/index node Solidity and similar grammars nest under them.
+fn peel_rhs(n: Node) -> Node {
+    let mut cur = n;
+    while cur.named_child_count() == 1
+        && matches!(cur.kind(), "expression" | "parenthesized_expression")
+    {
+        cur = cur.named_child(0).expect("named_child_count == 1");
+    }
+    cur
+}
+
 /// RHS may replace a read site or stand alone when the binding is dropped.
 pub fn rhs_inlinable(
     src: &[u8],
@@ -222,6 +238,7 @@ pub fn rhs_inlinable(
     read_byte: Option<usize>,
     write_site: Option<Node>,
 ) -> bool {
+    let n = peel_rhs(n);
     if sem.unit_kinds.contains(&n.kind()) {
         return match read_byte {
             None => true,
@@ -246,11 +263,11 @@ pub fn rhs_inlinable(
 
 /// True when the initializer is a call/index chain to keep as a statement.
 pub fn keep_init_rhs(n: Node, sem: &Semantics) -> bool {
-    sem.unit_kinds.contains(&n.kind())
+    sem.unit_kinds.contains(&peel_rhs(n).kind())
 }
 
 pub fn keep_init_kind(n: Node, unit_kinds: &[&str]) -> bool {
-    unit_kinds.contains(&n.kind())
+    unit_kinds.contains(&peel_rhs(n).kind())
 }
 
 pub fn ruby_alias_stable(
