@@ -61,7 +61,7 @@ fn used_once_rejections() {
                \x20       e = 1\n\
                \x20   _u = 3\n\
                \x20   return d\n";
-    assert_eq!(used(src), Vec::<String>::new());
+    assert_eq!(used(src), vec!["a"]);
 }
 
 #[test]

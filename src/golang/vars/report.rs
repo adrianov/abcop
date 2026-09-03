@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use tree_sitter::Node;
 
-use super::purity::{index_nodes, pure, unconditionally_executed};
+use super::purity::{index_nodes, inlinable_rhs, keep_init, unconditionally_executed};
 use super::{Entry, IntroKind, Write};
 use crate::golang::GoFile;
 use crate::never_used::NeverUsedOffense;
@@ -14,9 +14,9 @@ use crate::used_once::UsedOnceOffense;
 pub fn used_once_offenses(fm: &GoFile) -> Vec<UsedOnceOffense> {
     let nodes = index_nodes(fm.tree.root_node());
     let mut out = Vec::new();
-    for scope in &fm.scopes {
-        for (name, e) in &scope.entries {
-            if let Some(o) = single_use(fm, &nodes, name, e) {
+    for (scope, scope_data) in fm.scopes.iter().enumerate() {
+        for (name, e) in &scope_data.entries {
+            if let Some(o) = single_use(fm, &nodes, scope, name, e) {
                 out.push(o);
             }
         }
@@ -27,10 +27,11 @@ pub fn used_once_offenses(fm: &GoFile) -> Vec<UsedOnceOffense> {
 }
 
 pub fn never_used_offenses(fm: &GoFile) -> Vec<NeverUsedOffense> {
+    let nodes = index_nodes(fm.tree.root_node());
     let mut out = Vec::new();
-    for scope in &fm.scopes {
-        for (name, e) in &scope.entries {
-            if let Some(o) = never_used(fm, name, e) {
+    for (scope, scope_data) in fm.scopes.iter().enumerate() {
+        for (name, e) in &scope_data.entries {
+            if let Some(o) = never_used(fm, &nodes, scope, name, e) {
                 out.push(o);
             }
         }
@@ -45,7 +46,13 @@ fn finalize(mut out: Vec<NeverUsedOffense>) -> Vec<NeverUsedOffense> {
     out
 }
 
-fn never_used(fm: &GoFile, name: &str, e: &Entry) -> Option<NeverUsedOffense> {
+fn never_used(
+    fm: &GoFile,
+    nodes: &HashMap<usize, Node>,
+    scope: usize,
+    name: &str,
+    e: &Entry,
+) -> Option<NeverUsedOffense> {
     if !e.reads.is_empty() || e.writes.is_empty() {
         return None;
     }
@@ -55,7 +62,60 @@ fn never_used(fm: &GoFile, name: &str, e: &Entry) -> Option<NeverUsedOffense> {
         line,
         column,
         name: name.to_string(),
+        keep_init: keep_init_for_dead(fm, nodes, scope, e),
     })
+}
+
+fn keep_init_for_dead(
+    fm: &GoFile,
+    nodes: &HashMap<usize, Node>,
+    scope: usize,
+    e: &Entry,
+) -> bool {
+    let w = match plain_write(e) {
+        Some(w) => w,
+        None => return false,
+    };
+    let (rhs, write_node) = match write_rhs_nodes(w, nodes) {
+        Some(nodes) => nodes,
+        None => return false,
+    };
+    inlinable_at_write(fm, w, rhs, write_node, scope, None).is_some() && keep_init(rhs)
+}
+
+fn write_rhs_nodes<'t>(
+    w: &Write,
+    nodes: &HashMap<usize, Node<'t>>,
+) -> Option<(Node<'t>, Node<'t>)> {
+    Some((*nodes.get(&w.rhs?)?, *nodes.get(&w.node_id)?))
+}
+
+fn inlinable_at_write(
+    fm: &GoFile,
+    w: &Write,
+    rhs: Node,
+    write_node: Node,
+    scope: usize,
+    read_byte: Option<usize>,
+) -> Option<()> {
+    if inlinable_rhs(
+        fm.src,
+        &fm.scopes,
+        rhs,
+        scope,
+        w.byte,
+        read_byte,
+        Some(write_node),
+    ) && unconditionally_executed(write_node)
+    {
+        Some(())
+    } else {
+        None
+    }
+}
+
+fn plain_write(e: &Entry) -> Option<&Write> {
+    e.writes.iter().find(|w| w.plain && w.rhs.is_some())
 }
 
 /// Structurally eligible single write/read pair: one plain write with a
@@ -74,15 +134,13 @@ fn candidate(e: &Entry) -> Option<&Write> {
 fn single_use<'t>(
     fm: &'t GoFile<'t>,
     nodes: &HashMap<usize, Node<'t>>,
+    scope: usize,
     name: &str,
     e: &Entry,
 ) -> Option<UsedOnceOffense> {
     let w = candidate(e)?;
-    let rhs = *nodes.get(&w.rhs?)?;
-    let write_node = *nodes.get(&w.node_id)?;
-    if !pure(rhs) || !unconditionally_executed(write_node) {
-        return None;
-    }
+    let (rhs, write_node) = write_rhs_nodes(w, nodes)?;
+    inlinable_at_write(fm, w, rhs, write_node, scope, Some(e.reads[0]))?;
     let (line, column) = fm.line_col(w.byte);
     Some(UsedOnceOffense {
         line,

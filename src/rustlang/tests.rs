@@ -128,9 +128,10 @@ fn simple_single_use_is_flagged_at_let_line() {
 }
 
 #[test]
-fn impure_rhs_rejected() {
+fn method_call_rhs_is_flagged() {
     let f = flags("fn f(x: &str) {\n  let s = x.to_string();\n  p(s);\n}");
-    assert!(f.is_empty());
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].name, "s");
 }
 
 #[test]

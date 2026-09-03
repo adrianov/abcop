@@ -4,6 +4,7 @@
 use tree_sitter::Node;
 
 use super::SolFile;
+use crate::inlinable::{SOL_IDENT, SOL_UNITS};
 use crate::scope_model;
 
 /// Ancestors that mark a write as conditional.
@@ -25,6 +26,8 @@ const OWNER_KINDS: &[&str] = &[
 
 static SOLIDITY_SEMANTICS: scope_model::Semantics = scope_model::Semantics {
     pure,
+    unit_kinds: SOL_UNITS,
+    ident_kind: SOL_IDENT,
     veto: VETO_KINDS,
     owners: OWNER_KINDS,
     include_root_scope: true,
@@ -33,6 +36,7 @@ static SOLIDITY_SEMANTICS: scope_model::Semantics = scope_model::Semantics {
 pub fn used_once_offenses(fm: &SolFile) -> Vec<crate::used_once::UsedOnceOffense> {
     scope_model::used_once_offenses(
         fm.tree.root_node(),
+        fm.src,
         &|byte| fm.line_col(byte),
         &fm.scopes,
         &SOLIDITY_SEMANTICS,
@@ -40,7 +44,10 @@ pub fn used_once_offenses(fm: &SolFile) -> Vec<crate::used_once::UsedOnceOffense
 }
 
 pub fn never_used_offenses(fm: &SolFile) -> Vec<crate::never_used::NeverUsedOffense> {
-    scope_model::never_used_offenses(&|byte| fm.line_col(byte), &fm.scopes, &SOLIDITY_SEMANTICS)
+    scope_model::never_used_offenses(
+        fm.tree.root_node(),
+        fm.src,
+        &|byte| fm.line_col(byte), &fm.scopes, &SOLIDITY_SEMANTICS)
 }
 
 /// Conservative RHS purity: literals, arrays/tuples of literals, and

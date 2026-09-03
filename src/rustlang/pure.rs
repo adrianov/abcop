@@ -1,8 +1,10 @@
-//! RHS purity predicates and NeverUsed analysis.
+//! RHS inlinability predicates and NeverUsed analysis.
 
 use tree_sitter::Node;
 
-use super::scope::{Entry, RustFile, Write};
+use crate::inlinable::{immediate_substitutable, keep_init_kind, RUST_IDENT, RUST_UNITS};
+
+use super::scope::{Entry, RustFile, Scope, ScopeKind, Write};
 
 /// Conservative RHS purity: literals, constant paths, and compositions of
 /// comparisons/logical/arithmetic over those. Calls, macros, `?`, field reads
@@ -16,8 +18,71 @@ pub(super) fn pure(fm: &RustFile, n: Node) -> bool {
         "binary_expression" | "tuple_expression" | "array_expression" | "range_expression" => {
             children_pure(fm, n)
         }
-        "type_cast_expression" | "field_expression" => child_pure(fm, n),
+        "type_cast_expression" => child_pure(fm, n),
         _ => false,
+    }
+}
+
+pub(super) fn inlinable_rhs(
+    fm: &RustFile,
+    n: Node,
+    scope: usize,
+    write_byte: usize,
+    read_byte: Option<usize>,
+    write_site: Option<Node>,
+) -> bool {
+    if RUST_UNITS.contains(&n.kind()) {
+        return match read_byte {
+            None => true,
+            Some(rb) => write_site.is_some_and(|site| immediate_substitutable(site, rb)),
+        };
+    }
+    if n.kind() == RUST_IDENT {
+        let name = fm.text(n);
+        return match read_byte {
+            Some(end) => alias_stable(fm, scope, write_byte, name, write_byte, end),
+            None => true,
+        };
+    }
+    pure(fm, n)
+}
+
+pub(super) fn keep_init(n: Node) -> bool {
+    keep_init_kind(n, RUST_UNITS)
+}
+
+fn alias_stable(
+    fm: &RustFile,
+    scope: usize,
+    pos: usize,
+    name: &str,
+    write_byte: usize,
+    read_byte: usize,
+) -> bool {
+    let Some(bind_scope) = lookup(&fm.scopes, scope, pos, name) else {
+        return true;
+    };
+    let Some(entry) = fm.scopes[bind_scope].entries.get(name) else {
+        return true;
+    };
+    !entry
+        .writes
+        .iter()
+        .any(|w| w.byte > write_byte && w.byte < read_byte)
+}
+
+fn lookup(scopes: &[Scope], scope: usize, pos: usize, name: &str) -> Option<usize> {
+    let data = &scopes[scope];
+    if let Some(e) = data.entries.get(name) {
+        return if e.intro_byte <= pos {
+            Some(scope)
+        } else {
+            None
+        };
+    }
+    match data.kind {
+        ScopeKind::Block => lookup(scopes, data.parent?, pos, name),
+        _ => None,
     }
 }
 
@@ -64,11 +129,12 @@ pub(super) fn unconditionally_executed(write_node: Node) -> bool {
 /// NeverUsed for Rust sources: bindings with writes but zero reads whose
 /// initializer carries no macro invocation.
 pub fn never_used_offenses(fm: &RustFile) -> Vec<crate::never_used::NeverUsedOffense> {
+    let nodes = index_nodes(fm.tree.root_node());
     let mut out = Vec::new();
-    for scope in &fm.scopes {
-        for (name, e) in &scope.entries {
-            if never_used_entry(fm, e) {
-                out.push(offense_at_first_write(fm, name, e));
+    for (scope, scope_data) in fm.scopes.iter().enumerate() {
+        for (name, e) in &scope_data.entries {
+            if let Some(offense) = dead_offense(fm, &nodes, scope, name, e) {
+                out.push(offense);
             }
         }
     }
@@ -77,9 +143,75 @@ pub fn never_used_offenses(fm: &RustFile) -> Vec<crate::never_used::NeverUsedOff
     out
 }
 
+fn dead_offense(
+    fm: &RustFile,
+    nodes: &std::collections::HashMap<usize, Node>,
+    scope: usize,
+    name: &str,
+    e: &Entry,
+) -> Option<crate::never_used::NeverUsedOffense> {
+    if !never_used_entry(fm, e) {
+        return None;
+    }
+    let first = e.writes.iter().map(|w| w.byte).min()?;
+    Some(offense_at_write(
+        fm,
+        name,
+        first,
+        keep_init_for_dead(fm, nodes, scope, e),
+    ))
+}
+
+fn keep_init_for_dead(
+    fm: &RustFile,
+    nodes: &std::collections::HashMap<usize, Node>,
+    scope: usize,
+    e: &Entry,
+) -> bool {
+    let w = match plain_write(e) {
+        Some(w) => w,
+        None => return false,
+    };
+    if !macro_free_rhs(fm, w) {
+        return false;
+    }
+    let (rhs, write_node) = match write_rhs_nodes(w, nodes) {
+        Some(nodes) => nodes,
+        None => return false,
+    };
+    inlinable_rhs(fm, rhs, scope, w.byte, None, None) && unconditionally_executed(write_node)
+        && keep_init(rhs)
+}
+
+fn write_rhs_nodes<'t>(
+    w: &Write,
+    nodes: &std::collections::HashMap<usize, Node<'t>>,
+) -> Option<(Node<'t>, Node<'t>)> {
+    let (rhs_id, _) = w.rhs?;
+    Some((*nodes.get(&rhs_id)?, *nodes.get(&w.node_id)?))
+}
+
 /// Zero reads overall and no macro-interpolated initializer anywhere.
 fn never_used_entry(fm: &RustFile, e: &Entry) -> bool {
     e.reads.is_empty() && !e.writes.is_empty() && e.writes.iter().all(|w| macro_free_rhs(fm, w))
+}
+
+fn plain_write(e: &Entry) -> Option<&Write> {
+    e.writes.iter().find(|w| w.plain && w.rhs.is_some())
+}
+
+fn index_nodes<'t>(root: Node<'t>) -> std::collections::HashMap<usize, Node<'t>> {
+    let mut map = std::collections::HashMap::new();
+    rec(root, &mut map);
+    map
+}
+
+fn rec<'t>(n: Node<'t>, map: &mut std::collections::HashMap<usize, Node<'t>>) {
+    map.insert(n.id(), n);
+    let mut cursor = n.walk();
+    for child in n.children(&mut cursor) {
+        rec(child, map);
+    }
 }
 
 /// A write qualifies when its RHS subtree contains no macro invocation.
@@ -94,17 +226,18 @@ fn macro_free_rhs(fm: &RustFile, w: &Write) -> bool {
         .unwrap_or(true)
 }
 
-fn offense_at_first_write(
+fn offense_at_write(
     fm: &RustFile,
     name: &str,
-    e: &Entry,
+    byte: usize,
+    keep_init: bool,
 ) -> crate::never_used::NeverUsedOffense {
-    let first = e.writes.iter().map(|w| w.byte).min().unwrap_or(0);
-    let (line, column) = fm.line_col(first);
+    let (line, column) = fm.line_col(byte);
     crate::never_used::NeverUsedOffense {
         line,
         column,
         name: name.to_string(),
+        keep_init,
     }
 }
 

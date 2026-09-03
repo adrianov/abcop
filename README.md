@@ -62,7 +62,7 @@ Fitzpatrick defined both method and module scope; abcop gates both:
 |---|---|---|
 | `Metrics/AbcSize` | C | function ABC above `--max-abc` (default 17) |
 | `Metrics/ModuleAbcSize` | W | module ABC above `--max-module-abc` (default 120) |
-| `UsedOnce` | W | local written once, read once — safe to inline |
+| `UsedOnce` | W | local written once, read once — consider inlining |
 | `NeverUsed` | W | local written, never read |
 
 A sparse wrapper and a dense god-object can share a line count; ABC

@@ -30,6 +30,7 @@ use std::collections::HashSet;
 use tree_sitter::{Node, Tree};
 
 use crate::abc::{AbcOffense, offense_at};
+use crate::inlinable::{C_IDENT, C_UNITS, JS_IDENT, JS_UNITS, SWIFT_IDENT, SWIFT_UNITS};
 use crate::never_used::NeverUsedOffense;
 use crate::paths::Lang;
 use crate::used_once::UsedOnceOffense;
@@ -38,10 +39,11 @@ use crate::used_once::UsedOnceOffense;
 pub(crate) struct JsScopes<'t> {
     pub scopes: Vec<crate::scope_model::Scope>,
     pub root: tree_sitter::Node<'t>,
+    pub src: &'t [u8],
 }
 
 pub(crate) fn collect_scopes<'t>(
-    src: &[u8],
+    src: &'t [u8],
     tree: &'t Tree,
     lang: crate::paths::Lang,
 ) -> JsScopes<'t> {
@@ -54,11 +56,14 @@ pub(crate) fn collect_scopes<'t>(
     JsScopes {
         scopes,
         root: tree.root_node(),
+        src,
     }
 }
 
 static JS_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semantics {
     pure: purity::js_pure,
+    unit_kinds: JS_UNITS,
+    ident_kind: JS_IDENT,
     veto: &[
         "if_statement",
         "for_statement",
@@ -80,6 +85,8 @@ static JS_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semanti
 
 static SWIFT_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semantics {
     pure: purity::swift_pure,
+    unit_kinds: SWIFT_UNITS,
+    ident_kind: SWIFT_IDENT,
     veto: &[
         "if_statement",
         "guard_statement",
@@ -108,6 +115,8 @@ fn semantics_for(lang: crate::paths::Lang) -> &'static crate::scope_model::Seman
 
 static C_FAMILY_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semantics {
     pure: purity::c_like_pure,
+    unit_kinds: C_UNITS,
+    ident_kind: C_IDENT,
     veto: &[
         "if_statement",
         "for_statement",
@@ -126,6 +135,7 @@ static C_FAMILY_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::S
 pub(crate) fn used_once_offenses(sc: &JsScopes, lang: crate::paths::Lang) -> Vec<UsedOnceOffense> {
     crate::scope_model::used_once_offenses(
         sc.root,
+        sc.src,
         &|b| line_col(sc.root, b),
         &sc.scopes,
         semantics_for(lang),
@@ -137,6 +147,8 @@ pub(crate) fn never_used_offenses(
     lang: crate::paths::Lang,
 ) -> Vec<NeverUsedOffense> {
     crate::scope_model::never_used_offenses(
+        sc.root,
+        sc.src,
         &|b| line_col(sc.root, b),
         &sc.scopes,
         semantics_for(lang),

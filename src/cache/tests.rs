@@ -28,6 +28,7 @@ fn sample(module_abc: Option<crate::modulesize::ModuleAbc>) -> CachedDiags {
             line: 30,
             column: 2,
             name: "dead".into(),
+            keep_init: false,
         }],
         module_abc,
     )

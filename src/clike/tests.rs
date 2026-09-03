@@ -53,6 +53,12 @@ fn js_used_once_rejections() {
 }
 
 #[test]
+fn js_used_once_flags_immediate_call_chain() {
+    let src = "function f() {\n  const a = helper();\n  return a;\n}";
+    assert_eq!(used(Lang::Js, src), vec!["a"]);
+}
+
+#[test]
 fn js_loop_heads_are_protocol() {
     let src = "function f(items) {\n  for (const k in items) { items[k]; }\n}";
     assert_eq!(dead(Lang::Js, src), Vec::<String>::new());

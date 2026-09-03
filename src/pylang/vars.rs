@@ -16,7 +16,7 @@ use tree_sitter::Node;
 use super::PyFile;
 use crate::never_used::NeverUsedOffense;
 use crate::used_once::UsedOnceOffense;
-use purity::{pure, unconditionally_executed};
+use purity::{inlinable_rhs, keep_init, unconditionally_executed};
 
 pub(super) use collector::collect;
 
@@ -86,9 +86,9 @@ const VETO_KINDS: &[&str] = &[
 pub(crate) fn used_once_offenses(fm: &PyFile) -> Vec<UsedOnceOffense> {
     let nodes = index_nodes(fm.tree.root_node());
     let mut out = Vec::new();
-    for scope in &fm.scopes {
-        for (name, e) in &scope.entries {
-            if let Some(o) = single_use(fm, &nodes, name, e) {
+    for (scope, scope_data) in fm.scopes.iter().enumerate() {
+        for (name, e) in &scope_data.entries {
+            if let Some(o) = single_use(fm, &nodes, scope, name, e) {
                 out.push(o);
             }
         }
@@ -99,23 +99,69 @@ pub(crate) fn used_once_offenses(fm: &PyFile) -> Vec<UsedOnceOffense> {
 }
 
 pub(crate) fn never_used_offenses(fm: &PyFile) -> Vec<NeverUsedOffense> {
+    let nodes = index_nodes(fm.tree.root_node());
     let mut out = Vec::new();
-    for scope in &fm.scopes {
-        for (name, e) in &scope.entries {
-            if !e.reads.is_empty() || e.writes.is_empty() {
-                continue;
+    for (scope, scope_data) in fm.scopes.iter().enumerate() {
+        for (name, e) in &scope_data.entries {
+            if let Some(o) = dead_binding(fm, &nodes, scope, name, e) {
+                out.push(o);
             }
-            let (line, column) = fm.line_col(e.writes[0].byte);
-            out.push(NeverUsedOffense {
-                line,
-                column,
-                name: name.to_string(),
-            });
         }
     }
     out.sort_by_key(|o| (o.line, o.column));
     out.dedup_by(|a, b| a.line == b.line && a.column == b.column && a.name == b.name);
     out
+}
+
+fn dead_binding(
+    fm: &PyFile,
+    nodes: &HashMap<usize, Node>,
+    scope: usize,
+    name: &str,
+    e: &Entry,
+) -> Option<NeverUsedOffense> {
+    if !e.reads.is_empty() || e.writes.is_empty() {
+        return None;
+    }
+    let first = e.writes.iter().map(|w| w.byte).min().unwrap_or(0);
+    let (line, column) = fm.line_col(first);
+    Some(NeverUsedOffense {
+        line,
+        column,
+        name: name.to_string(),
+        keep_init: keep_init_for_dead(fm, nodes, scope, e),
+    })
+}
+
+fn keep_init_for_dead(
+    fm: &PyFile,
+    nodes: &HashMap<usize, Node>,
+    scope: usize,
+    e: &Entry,
+) -> bool {
+    let w = match plain_write(e) {
+        Some(w) => w,
+        None => return false,
+    };
+    let rhs_id = match w.rhs {
+        Some(id) => id,
+        None => return false,
+    };
+    let rhs = match nodes.get(&rhs_id) {
+        Some(rhs) => *rhs,
+        None => return false,
+    };
+    let write_node = match nodes.get(&w.node_id) {
+        Some(node) => *node,
+        None => return false,
+    };
+    inlinable_rhs(fm.src, &fm.scopes, rhs, scope, w.byte, None, None)
+        && unconditionally_executed(write_node)
+        && keep_init(rhs)
+}
+
+fn plain_write(e: &Entry) -> Option<&Write> {
+    e.writes.iter().find(|w| w.plain && w.rhs.is_some())
 }
 
 /// An entry is an inline candidate when it holds one plain
@@ -133,6 +179,7 @@ fn inline_candidate(e: &Entry) -> bool {
 fn single_use<'t>(
     fm: &'t PyFile<'t>,
     nodes: &HashMap<usize, Node<'t>>,
+    scope: usize,
     name: &str,
     e: &Entry,
 ) -> Option<UsedOnceOffense> {
@@ -140,7 +187,16 @@ fn single_use<'t>(
         return None;
     }
     let (rhs, write_node) = inline_nodes(nodes, e)?;
-    if !pure(rhs) || !unconditionally_executed(write_node) {
+    if !inlinable_rhs(
+        fm.src,
+        &fm.scopes,
+        rhs,
+        scope,
+        e.writes[0].byte,
+        Some(e.reads[0]),
+        Some(write_node),
+    ) || !unconditionally_executed(write_node)
+    {
         return None;
     }
     let (line, column) = fm.line_col(e.writes[0].byte);

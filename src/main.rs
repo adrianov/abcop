@@ -12,6 +12,7 @@ mod git_changes;
 #[cfg(test)]
 mod git_changes_tests;
 mod golang;
+mod inlinable;
 mod javalang;
 mod model;
 mod modulesize;

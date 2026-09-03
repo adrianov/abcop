@@ -3,10 +3,12 @@
 
 use tree_sitter::Node;
 
+use crate::inlinable::{immediate_substitutable, keep_init_kind, PY_IDENT, PY_UNITS};
+
+use super::Scope;
 use super::VETO_KINDS;
 
-/// Conservative RHS purity: literals and operator compositions over them.
-/// References to other locals are rejected, mirroring the Rust backend.
+/// Literals and operator compositions over them.
 pub(super) fn pure(n: Node) -> bool {
     match n.kind() {
         "integer" | "float" | "true" | "false" | "none" => true,
@@ -22,6 +24,70 @@ pub(super) fn pure(n: Node) -> bool {
         | "boolean_operator"
         | "parenthesized_expression" => children_pure(n),
         _ => false,
+    }
+}
+
+pub(super) fn inlinable_rhs(
+    src: &[u8],
+    scopes: &[Scope],
+    n: Node,
+    scope: usize,
+    write_byte: usize,
+    read_byte: Option<usize>,
+    write_site: Option<Node>,
+) -> bool {
+    if PY_UNITS.contains(&n.kind()) {
+        return match read_byte {
+            None => true,
+            Some(rb) => write_site.is_some_and(|site| immediate_substitutable(site, rb)),
+        };
+    }
+    if n.kind() == PY_IDENT {
+        let name = n.utf8_text(src).unwrap_or("");
+        return match read_byte {
+            Some(end) => alias_stable(scopes, scope, write_byte, name, write_byte, end),
+            None => true,
+        };
+    }
+    pure(n)
+}
+
+pub(super) fn keep_init(n: Node) -> bool {
+    keep_init_kind(n, PY_UNITS)
+}
+
+fn alias_stable(
+    scopes: &[Scope],
+    scope: usize,
+    pos: usize,
+    name: &str,
+    write_byte: usize,
+    read_byte: usize,
+) -> bool {
+    let Some(bind_scope) = lookup(scopes, scope, pos, name) else {
+        return true;
+    };
+    let Some(entry) = scopes[bind_scope].entries.get(name) else {
+        return true;
+    };
+    !entry
+        .writes
+        .iter()
+        .any(|w| w.byte > write_byte && w.byte < read_byte)
+}
+
+fn lookup(scopes: &[Scope], scope: usize, pos: usize, name: &str) -> Option<usize> {
+    let data = &scopes[scope];
+    if let Some(e) = data.entries.get(name) {
+        return if e.intro_byte <= pos {
+            Some(scope)
+        } else {
+            None
+        };
+    }
+    match data.kind {
+        super::ScopeKind::Block => lookup(scopes, data.parent?, pos, name),
+        _ => None,
     }
 }
 

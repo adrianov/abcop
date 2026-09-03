@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use tree_sitter::Node;
 
-use super::pure::{pure, unconditionally_executed};
+use super::pure::{inlinable_rhs, unconditionally_executed};
 use super::scope::{Entry, IntroKind, RustFile, Write};
 
 use crate::used_once::UsedOnceOffense;
@@ -12,9 +12,9 @@ pub fn used_once_offenses(fm: &RustFile) -> Vec<UsedOnceOffense> {
     let nodes = index_nodes(fm.tree.root_node());
     let mut out = Vec::new();
 
-    for scope in &fm.scopes {
-        for (name, e) in &scope.entries {
-            if let Some(offense) = single_use(fm, &nodes, name, e) {
+    for (scope, scope_data) in fm.scopes.iter().enumerate() {
+        for (name, e) in &scope_data.entries {
+            if let Some(offense) = single_use(fm, &nodes, scope, name, e) {
                 out.push(offense);
             }
         }
@@ -43,6 +43,7 @@ fn rec<'t>(n: Node<'t>, map: &mut HashMap<usize, Node<'t>>) {
 fn single_use<'t>(
     fm: &RustFile,
     nodes: &HashMap<usize, Node<'t>>,
+    scope: usize,
     name: &str,
     e: &Entry,
 ) -> Option<UsedOnceOffense> {
@@ -51,15 +52,12 @@ fn single_use<'t>(
     }
     let w = &e.writes[0];
     let (rhs_node, write_node) = resolved_rhs(nodes, w)?;
-    if !inlinable_write(fm, rhs_node, write_node) {
+    if !inlinable_rhs(fm, rhs_node, scope, w.byte, Some(e.reads[0]), Some(write_node))
+        || !unconditionally_executed(write_node)
+    {
         return None;
     }
     Some(offense_at_write(fm, name, w.byte))
-}
-
-/// Pure RHS executed straight-line: inlining preserves behaviour.
-fn inlinable_write(fm: &RustFile, rhs_node: Node, write_node: Node) -> bool {
-    pure(fm, rhs_node) && unconditionally_executed(write_node)
 }
 
 fn offense_at_write(fm: &RustFile, name: &str, byte: usize) -> UsedOnceOffense {

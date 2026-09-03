@@ -121,8 +121,13 @@ fn used_once_text(r: &FileResult, o: &UsedOnceOffense) -> String {
 }
 
 fn never_used_text(r: &FileResult, o: &NeverUsedOffense) -> String {
+    let hint = if o.keep_init {
+        " -- consider dropping the binding and keeping the initializer"
+    } else {
+        ""
+    };
     format!(
-        "{}:{}:{}: W: NeverUsed: variable `{}` is assigned but never used",
+        "{}:{}:{}: W: NeverUsed: variable `{}` is assigned but never used{hint}",
         r.path, o.line, o.column, o.name
     )
 }
@@ -340,6 +345,7 @@ mod tests {
                     line: 5,
                     column: 0,
                     name: "dead".into(),
+                    keep_init: false,
                 }],
                 module_abc: Some(ModuleAbc {
                     score: 130.0,

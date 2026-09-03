@@ -7,14 +7,18 @@ use std::collections::HashMap;
 use tree_sitter::Node;
 
 use super::{Entry, IntroKind, Scope, Write};
+use crate::inlinable::{keep_init_rhs, rhs_inlinable};
 use crate::never_used::NeverUsedOffense;
 use crate::used_once::UsedOnceOffense;
 
 /// The parts of candidate evaluation that differ per language.
 pub struct Semantics {
-    /// Conservative RHS purity: may this expression be inlined without
-    /// changing behavior?
+    /// Literals and operator compositions over them.
     pub pure: fn(Node) -> bool,
+    /// Expression kinds that move as one unit (calls, member/index chains).
+    pub unit_kinds: &'static [&'static str],
+    /// AST kind for a bare local read on the RHS.
+    pub ident_kind: &'static str,
     /// Ancestors that mark a write as conditional (kills inlining).
     pub veto: &'static [&'static str],
     /// Ancestors that end the straight-line check (unit boundaries).
@@ -27,21 +31,24 @@ pub struct Semantics {
 }
 
 /// Inline candidates: one plain introduction, one later resolved read,
-/// pure RHS, written on a straight-line path.
+/// inlinable RHS, written on a straight-line path.
 pub fn used_once_offenses(
     root: Node,
+    src: &[u8],
     line_col: &dyn Fn(usize) -> (usize, usize),
     scopes: &[Scope],
     sem: &Semantics,
 ) -> Vec<UsedOnceOffense> {
     let nodes = index_nodes(root);
     let mut out = Vec::new();
-    for scope in scopes {
-        if !sem.include_root_scope && scope.kind == super::ScopeKind::Root {
+    for (scope, scope_data) in scopes.iter().enumerate() {
+        if !sem.include_root_scope && scope_data.kind == super::ScopeKind::Root {
             continue;
         }
-        for (name, e) in &scope.entries {
-            if let Some(offense) = candidate_offense(name, e, &nodes, sem, line_col) {
+        for (name, e) in &scope_data.entries {
+            if let Some(offense) =
+                candidate_offense(name, e, &nodes, src, scopes, scope, sem, line_col)
+            {
                 out.push(offense);
             }
         }
@@ -49,31 +56,60 @@ pub fn used_once_offenses(
     finish(out)
 }
 
-/// The UsedOnce offense for one scope entry, or None when the entry's
-/// single write has no inlineable pure RHS or is not on a straight-line
-/// path.
 fn candidate_offense(
     name: &str,
     e: &super::Entry,
     nodes: &HashMap<usize, Node>,
+    src: &[u8],
+    scopes: &[Scope],
+    scope: usize,
     sem: &Semantics,
     line_col: &dyn Fn(usize) -> (usize, usize),
 ) -> Option<UsedOnceOffense> {
     let w = candidate(e)?;
-    let rhs_id = w.rhs?;
-    let (rhs, write_node) = match (nodes.get(&rhs_id), nodes.get(&w.node_id)) {
-        (Some(r), Some(w)) => (*r, *w),
-        _ => return None,
-    };
-    if !(sem.pure)(rhs) || !straight_line(write_node, sem) {
-        return None;
-    }
+    let (rhs, write_node) = write_rhs_nodes(w, nodes)?;
+    inlinable_write(src, w, rhs, write_node, scopes, scope, sem, Some(e.reads[0]))?;
     let (line, column) = line_col(w.byte);
     Some(UsedOnceOffense {
         line,
         column,
         name: name.to_string(),
     })
+}
+
+fn write_rhs_nodes<'t>(
+    w: &Write,
+    nodes: &HashMap<usize, Node<'t>>,
+) -> Option<(Node<'t>, Node<'t>)> {
+    let rhs_id = w.rhs?;
+    Some((*nodes.get(&rhs_id)?, *nodes.get(&w.node_id)?))
+}
+
+fn inlinable_write(
+    src: &[u8],
+    w: &Write,
+    rhs: Node,
+    write_node: Node,
+    scopes: &[Scope],
+    scope: usize,
+    sem: &Semantics,
+    read_byte: Option<usize>,
+) -> Option<()> {
+    if rhs_inlinable(
+        src,
+        rhs,
+        sem,
+        scopes,
+        scope,
+        w.byte,
+        read_byte,
+        Some(write_node),
+    ) && straight_line(write_node, sem)
+    {
+        Some(())
+    } else {
+        None
+    }
 }
 
 fn candidate(e: &Entry) -> Option<&Write> {
@@ -99,31 +135,77 @@ fn straight_line(write_node: Node, sem: &Semantics) -> bool {
 }
 
 /// Dead writes: bindings with at least one write and no resolved read,
-/// reported once at the first write.
+/// reported once at the first write. [`NeverUsedOffense::keep_init`] marks
+/// call-chain initializers that can stand alone as statements.
 pub fn never_used_offenses(
+    root: Node,
+    src: &[u8],
     line_col: &dyn Fn(usize) -> (usize, usize),
     scopes: &[Scope],
     sem: &Semantics,
 ) -> Vec<NeverUsedOffense> {
+    let nodes = index_nodes(root);
     let mut out = Vec::new();
-    for scope in scopes {
-        if !sem.include_root_scope && scope.kind == super::ScopeKind::Root {
+    for (scope, scope_data) in scopes.iter().enumerate() {
+        if !sem.include_root_scope && scope_data.kind == super::ScopeKind::Root {
             continue;
         }
-        for (name, e) in &scope.entries {
-            if !e.reads.is_empty() || e.writes.is_empty() {
-                continue;
+        for (name, e) in &scope_data.entries {
+            if let Some(offense) =
+                dead_offense(name, e, &nodes, src, scopes, scope, sem, line_col)
+            {
+                out.push(offense);
             }
-            let first = e.writes.iter().map(|w| w.byte).min().unwrap_or(0);
-            let (line, column) = line_col(first);
-            out.push(NeverUsedOffense {
-                line,
-                column,
-                name: name.to_string(),
-            });
         }
     }
     finish(out)
+}
+
+fn dead_offense(
+    name: &str,
+    e: &Entry,
+    nodes: &HashMap<usize, Node>,
+    src: &[u8],
+    scopes: &[Scope],
+    scope: usize,
+    sem: &Semantics,
+    line_col: &dyn Fn(usize) -> (usize, usize),
+) -> Option<NeverUsedOffense> {
+    if !e.reads.is_empty() || e.writes.is_empty() {
+        return None;
+    }
+    let first = e.writes.iter().map(|w| w.byte).min()?;
+    let (line, column) = line_col(first);
+    Some(NeverUsedOffense {
+        line,
+        column,
+        name: name.to_string(),
+        keep_init: keep_init_for_dead(e, nodes, src, scopes, scope, sem),
+    })
+}
+
+fn keep_init_for_dead(
+    e: &Entry,
+    nodes: &HashMap<usize, Node>,
+    src: &[u8],
+    scopes: &[Scope],
+    scope: usize,
+    sem: &Semantics,
+) -> bool {
+    let w = match plain_write(e) {
+        Some(w) => w,
+        None => return false,
+    };
+    let (rhs, write_node) = match write_rhs_nodes(w, nodes) {
+        Some(nodes) => nodes,
+        None => return false,
+    };
+    inlinable_write(src, w, rhs, write_node, scopes, scope, sem, None).is_some()
+        && keep_init_rhs(rhs, sem)
+}
+
+fn plain_write(e: &Entry) -> Option<&Write> {
+    e.writes.iter().find(|w| w.plain && w.rhs.is_some())
 }
 
 fn finish<T>(mut out: Vec<T>) -> Vec<T>

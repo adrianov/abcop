@@ -1,11 +1,12 @@
 //! Variable-used-only-once detector: flags locals with exactly one plain
-//! write and exactly one read where inlining is provably safe (pure RHS,
-//! write dominates the read).
+//! write and exactly one read where the RHS can be substituted at the read
+//! (inlinable expression, write dominates the read).
 
 use std::collections::HashMap;
 
 use tree_sitter::Node;
 
+use crate::inlinable::{immediate_substitutable, ruby_alias_stable, RUBY_IDENT, RUBY_UNITS};
 use crate::model::{Entry, FileModel, IntroKind, Read, Write, WriteKind};
 
 #[derive(PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -71,8 +72,9 @@ fn unconditionally_executed(write_node: Node) -> bool {
     true
 }
 
-/// Conservative RHS purity: literals, constants, self, and compositions of
-/// comparisons/logical operators over those. Anything calling methods is out.
+/// RHS may move wholesale to the single read site. Literals/constants/self,
+/// compositions of those, method call / index chains (including attached
+/// blocks), and bare local reads all qualify.
 fn pure(fm: &FileModel, n: Node) -> bool {
     match n.kind() {
         "integer" | "float" | "true" | "false" | "nil" | "simple_symbol" | "symbol" | "self"
@@ -125,13 +127,42 @@ fn paren_pure(fm: &FileModel, n: Node) -> bool {
     inner.len() == 1 && pure(fm, inner[0])
 }
 
+/// A bare `tmp = source` alias is safe only when `source` is not written
+/// between the alias assignment and its single read (vcalls have no local writes).
+fn alias_source_stable(
+    fm: &FileModel,
+    scope: usize,
+    name: &str,
+    write_byte: usize,
+    read_byte: usize,
+) -> bool {
+    ruby_alias_stable(fm, scope, name, write_byte, read_byte)
+}
+
+fn inlinable_rhs(
+    fm: &FileModel,
+    n: Node,
+    scope: usize,
+    write_byte: usize,
+    read_byte: usize,
+    write_site: Node,
+) -> bool {
+    if RUBY_UNITS.contains(&n.kind()) {
+        return immediate_substitutable(write_site, read_byte);
+    }
+    if n.kind() == RUBY_IDENT {
+        return alias_source_stable(fm, scope, fm.text(n), write_byte, read_byte);
+    }
+    pure(fm, n)
+}
+
 pub fn analyze(fm: &FileModel) -> Vec<UsedOnceOffense> {
     let nodes = index_nodes(fm.tree.root_node());
     let mut out = Vec::new();
 
-    for scope in &fm.scopes {
-        for (name, e) in &scope.entries {
-            if let Some(offense) = single_use_offense(fm, &nodes, name, e) {
+    for (scope, scope_data) in fm.scopes.iter().enumerate() {
+        for (name, e) in &scope_data.entries {
+            if let Some(offense) = single_use_offense(fm, &nodes, scope, name, e) {
                 out.push(offense);
             }
         }
@@ -141,18 +172,20 @@ pub fn analyze(fm: &FileModel) -> Vec<UsedOnceOffense> {
     out
 }
 
-/// One plain write, one later read, pure RHS and straight-line execution:
-/// the read can be inlined into the write.
+/// One plain write, one later read, inlinable RHS and straight-line execution:
+/// the RHS can replace the read.
 fn single_use_offense<'t>(
     fm: &FileModel,
     nodes: &HashMap<usize, Node<'t>>,
+    scope: usize,
     name: &str,
     e: &Entry,
 ) -> Option<UsedOnceOffense> {
     let w = exactly_one_plain_write(e)?;
-    later_single_read(e, &w)?;
+    let read = later_single_read(e, &w)?;
     let (rhs_node, write_node) = offense_nodes(nodes, &w)?;
-    if !pure(fm, rhs_node) || !unconditionally_executed(write_node) {
+    if !inlinable_rhs(fm, rhs_node, scope, w.byte, read.byte, write_node)
+        || !unconditionally_executed(write_node) {
         return None;
     }
     let (line, column) = fm.line_col(w.byte);
@@ -231,8 +264,43 @@ mod tests {
     }
 
     #[test]
-    fn impure_rhs_is_rejected() {
+    fn method_call_rhs_is_flagged() {
         let f = flags("def k(items)\n  tmp = items.size\n  p tmp\nend\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].name, "tmp");
+    }
+
+    #[test]
+    fn call_chain_with_block_is_flagged() {
+        let f = flags(
+            "def k(number)\n  matching_ids = pluck(:id).filter_map do |id|\n    id\n  end\n  where(id: matching_ids)\nend\n",
+        );
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].name, "matching_ids");
+    }
+
+    #[test]
+    fn call_chain_rejected_with_intervening_statement() {
+        let f = flags("def k\n  tmp = compute()\n  side_effect()\n  use(tmp)\nend\n");
+        assert!(f.is_empty(), "effectful RHS must not cross statements: {f:?}");
+    }
+
+    #[test]
+    fn call_chain_in_block_read_rejected() {
+        let f = flags("def k(arr)\n  tmp = compute()\n  arr.each { |i| p tmp }\nend\n");
+        assert!(f.is_empty(), "read inside loop block must not inline calls: {f:?}");
+    }
+
+    #[test]
+    fn other_local_rhs_is_flagged() {
+        let f = flags("def k(items)\n  tmp = items\n  p tmp\nend\n");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].name, "tmp");
+    }
+
+    #[test]
+    fn alias_rejected_when_source_is_reassigned() {
+        let f = flags("def k(items)\n  tmp = items\n  items = 1\n  p tmp\nend\n");
         assert!(f.is_empty());
     }
 

@@ -137,13 +137,18 @@ fn abc_diag(r: &FileResult, o: &AbcOffense) -> Diagnostic {
 }
 
 fn never_used_diag(r: &FileResult, o: &NeverUsedOffense) -> Diagnostic {
+    let hint = if o.keep_init {
+        " -- consider dropping the binding and keeping the initializer"
+    } else {
+        ""
+    };
     Diagnostic {
         file: r.path.clone(),
         line: o.line,
         column: o.column,
         severity: "W",
         rule: "NeverUsed",
-        message: format!("variable `{}` is assigned but never used", o.name),
+        message: format!("variable `{}` is assigned but never used{hint}", o.name),
         score: None,
         vector: None,
     }
@@ -215,6 +220,7 @@ mod tests {
                     line: 5,
                     column: 0,
                     name: "dead".into(),
+                    keep_init: false,
                 }],
                 module_abc: Some(ModuleAbc {
                     score: 130.0,

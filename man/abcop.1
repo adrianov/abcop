@@ -116,12 +116,12 @@ For Rust files the trailing
 module does not count toward the budget.
 .SS UsedOnce
 A local variable that is written exactly once by a plain assignment and read
-exactly once afterwards is reported as an inline candidate when the rewrite is
-provably safe:
+exactly once afterwards is reported as an inline candidate when the RHS can
+replace the read:
 .TP
-\(bu the right\-hand side is pure (literals, constants, arithmetic/comparison
-compositions); calls, macros, try operators and references to other locals
-disqualify it;
+\(bu the right\-hand side is an inlinable expression: literals, constants,
+arithmetic/comparison compositions, bare local reads, and method call /
+index chains including attached blocks, which move as one expression;
 .TP
 \(bu the write executes unconditionally (not nested in if/match/loop/rescue);
 .TP
@@ -154,7 +154,7 @@ Every language is scored on the same engine: named declarations are units,
 anonymous function\-likes roll into the enclosing unit, assignments count
 A, calls/new/message sends/yield/throw and arithmetic operators count B,
 and if/ternary/guard, loops, switch arms, catch clauses, comparisons and
-logical operators count C. UsedOnce, NeverUsed, purity\-gated inlining
+logical operators count C. UsedOnce, NeverUsed, inlinable\-RHS gating
 and ModuleAbcSize run on every language through one scope\-model engine:
 static spec tables describe each grammar (which kinds bind, read, open
 scopes), and a single dispatcher evaluates everything the tables do not

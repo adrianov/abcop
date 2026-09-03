@@ -38,10 +38,9 @@ fn c_flags_dead_binding_and_pure_inline_candidate() {
 
 #[test]
 fn c_pointer_wrappers_still_bind_the_name() {
-    // `char *p = s;`: pointer_declarator wraps the identifier; the RHS is
-    // an impure parameter read, so p must never surface as a candidate.
+    // `char *p = s;`: pointer_declarator wraps the identifier; bare alias.
     let src = "void f(char *s) {\n  char *p = s;\n  use(p);\n}";
-    assert_eq!(used(Lang::C, src), Vec::<String>::new());
+    assert_eq!(used(Lang::C, src), vec!["p"]);
 }
 
 #[test]
