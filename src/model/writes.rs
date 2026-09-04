@@ -79,13 +79,12 @@ impl Builder<'_> {
         under_defined: bool,
     ) {
         let name = self.text(l).to_string();
-        let w = Write {
-            byte: l.start_byte(),
-            node_id: l.id(),
-            kind: WriteKind::Plain,
-            rhs: rhs.map(|r| (r.id(), r.start_byte())),
-        };
-        self.record_write(scope, &name, w, IntroKind::Assign);
+        self.record_write(
+            scope,
+            &name,
+            Write::at(l, WriteKind::Plain, rhs.map(|r| (r.id(), r.end_byte()))),
+            IntroKind::Assign,
+        );
         if let Some(r) = rhs {
             self.walk(r, scope, under_defined);
         }
@@ -95,13 +94,12 @@ impl Builder<'_> {
         if let Some(l) = n.child_by_field_name("left") {
             if l.kind() == "identifier" {
                 let name = self.text(l).to_string();
-                let w = Write {
-                    byte: l.start_byte(),
-                    node_id: l.id(),
-                    kind: WriteKind::OpAssign,
-                    rhs: None,
-                };
-                self.record_write(scope, &name, w, IntroKind::Binding);
+                self.record_write(
+                    scope,
+                    &name,
+                    Write::at(l, WriteKind::OpAssign, None),
+                    IntroKind::Binding,
+                );
             } else {
                 self.walk(l, scope, under_defined);
             }
@@ -117,13 +115,12 @@ impl Builder<'_> {
             && pat.kind() == "identifier"
         {
             let name = self.text(pat).to_string();
-            let w = Write {
-                byte: pat.start_byte(),
-                node_id: pat.id(),
-                kind: WriteKind::ForVar,
-                rhs: None,
-            };
-            self.record_write(scope, &name, w, IntroKind::Binding);
+            self.record_write(
+                scope,
+                &name,
+                Write::at(pat, WriteKind::ForVar, None),
+                IntroKind::Binding,
+            );
         }
         let mut cursor = n.walk();
         for child in n.children(&mut cursor) {
@@ -152,13 +149,12 @@ impl Builder<'_> {
             && let Some(ident) = v.children(&mut v.walk()).find(|c| c.kind() == "identifier")
         {
             let name = self.text(ident).to_string();
-            let w = Write {
-                byte: ident.start_byte(),
-                node_id: ident.id(),
-                kind: WriteKind::RescueVar,
-                rhs: None,
-            };
-            self.record_write(scope, &name, w, IntroKind::Binding);
+            self.record_write(
+                scope,
+                &name,
+                Write::at(ident, WriteKind::RescueVar, None),
+                IntroKind::Binding,
+            );
         }
     }
 }

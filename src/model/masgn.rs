@@ -33,12 +33,11 @@ impl Builder<'_> {
 
     fn bind_masgn_target(&mut self, ident: Node, scope: ScopeId) {
         let name = self.text(ident).to_string();
-        let w = Write {
-            byte: ident.start_byte(),
-            node_id: ident.id(),
-            kind: WriteKind::Masgn,
-            rhs: None,
-        };
-        self.record_write(scope, &name, w, IntroKind::Binding);
+        self.record_write(
+            scope,
+            &name,
+            Write::at(ident, WriteKind::Masgn, None),
+            IntroKind::Binding,
+        );
     }
 }

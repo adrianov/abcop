@@ -1,9 +1,11 @@
 //! NeverUsed rule: local variables that are assigned but never read.
 //!
-//! Complements UsedOnce (which requires exactly one read): here the read
-//! count is zero. Reported once per binding at the first write.
+//! Complements UsedOnce (which requires exactly one read): here a write's
+//! value is never observed. Classic case: no reads at all (once per binding
+//! at the first write). Also: a write overwritten before any read, including
+//! a trailing unused reassignment after earlier live uses.
 //! [`NeverUsedOffense::keep_init`] marks call-chain initializers that can
-//! stand alone as statements.
+//! stand alone as statements (classic never-used only).
 
 use std::collections::HashMap;
 
@@ -26,9 +28,7 @@ pub fn analyze(fm: &FileModel) -> Vec<NeverUsedOffense> {
     let mut out = Vec::new();
     for (scope, scope_data) in fm.scopes.iter().enumerate() {
         for (name, e) in &scope_data.entries {
-            if let Some(offense) = dead_binding(fm, &nodes, scope, name, e) {
-                out.push(offense);
-            }
+            out.extend(dead_bindings(fm, &nodes, scope, name, e));
         }
     }
     out.sort_by_key(|o| (o.line, o.column));
@@ -36,23 +36,41 @@ pub fn analyze(fm: &FileModel) -> Vec<NeverUsedOffense> {
     out
 }
 
-fn dead_binding(
+fn dead_bindings(
     fm: &FileModel,
     nodes: &HashMap<usize, Node>,
     scope: usize,
     name: &str,
     e: &Entry,
-) -> Option<NeverUsedOffense> {
-    if !e.reads.is_empty() || e.writes.is_empty() {
-        return None;
+) -> Vec<NeverUsedOffense> {
+    if e.writes.is_empty() {
+        return Vec::new();
     }
-    let byte = e.writes.iter().map(|w| w.byte).min().unwrap_or(0);
-    Some(NeverUsedOffense {
+    if e.reads.is_empty() {
+        return vec![offense(
+            fm,
+            name,
+            e.writes.iter().map(|w| w.byte).min().unwrap_or(0),
+            keep_init_for_dead(fm, nodes, scope, e),
+        )];
+    }
+    // `defined?(x)` counts as a read for classic never-used, but does not
+    // observe a write's value — only value-reads open per-write checking.
+    if !e.has_value_read() {
+        return Vec::new();
+    }
+    e.unread_writes()
+        .map(|w| offense(fm, name, w.byte, false))
+        .collect()
+}
+
+fn offense(fm: &FileModel, name: &str, byte: usize, keep_init: bool) -> NeverUsedOffense {
+    NeverUsedOffense {
         line: fm.line_col(byte).0,
         column: fm.line_col(byte).1,
         name: name.to_string(),
-        keep_init: keep_init_for_dead(fm, nodes, scope, e),
-    })
+        keep_init,
+    }
 }
 
 fn keep_init_for_dead(
@@ -78,7 +96,7 @@ fn keep_init_for_dead(
         None => return false,
     };
     ruby_inlinable_rhs(fm, rhs, scope, w.byte, None, Some(write_node))
-        && unconditionally_executed(write_node)
+        && w.unconditional
         && keep_init_kind(rhs, RUBY_UNITS)
 }
 
@@ -86,47 +104,6 @@ fn plain_write(e: &Entry) -> Option<&Write> {
     e.writes
         .iter()
         .find(|w| w.kind == WriteKind::Plain && w.rhs.is_some())
-}
-
-const VETO_ANCESTORS: [&str; 14] = [
-    "if",
-    "unless",
-    "if_modifier",
-    "unless_modifier",
-    "conditional",
-    "while",
-    "until",
-    "while_modifier",
-    "until_modifier",
-    "for",
-    "rescue",
-    "rescue_modifier",
-    "in_clause",
-    "when",
-];
-const SCOPE_OWNERS: [&str; 8] = [
-    "method",
-    "singleton_method",
-    "class",
-    "module",
-    "singleton_class",
-    "block",
-    "do_block",
-    "lambda",
-];
-
-fn unconditionally_executed(write_node: Node) -> bool {
-    let mut cur = Some(write_node);
-    while let Some(n) = cur {
-        if VETO_ANCESTORS.contains(&n.kind()) {
-            return false;
-        }
-        if SCOPE_OWNERS.contains(&n.kind()) {
-            return true;
-        }
-        cur = n.parent();
-    }
-    true
 }
 
 fn index_nodes<'t>(root: Node<'t>) -> HashMap<usize, Node<'t>> {
@@ -185,6 +162,39 @@ mod tests {
     fn read_variable_not_flagged() {
         let f = flags("def k\n  x = 1\n  p x\nend\n");
         assert!(f.is_empty());
+    }
+
+    #[test]
+    fn overwrite_before_read_is_flagged() {
+        let f = flags(
+            "def k\n  x = create(:a)\n  x = create(:b)\n  use(x)\nend\n",
+        );
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert_eq!(f[0].name, "x");
+        assert_eq!(f[0].line, 2);
+        assert!(!f[0].keep_init);
+    }
+
+    #[test]
+    fn trailing_unused_reassignment_is_flagged() {
+        let f = flags("def k\n  x = 1\n  p x\n  x = 2\nend\n");
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert_eq!(f[0].line, 4);
+        assert_eq!(f[0].name, "x");
+    }
+
+    #[test]
+    fn reassignment_that_reads_old_value_is_not_dead() {
+        let f = flags("def k\n  x = 1\n  x = x + 1\n  p x\nend\n");
+        assert!(f.is_empty(), "RHS read observes prior write: {f:?}");
+    }
+
+    #[test]
+    fn conditional_overwrite_keeps_prior_write_live() {
+        let f = flags(
+            "def k(c)\n  x = create(:a)\n  x = create(:b) if c\n  use(x)\nend\n",
+        );
+        assert!(f.is_empty(), "prior write may be read when condition is false: {f:?}");
     }
 
     #[test]

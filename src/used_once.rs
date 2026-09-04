@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use tree_sitter::Node;
 
 use crate::inlinable::ruby_inlinable_rhs;
-use crate::model::{Entry, FileModel, IntroKind, Read, Write, WriteKind};
+use crate::model::{Entry, FileModel, IntroKind, Read, Write};
 
 #[derive(PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct UsedOnceOffense {
@@ -27,49 +27,6 @@ fn index_nodes<'t>(root: Node<'t>) -> HashMap<usize, Node<'t>> {
     }
     rec(root, &mut map);
     map
-}
-
-/// Straight-line execution check: no conditional/loop/rescue ancestor between
-/// the write and its owning scope boundary.
-const VETO_ANCESTORS: [&str; 14] = [
-    "if",
-    "unless",
-    "if_modifier",
-    "unless_modifier",
-    "conditional",
-    "while",
-    "until",
-    "while_modifier",
-    "until_modifier",
-    "for",
-    "rescue",
-    "rescue_modifier",
-    "in_clause",
-    "when",
-];
-const SCOPE_OWNERS: [&str; 8] = [
-    "method",
-    "singleton_method",
-    "class",
-    "module",
-    "singleton_class",
-    "block",
-    "do_block",
-    "lambda",
-];
-
-fn unconditionally_executed(write_node: Node) -> bool {
-    let mut cur = Some(write_node);
-    while let Some(n) = cur {
-        if VETO_ANCESTORS.contains(&n.kind()) {
-            return false;
-        }
-        if SCOPE_OWNERS.contains(&n.kind()) {
-            return true;
-        }
-        cur = n.parent();
-    }
-    true
 }
 
 pub fn analyze(fm: &FileModel) -> Vec<UsedOnceOffense> {
@@ -101,7 +58,7 @@ fn single_use_offense<'t>(
     let read = later_single_read(e, w)?;
     let (rhs_node, write_node) = offense_nodes(nodes, w)?;
     if !ruby_inlinable_rhs(fm, rhs_node, scope, w.byte, Some(read.byte), Some(write_node))
-        || !unconditionally_executed(write_node)
+        || !w.unconditional
     {
         return None;
     }
@@ -122,13 +79,12 @@ fn offense_nodes<'t>(nodes: &HashMap<usize, Node<'t>>, w: &Write) -> Option<(Nod
     Some((*nodes.get(&rhs_id)?, *nodes.get(&w.node_id)?))
 }
 
-/// The entry is assign-introduced and has exactly one plain write.
+/// Assign-introduced binding with exactly one plain write whose value is read.
+/// Earlier unread overwrites do not block inlining the surviving write.
 fn exactly_one_plain_write(e: &Entry) -> Option<&Write> {
-    if e.intro_kind != IntroKind::Assign || e.writes.len() != 1 {
-        return None;
-    }
-    let w = &e.writes[0];
-    (w.kind == WriteKind::Plain).then_some(w)
+    (e.intro_kind == IntroKind::Assign)
+        .then(|| e.single_live_plain())
+        .flatten()
 }
 
 /// The single read happens after the write and outside any `defined?` guard.
@@ -175,6 +131,16 @@ mod tests {
         assert_eq!(f[0].name, "tmp");
         assert_eq!(f[0].line, 2);
         assert_eq!(f[0].column, 2);
+    }
+
+    #[test]
+    fn surviving_write_after_dead_overwrite_is_flagged() {
+        let f = flags(
+            "def k\n  tmp = create(:a)\n  tmp = 42\n  p tmp\nend\n",
+        );
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert_eq!(f[0].name, "tmp");
+        assert_eq!(f[0].line, 3);
     }
 
     #[test]

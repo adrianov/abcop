@@ -1,12 +1,14 @@
 //! Single-file semantic model: scope tree, local-variable introductions,
 //! writes and reads. Shared by the ABC calculator (safe-nav receiver
-//! classification) and the used-once detector.
+//! classification) and the used-once / never-used detectors.
 //!
 //! Submodules: [`builder`] (the tree-walking model constructor) with its
-//! [`writes`] / [`reads`] / [`scopes`] handler groups, plus [`masgn`] for
-//! multiple-assignment target lists.
+//! [`writes`] / [`reads`] / [`scopes`] handler groups, [`masgn`] for
+//! multiple-assignment targets, and [`lifetime`] for write observation
+//! (which values are read before the next sure overwrite).
 
 mod builder;
+mod lifetime;
 mod reads;
 mod scopes;
 mod writes;
@@ -32,8 +34,10 @@ pub struct Write {
     pub byte: usize,
     pub node_id: usize,
     pub kind: WriteKind,
-    /// RHS expression of a plain assignment as `(node id, start byte)`.
+    /// RHS expression of a plain assignment as `(node id, end byte)`.
     pub rhs: Option<(usize, usize)>,
+    /// False when the write sits under `if`/`rescue`/loop — it may not run.
+    pub unconditional: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
