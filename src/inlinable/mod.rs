@@ -1,6 +1,7 @@
 //! Shared RHS inlinability: literals/compositions, call/index chains, and
 //! bare identifier reads (with optional reassignment guard for UsedOnce).
 
+mod let_in;
 mod ruby;
 
 pub use ruby::ruby_inlinable_rhs;
@@ -67,6 +68,9 @@ pub const DART_IDENT: &str = "identifier";
 pub const ZIG_UNITS: &[&str] = &["call_expression", "field_access", "array_access", "slice"];
 pub const ZIG_IDENT: &str = "identifier";
 
+pub const HS_UNITS: &[&str] = &["apply"];
+pub const HS_IDENT: &str = "variable";
+
 pub const SOL_UNITS: &[&str] = &["call_expression", "member_expression", "index_access"];
 pub const SOL_IDENT: &str = "identifier";
 
@@ -103,6 +107,9 @@ const STMT_LIST_PARENTS: &[&str] = &[
     "program",
     "source_file",
     "declaration_list",
+    "declarations",
+    "local_binds",
+    "do",
 ];
 
 /// Bodies that may run more than once between assignment and read.
@@ -121,11 +128,13 @@ const REPEAT_ANCESTORS: &[&str] = &[
     "loop_expression",
     "enhanced_for_statement",
     "foreach_statement",
+    "list_comprehension",
+    "generator",
 ];
 
 /// Branch bodies that may skip evaluating the read (Ruby `then`/`when`, etc.).
 const BRANCH_BODY_KINDS: &[&str] = &[
-    "then", "else", "elsif", "when", "in_clause", "rescue", "ensure",
+    "then", "else", "elsif", "when", "in_clause", "rescue", "ensure", "alternative",
 ];
 
 /// Effectful RHS may move to the read only when it is the next statement and
@@ -135,21 +144,22 @@ pub fn immediate_substitutable(write_site: Node, read_byte: usize) -> bool {
     let Some(read_site) = root_of(write_site).descendant_for_byte_range(read_byte, read_byte) else {
         return false;
     };
-    let (write_stmt, write_idx) = match list_member(write_site) {
-        Some(pair) => pair,
-        None => return false,
+    let_in::substitutable(write_site, read_site) || stmt_list_substitutable(write_site, read_site)
+}
+
+fn stmt_list_substitutable(write_site: Node, read_site: Node) -> bool {
+    let Some((write_stmt, write_idx)) = list_member(write_site) else {
+        return false;
     };
-    let (read_stmt, read_idx) = match list_member(read_site) {
-        Some(pair) => pair,
-        None => return false,
+    let Some((read_stmt, read_idx)) = list_member(read_site) else {
+        return false;
     };
     let (Some(write_parent), Some(read_parent)) = (write_stmt.parent(), read_stmt.parent()) else {
         return false;
     };
-    if write_parent.id() != read_parent.id() || read_idx != write_idx + 1 {
-        return false;
-    }
-    !read_may_skip(read_site, read_stmt)
+    write_parent.id() == read_parent.id()
+        && read_idx == write_idx + 1
+        && !read_may_skip(read_site, read_stmt)
 }
 
 fn root_of(mut node: Node) -> Node {

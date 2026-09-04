@@ -6,7 +6,7 @@ use tree_sitter::Tree;
 use crate::abc::AbcOffense;
 use crate::never_used::NeverUsedOffense;
 use crate::used_once::UsedOnceOffense;
-use crate::{csharp, dart, golang, javalang, phplang, pylang, sollang, ziglang};
+use crate::{csharp, dart, golang, hasslang, javalang, phplang, pylang, sollang, ziglang};
 
 pub(super) trait NonClike {
     type Model<'a>;
@@ -50,3 +50,4 @@ non_clike_backend!(CSharpB, csharp, CSharpFile);
 non_clike_backend!(SolidityB, sollang, SolFile);
 non_clike_backend!(DartB, dart, DartFile);
 non_clike_backend!(ZigB, ziglang, ZigFile);
+non_clike_backend!(HsB, hasslang, HsFile);

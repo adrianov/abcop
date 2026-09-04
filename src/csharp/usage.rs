@@ -29,6 +29,7 @@ static CSHARP_SEMANTICS: scope_model::Semantics = scope_model::Semantics {
     veto: VETO_KINDS,
     owners: OWNER_KINDS,
     include_root_scope: false,
+    exempt_bindings: false,
 };
 
 pub fn used_once_offenses(fm: &CSharpFile) -> Vec<crate::used_once::UsedOnceOffense> {

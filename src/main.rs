@@ -12,6 +12,7 @@ mod git_changes;
 #[cfg(test)]
 mod git_changes_tests;
 mod golang;
+mod hasslang;
 mod inlinable;
 mod javalang;
 mod model;
@@ -52,7 +53,7 @@ use clap::Parser as ClapParser;
 #[command(
     name = "abcop",
     version,
-    about = "Must-have ABC complexity gate for AI development. Ruby, Rust, Python, Go, JS/TS, C/C++, PHP, Java, C#, Swift, Zig, Dart, Solidity, ObjC"
+    about = "Must-have ABC complexity gate for AI development. Ruby, Rust, Python, Go, JS/TS, C/C++, PHP, Java, C#, Swift, Zig, Dart, Solidity, Haskell, ObjC"
 )]
 pub(crate) struct Cli {
     /// Files or directories to analyse; omitted means the auto-selected

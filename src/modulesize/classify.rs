@@ -5,7 +5,7 @@
 /// machine-generated trees are never the review target of a default scan.
 /// Walker-side only (see `skip::skipped_by_default`); ModuleAbcSize's own
 /// classification above stays unchanged.
-pub(crate) const GENERATED_DIRS: [&str; 31] = [
+pub(crate) const GENERATED_DIRS: [&str; 32] = [
     "vendor/",
     ".bundle/",
     "node_modules/",
@@ -35,6 +35,7 @@ pub(crate) const GENERATED_DIRS: [&str; 31] = [
     ".terraform/",
     "elm-stuff/",
     ".stack-work/",
+    "dist-newstyle/",
     ".zig-cache/",
     "zig-out/",
 ];

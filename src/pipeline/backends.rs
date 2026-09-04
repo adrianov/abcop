@@ -11,7 +11,7 @@ use crate::output::FileResult;
 use crate::used_once::UsedOnceOffense;
 
 use super::Checks;
-use super::non_clike::{CSharpB, DartB, GoB, JavaB, NonClike, PhpB, PyB, SolidityB, ZigB};
+use super::non_clike::{CSharpB, DartB, GoB, HsB, JavaB, NonClike, PhpB, PyB, SolidityB, ZigB};
 use crate::paths::Lang;
 
 /// Inline directives, parsed once per file.
@@ -185,6 +185,7 @@ pub(super) fn non_clike_arm(
         Lang::Solidity => non_clike_directed::<SolidityB>(r, src, tree, checks, limits),
         Lang::Dart => non_clike_directed::<DartB>(r, src, tree, checks, limits),
         Lang::Zig => non_clike_directed::<ZigB>(r, src, tree, checks, limits),
+        Lang::Hs => non_clike_directed::<HsB>(r, src, tree, checks, limits),
         _ => unreachable!("unsupported non-clike language"),
     }
 }

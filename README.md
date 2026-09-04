@@ -8,7 +8,8 @@ extract a method, split a module — so CI rejects bad growth *and* points
 agents at concrete maintainability fixes.
 
 One self-contained binary across Ruby, Rust, Python, Go, PHP, Java, C#,
-Dart, JavaScript, TypeScript, C, C++, Objective-C, Swift, Solidity and Zig —
+Dart, JavaScript, TypeScript, C, C++, Objective-C, Swift, Solidity, Zig
+and Haskell —
 no runtimes, no plugins, no per-language installs. Written in Rust for
 speed: one parse per file, one walk per metric, grammars compiled in;
 whole trees in milliseconds.
@@ -198,7 +199,7 @@ disables. Nothing is written inside the project.
 
 ## Supported languages
 
-Sixteen languages, four rules each, one CI gate.
+Seventeen languages, four rules each, one CI gate.
 
 | Language | Files | Notes |
 |---|---|---|
@@ -212,6 +213,7 @@ Sixteen languages, four rules each, one CI gate.
 | Solidity | `.sol` | |
 | Dart | `.dart` | |
 | Zig | `.zig` | |
+| Haskell | `.hs .lhs` | |
 | JavaScript | `.js .mjs .cjs .jsx` | |
 | TypeScript | `.ts .tsx .mts .cts` | |
 | C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | `.h` via C++ grammar |

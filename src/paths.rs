@@ -16,6 +16,7 @@ pub enum Lang {
     Solidity,
     Dart,
     Zig,
+    Hs,
     Js,
     Ts,
     Tsx,
@@ -58,6 +59,7 @@ const EXT_LANG: &[(&[&str], Lang)] = &[
     (&["sol"], Lang::Solidity),
     (&["dart"], Lang::Dart),
     (&["zig"], Lang::Zig),
+    (&["hs", "lhs"], Lang::Hs),
 ];
 
 pub fn lang_for(path: &std::path::Path) -> Lang {
@@ -117,6 +119,7 @@ fn standalone_grammar(lang: Lang) -> Option<tree_sitter::Language> {
         Lang::Solidity => tree_sitter_solidity::LANGUAGE.into(),
         Lang::Dart => tree_sitter_dart::LANGUAGE.into(),
         Lang::Zig => tree_sitter_zig::LANGUAGE.into(),
+        Lang::Hs => tree_sitter_haskell::LANGUAGE.into(),
         _ => return None,
     };
     Some(ts_lang)

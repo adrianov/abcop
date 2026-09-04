@@ -28,6 +28,11 @@ pub struct Semantics {
     /// analysis cannot see -- backends for such languages set this to
     /// `false` to keep the rules free of cross-file false positives.
     pub include_root_scope: bool,
+    /// When true, [`IntroKind::Binding`] entries (parameters, pattern
+    /// heads, catch/payload binders) are omitted from NeverUsed — the
+    /// man-page exemption. Languages that still flag unread parameters
+    /// leave this false.
+    pub exempt_bindings: bool,
 }
 
 /// Inline candidates: one plain introduction, one later resolved read,
@@ -171,6 +176,9 @@ fn dead_offense(
     sem: &Semantics,
     line_col: &dyn Fn(usize) -> (usize, usize),
 ) -> Option<NeverUsedOffense> {
+    if sem.exempt_bindings && e.intro_kind == IntroKind::Binding {
+        return None;
+    }
     if !e.reads.is_empty() || e.writes.is_empty() {
         return None;
     }

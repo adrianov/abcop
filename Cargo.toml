@@ -8,7 +8,7 @@ license = "GPL-3.0-or-later"
 repository = "https://github.com/adrianov/abcop"
 homepage = "https://github.com/adrianov/abcop"
 documentation = "https://github.com/adrianov/abcop"
-description = "Must-have ABC complexity gate for AI development. Ruby, Rust, Python, Go, JS/TS, C/C++, PHP, Java, C#, Swift, Zig, Dart, Solidity, ObjC"
+description = "Must-have ABC complexity gate for AI development. Ruby, Rust, Python, Go, JS/TS, C/C++, PHP, Java, C#, Swift, Zig, Dart, Solidity, Haskell, ObjC"
 readme = "README.md"
 keywords = ["linter", "complexity", "static-analysis", "ai", "llm"]
 categories = ["command-line-utilities", "development-tools"]
@@ -48,6 +48,7 @@ tree-sitter-c-sharp = { version = "0.23.5", path = "vendor/tree-sitter-c-sharp" 
 tree-sitter-solidity = { version = "1.2.13", path = "vendor/tree-sitter-solidity" }
 tree-sitter-dart = { version = "0.2.0", path = "vendor/tree-sitter-dart" }
 tree-sitter-zig = { version = "1.1.2", path = "vendor/tree-sitter-zig" }
+tree-sitter-haskell = { version = "0.23.1", path = "vendor/tree-sitter-haskell" }
 git2 = { version = "0.20", default-features = false }
 
 
@@ -63,7 +64,8 @@ copyright = "Peter M Adrianov"
 license-file = ["LICENSE", "0"]
 extended-description = """Must-have ABC complexity gate for AI-written code.
 One self-contained binary across Ruby, Rust, Python, Go, PHP, Java, C#,
-Dart, JavaScript, TypeScript, C, C++, Objective-C, Swift, Solidity and Zig.
+Dart, JavaScript, TypeScript, C, C++, Objective-C, Swift, Solidity, Zig
+and Haskell.
 Built for Ubuntu 22.04+ and Debian bookworm+ (amd64)."""
 depends = "$auto"
 assets = [

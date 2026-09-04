@@ -81,6 +81,7 @@ static JS_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semanti
         "method_definition",
     ],
     include_root_scope: false,
+    exempt_bindings: false,
 };
 
 static SWIFT_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Semantics {
@@ -102,6 +103,7 @@ static SWIFT_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Sema
         "closure_expression",
     ],
     include_root_scope: false,
+    exempt_bindings: false,
 };
 
 fn semantics_for(lang: crate::paths::Lang) -> &'static crate::scope_model::Semantics {
@@ -130,6 +132,7 @@ static C_FAMILY_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::S
     ],
     owners: &["function_definition", "method_definition"],
     include_root_scope: false,
+    exempt_bindings: false,
 };
 
 pub(crate) fn used_once_offenses(sc: &JsScopes, lang: crate::paths::Lang) -> Vec<UsedOnceOffense> {
