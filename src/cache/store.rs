@@ -15,7 +15,7 @@ use redb::{Database, Durability, ReadableDatabase, ReadableTable, TableDefinitio
 
 /// Bump whenever counting rules or output shape change so stale entries are
 /// never served.
-pub(crate) const RULES_REV: u32 = 31;
+pub(crate) const RULES_REV: u32 = 33;
 
 pub(crate) const MAX_ENTRIES: usize = 20_000;
 const ENTRIES: TableDefinition<&str, &[u8]> = TableDefinition::new("entries");

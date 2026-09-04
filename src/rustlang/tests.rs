@@ -194,6 +194,130 @@ fn param_reborrow_keeps_binding() {
 }
 
 #[test]
+fn refcell_borrow_into_let_else_keeps_guard() {
+    // Inlining `cell.borrow().as_ref()` into let-else drops the Ref (E0716).
+    let f = flags(
+        "fn f(cell: &std::cell::RefCell<Option<String>>) -> Option<usize> {\n\
+         \x20   let g = cell.borrow();\n\
+         \x20   let Some(b) = g.as_ref() else { return None; };\n\
+         \x20   Some(b.len())\n\
+         }",
+    );
+    assert!(
+        f.iter().all(|o| o.name != "g"),
+        "RefCell guard must stay: {f:?}"
+    );
+}
+
+#[test]
+fn osstring_lossy_into_let_keeps_owner() {
+    // `file_name().to_string_lossy()` binds a Cow that borrows the temporary.
+    let f = flags(
+        "fn f(e: std::fs::DirEntry) -> bool {\n\
+         \x20   let n = e.file_name();\n\
+         \x20   let s = n.to_string_lossy();\n\
+         \x20   s.starts_with(\"lib\")\n\
+         }",
+    );
+    assert!(
+        f.iter().all(|o| o.name != "n"),
+        "OsString owner must stay: {f:?}"
+    );
+}
+
+#[test]
+fn borrow_guard_rhs_keeps_binding_even_as_arg() {
+    // Guard RHS is kept unconditionally — safer than chasing every E0716 shape.
+    let f = flags(
+        "fn f(cell: &std::cell::RefCell<u32>) {\n\
+         \x20   let g = cell.borrow();\n\
+         \x20   use_ref(g.as_ref());\n\
+         }\n\
+         fn use_ref(_: &u32) {}",
+    );
+    assert!(
+        f.iter().all(|o| o.name != "g"),
+        "RefCell borrow RHS must stay: {f:?}"
+    );
+}
+
+#[test]
+fn borrow_then_clone_rhs_keeps_binding() {
+    let f = flags(
+        "fn f(cell: &std::cell::RefCell<String>) {\n\
+         \x20   let s = cell.borrow().clone();\n\
+         \x20   use_s(s);\n\
+         }\n\
+         fn use_s(_: String) {}",
+    );
+    assert!(
+        f.iter().all(|o| o.name != "s"),
+        "borrow().clone() RHS must stay: {f:?}"
+    );
+}
+
+#[test]
+fn mutex_lock_unwrap_rhs_keeps_binding() {
+    let f = flags(
+        "fn f(m: &std::sync::Mutex<u32>) {\n\
+         \x20   let g = m.lock().unwrap();\n\
+         \x20   use_g(*g);\n\
+         }\n\
+         fn use_g(_: u32) {}",
+    );
+    assert!(
+        f.iter().all(|o| o.name != "g"),
+        "lock().unwrap() RHS must stay: {f:?}"
+    );
+}
+
+#[test]
+fn owned_alias_as_str_into_let_still_flagged() {
+    // Alias of an owned value is not a temporary — inlining stays valid.
+    let f = flags(
+        "fn f(s: String) {\n\
+         \x20   let t = s;\n\
+         \x20   let u = t.as_str();\n\
+         \x20   use_u(u);\n\
+         }\n\
+         fn use_u(_: &str) {}",
+    );
+    assert!(
+        f.iter().any(|o| o.name == "t"),
+        "owned alias must still inline: {f:?}"
+    );
+}
+
+#[test]
+fn match_to_string_lossy_keeps_owner() {
+    let f = flags(
+        "fn f(e: std::fs::DirEntry) {\n\
+         \x20   let n = e.file_name();\n\
+         \x20   match n.to_string_lossy() {\n\
+         \x20       s if s.starts_with(\"lib\") => {}\n\
+         \x20       _ => {}\n\
+         \x20   }\n\
+         }",
+    );
+    assert!(
+        f.iter().all(|o| o.name != "n"),
+        "match scrutinee borrow must keep owner: {f:?}"
+    );
+}
+
+#[test]
+fn non_guard_call_as_arg_still_flagged() {
+    let f = flags(
+        "fn f(x: &str) {\n\
+         \x20   let s = x.to_string();\n\
+         \x20   use_s(s.as_str());\n\
+         }\n\
+         fn use_s(_: &str) {}",
+    );
+    assert_eq!(f.iter().filter(|o| o.name == "s").count(), 1, "{f:?}");
+}
+
+#[test]
 fn read_inside_later_closure_is_candidate() {
     let f = flags("fn k() {\n  let x = 42;\n  run(|| p(x));\n}");
     assert_eq!(f.len(), 1);

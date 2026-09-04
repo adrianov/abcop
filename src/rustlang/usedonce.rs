@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use tree_sitter::Node;
 
+use super::lifetime_guard::{guard_rhs_blocks, lifetime_guard_blocks};
 use super::pure::{inlinable_rhs, unconditionally_executed};
 use super::scope::{Entry, IntroKind, RustFile, Write};
 
@@ -55,6 +56,8 @@ fn single_use<'t>(
     if !inlinable_rhs(fm, rhs_node, scope, w.byte, Some(e.reads[0]), Some(write_node))
         || !unconditionally_executed(write_node)
         || reborrow_blocks(fm, rhs_node, e.reads[0])
+        || guard_rhs_blocks(fm, rhs_node)
+        || lifetime_guard_blocks(fm, rhs_node, e.reads[0])
     {
         return None;
     }
@@ -112,7 +115,9 @@ fn call_mentions_name(fm: &RustFile, call: Node, name: &str) -> bool {
         return false;
     };
     args.children(&mut args.walk()).any(|ch| {
-        ch.is_named() && ((ch.kind() == "identifier" && fm.text(ch) == name) || call_root_name(fm, ch).as_deref() == Some(name))
+        ch.is_named()
+            && ((ch.kind() == "identifier" && fm.text(ch) == name)
+                || call_root_name(fm, ch).as_deref() == Some(name))
     })
 }
 

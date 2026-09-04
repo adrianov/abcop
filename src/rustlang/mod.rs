@@ -15,11 +15,14 @@
 //!   No else bonus: Rust if-else is a value-producing expression.
 //! - UsedOnce: single plain `let`, single read, pure RHS, straight-line write,
 //!   read after write. Params/pattern-bound/mut-reassigned vars excluded.
+//!   Also skips RefCell/Mutex/RwLock guard RHS and E0716 lifetime-guard lets
+//!   (`as_ref` / `to_string_lossy` into a later binding).
 
 mod bindings;
 mod builder;
 mod entries;
 mod format;
+mod lifetime_guard;
 mod patterns;
 mod pure;
 mod scope;
