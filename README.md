@@ -27,19 +27,19 @@ macOS (`.tar.gz` from [GitHub Releases](https://github.com/adrianov/abcop/releas
 
 ```sh
 # Apple Silicon — use the *-x86_64-apple-darwin.tar.gz asset on Intel Macs
-curl -LO https://github.com/adrianov/abcop/releases/download/v0.17.2/abcop-0.17.2-aarch64-apple-darwin.tar.gz
-tar -xzf abcop-0.17.2-aarch64-apple-darwin.tar.gz
-sudo cp abcop-0.17.2-aarch64-apple-darwin/abcop /usr/local/bin/
+curl -LO https://github.com/adrianov/abcop/releases/download/v0.17.3/abcop-0.17.3-aarch64-apple-darwin.tar.gz
+tar -xzf abcop-0.17.3-aarch64-apple-darwin.tar.gz
+sudo cp abcop-0.17.3-aarch64-apple-darwin/abcop /usr/local/bin/
 sudo mkdir -p /usr/local/share/man/man1
-sudo cp abcop-0.17.2-aarch64-apple-darwin/abcop.1 /usr/local/share/man/man1/
+sudo cp abcop-0.17.3-aarch64-apple-darwin/abcop.1 /usr/local/share/man/man1/
 ```
 
 Ubuntu / Debian (`.deb` from [GitHub Releases](https://github.com/adrianov/abcop/releases); amd64, Ubuntu 22.04+ / Debian bookworm+):
 
 ```sh
-# example for v0.17.2 — use the asset name from the release page
-curl -LO https://github.com/adrianov/abcop/releases/download/v0.17.2/abcop_0.17.2-1_amd64.deb
-sudo dpkg -i abcop_0.17.2-1_amd64.deb
+# example for v0.17.3 — use the asset name from the release page
+curl -LO https://github.com/adrianov/abcop/releases/download/v0.17.3/abcop_0.17.3-1_amd64.deb
+sudo dpkg -i abcop_0.17.3-1_amd64.deb
 man abcop
 ```
 
