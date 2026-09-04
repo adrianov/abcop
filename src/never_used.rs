@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use tree_sitter::Node;
 
-use crate::inlinable::{RUBY_IDENT, RUBY_UNITS, keep_init_kind, ruby_alias_stable};
+use crate::inlinable::{RUBY_UNITS, keep_init_kind, ruby_inlinable_rhs};
 use crate::model::{Entry, FileModel, Write, WriteKind};
 
 #[derive(PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -77,7 +77,7 @@ fn keep_init_for_dead(
         Some(node) => *node,
         None => return false,
     };
-    inlinable_rhs(fm, rhs, scope, w.byte, None)
+    ruby_inlinable_rhs(fm, rhs, scope, w.byte, None, Some(write_node))
         && unconditionally_executed(write_node)
         && keep_init_kind(rhs, RUBY_UNITS)
 }
@@ -86,71 +86,6 @@ fn plain_write(e: &Entry) -> Option<&Write> {
     e.writes
         .iter()
         .find(|w| w.kind == WriteKind::Plain && w.rhs.is_some())
-}
-
-fn inlinable_rhs(
-    fm: &FileModel,
-    n: Node,
-    scope: usize,
-    write_byte: usize,
-    read_byte: Option<usize>,
-) -> bool {
-    if RUBY_UNITS.contains(&n.kind()) {
-        return true;
-    }
-    if n.kind() == RUBY_IDENT {
-        return match read_byte {
-            Some(end) => ruby_alias_stable(fm, scope, fm.text(n), write_byte, end),
-            None => true,
-        };
-    }
-    pure(fm, n)
-}
-
-fn pure(fm: &FileModel, n: Node) -> bool {
-    match n.kind() {
-        "integer" | "float" | "true" | "false" | "nil" | "simple_symbol" | "symbol" | "self"
-        | "constant" => true,
-        "string" => string_without_interpolation(n),
-        "array" | "range" | "binary" => all_named_pure(fm, n),
-        "hash" => hash_pure(fm, n),
-        "unary" => unary_pure(fm, n),
-        "parenthesized_statements" => paren_pure(fm, n),
-        _ => false,
-    }
-}
-
-fn named_children<'t>(n: Node<'t>) -> Vec<Node<'t>> {
-    n.children(&mut n.walk()).filter(|c| c.is_named()).collect()
-}
-
-fn all_named_pure(fm: &FileModel, n: Node) -> bool {
-    named_children(n).into_iter().all(|c| pure(fm, c))
-}
-
-fn string_without_interpolation(n: Node) -> bool {
-    !n.children(&mut n.walk())
-        .any(|c| c.kind() == "interpolation")
-        && n.child_by_field_name("interpolation").is_none()
-}
-
-fn hash_pure(fm: &FileModel, n: Node) -> bool {
-    named_children(n)
-        .into_iter()
-        .all(|pair| pair.kind() != "pair" || all_named_pure(fm, pair))
-}
-
-fn unary_pure(fm: &FileModel, n: Node) -> bool {
-    n.child_by_field_name("operator")
-        .map(|o| fm.text(o))
-        .unwrap_or("")
-        != "defined?"
-        && all_named_pure(fm, n)
-}
-
-fn paren_pure(fm: &FileModel, n: Node) -> bool {
-    let inner = named_children(n);
-    inner.len() == 1 && pure(fm, inner[0])
 }
 
 const VETO_ANCESTORS: [&str; 14] = [

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use tree_sitter::Node;
 
-use crate::inlinable::{immediate_substitutable, ruby_alias_stable, RUBY_IDENT, RUBY_UNITS};
+use crate::inlinable::ruby_inlinable_rhs;
 use crate::model::{Entry, FileModel, IntroKind, Read, Write, WriteKind};
 
 #[derive(PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -72,96 +72,6 @@ fn unconditionally_executed(write_node: Node) -> bool {
     true
 }
 
-/// RHS may move wholesale to the single read site. Literals/constants/self,
-/// compositions of those, method call / index chains (including attached
-/// blocks), and bare local reads all qualify.
-fn pure(fm: &FileModel, n: Node) -> bool {
-    match n.kind() {
-        "integer" | "float" | "true" | "false" | "nil" | "simple_symbol" | "symbol" | "self"
-        | "constant" => true,
-        "string" => string_without_interpolation(n),
-        "array" | "range" | "binary" => all_named_pure(fm, n),
-        "hash" => hash_pure(fm, n),
-        "unary" => unary_pure(fm, n),
-        // `(expr)` -- pure only when a single pure expression inside
-        "parenthesized_statements" => paren_pure(fm, n),
-        _ => false,
-    }
-}
-
-fn named_children<'t>(n: Node<'t>) -> Vec<Node<'t>> {
-    (0..n.named_child_count())
-        .filter_map(|i| n.named_child(i as u32))
-        .collect()
-}
-
-/// Every named child is pure.
-fn all_named_pure(fm: &FileModel, n: Node) -> bool {
-    named_children(n).into_iter().all(|c| pure(fm, c))
-}
-
-fn string_without_interpolation(n: Node) -> bool {
-    !(0..n.named_child_count())
-        .filter_map(|i| n.named_child(i as u32))
-        .any(|c| c.kind() == "interpolation")
-        && n.child_by_field_name("interpolation").is_none()
-}
-
-/// Hash literal: both sides of every `pair` pure; punctuation-level named
-/// nodes are ignored.
-fn hash_pure(fm: &FileModel, n: Node) -> bool {
-    named_children(n)
-        .into_iter()
-        .all(|pair| pair.kind() != "pair" || all_named_pure(fm, pair))
-}
-
-/// `defined?` results depend on scope state, so they are never pure.
-fn unary_pure(fm: &FileModel, n: Node) -> bool {
-    n.child_by_field_name("operator")
-        .map(|o| fm.text(o))
-        .unwrap_or("") != "defined?"
-        && all_named_pure(fm, n)
-}
-
-fn paren_pure(fm: &FileModel, n: Node) -> bool {
-    let inner = named_children(n);
-    inner.len() == 1 && pure(fm, inner[0])
-}
-
-/// A bare `tmp = source` alias is safe only when `source` is not written
-/// between the alias assignment and its single read.
-fn alias_source_stable(
-    fm: &FileModel,
-    scope: usize,
-    name: &str,
-    write_byte: usize,
-    read_byte: usize,
-) -> bool {
-    ruby_alias_stable(fm, scope, name, write_byte, read_byte)
-}
-
-fn inlinable_rhs(
-    fm: &FileModel,
-    n: Node,
-    scope: usize,
-    write_byte: usize,
-    read_byte: usize,
-    write_site: Node,
-) -> bool {
-    if RUBY_UNITS.contains(&n.kind()) {
-        return immediate_substitutable(write_site, read_byte);
-    }
-    if n.kind() == RUBY_IDENT {
-        let name = fm.text(n);
-        // Bare `foo` with no local binding is a vcall — same effect rules as `foo()`.
-        if fm.lookup(scope, write_byte, name).is_none() {
-            return immediate_substitutable(write_site, read_byte);
-        }
-        return alias_source_stable(fm, scope, name, write_byte, read_byte);
-    }
-    pure(fm, n)
-}
-
 pub fn analyze(fm: &FileModel) -> Vec<UsedOnceOffense> {
     let nodes = index_nodes(fm.tree.root_node());
     let mut out = Vec::new();
@@ -188,10 +98,11 @@ fn single_use_offense<'t>(
     e: &Entry,
 ) -> Option<UsedOnceOffense> {
     let w = exactly_one_plain_write(e)?;
-    let read = later_single_read(e, &w)?;
-    let (rhs_node, write_node) = offense_nodes(nodes, &w)?;
-    if !inlinable_rhs(fm, rhs_node, scope, w.byte, read.byte, write_node)
-        || !unconditionally_executed(write_node) {
+    let read = later_single_read(e, w)?;
+    let (rhs_node, write_node) = offense_nodes(nodes, w)?;
+    if !ruby_inlinable_rhs(fm, rhs_node, scope, w.byte, Some(read.byte), Some(write_node))
+        || !unconditionally_executed(write_node)
+    {
         return None;
     }
     Some(offense_at(fm, name, w.byte))
@@ -395,5 +306,70 @@ mod tests {
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].name, "x");
         assert_eq!(f[0].line, 2);
+    }
+
+    #[test]
+    fn pure_ternary_with_interpolation_is_flagged() {
+        let f = flags(
+            "def k(frames)\n  note = frames > 1 ? \"x#{frames}\" : \"\"\n  p note\nend\n",
+        );
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].name, "note");
+    }
+
+    #[test]
+    fn ternary_with_call_is_flagged_when_immediate() {
+        let f = flags(
+            "def k\n  hint = @hint.present? ? \"y#{@hint}\" : \"\"\n  p hint\nend\n",
+        );
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].name, "hint");
+    }
+
+    #[test]
+    fn ternary_with_call_rejected_with_intervening_statement() {
+        let f = flags(
+            "def k\n  hint = @hint.present? ? \"y\" : \"\"\n  side_effect()\n  p hint\nend\n",
+        );
+        assert!(
+            f.is_empty(),
+            "effectful ternary must not cross statements: {f:?}"
+        );
+    }
+
+    #[test]
+    fn pure_ternary_may_cross_intervening_statement() {
+        let f = flags(
+            "def k(frames)\n  note = frames > 1 ? \"x#{frames}\" : \"\"\n  other = 1\n  \"#{note}#{other}\"\nend\n",
+        );
+        let names: Vec<_> = f.iter().map(|o| o.name.as_str()).collect();
+        assert!(names.contains(&"note"), "pure ternary can cross: {f:?}");
+        assert!(names.contains(&"other"), "literal other still flagged: {f:?}");
+    }
+
+    #[test]
+    fn vision_text_note_and_hint_are_flagged() {
+        let f = flags(
+            "def vision_text\n  frames = @images.size\n  note = frames > 1 ? \"\\n\\n# Photos\\n#{frames} photos\" : \"\"\n  hint = @hint.present? ? \"\\n\\n# Hint\\n#{@hint}\" : \"\"\n  \"#{PhotoMeal::Prompt.new.language_note}#{note}#{hint}\"\nend\n",
+        );
+        let names: Vec<_> = f.iter().map(|o| o.name.as_str()).collect();
+        assert!(names.contains(&"note"), "note missed: {f:?}");
+        assert!(names.contains(&"hint"), "hint missed: {f:?}");
+    }
+
+    #[test]
+    fn defined_expr_is_never_inlined() {
+        let f = flags("def k\n  tmp = defined?(x)\n  p tmp\nend\n");
+        assert!(f.is_empty(), "defined? must not be inlined: {f:?}");
+    }
+
+    #[test]
+    fn hash_and_scope_resolution_are_flagged() {
+        let f = flags(
+            "def k(x)\n  h = { a: x }\n  c = Foo::Bar\n  p h\n  p c\nend\n",
+        );
+        let names: Vec<_> = f.iter().map(|o| o.name.as_str()).collect();
+        assert!(names.contains(&"h"), "hash missed: {f:?}");
+        assert!(names.contains(&"c"), "scope_resolution missed: {f:?}");
     }
 }

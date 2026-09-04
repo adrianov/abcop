@@ -1,9 +1,12 @@
 //! Shared RHS inlinability: literals/compositions, call/index chains, and
 //! bare identifier reads (with optional reassignment guard for UsedOnce).
 
+mod ruby;
+
+pub use ruby::ruby_inlinable_rhs;
+
 use tree_sitter::Node;
 
-use crate::model::FileModel;
 use crate::scope_model::{Scope, Semantics};
 
 pub const RUBY_UNITS: &[&str] = &["call", "element_reference"];
@@ -314,27 +317,6 @@ pub fn keep_init_rhs(n: Node, sem: &Semantics) -> bool {
 
 pub fn keep_init_kind(n: Node, unit_kinds: &[&str]) -> bool {
     unit_kinds.contains(&peel_rhs(n).kind())
-}
-
-pub fn ruby_alias_stable(
-    fm: &FileModel,
-    scope: usize,
-    name: &str,
-    write_byte: usize,
-    read_byte: usize,
-) -> bool {
-    match fm.lookup(scope, write_byte, name) {
-        None => true,
-        Some(bind_scope) => fm.scopes[bind_scope]
-            .entries
-            .get(name)
-            .is_none_or(|entry| {
-                !entry
-                    .writes
-                    .iter()
-                    .any(|w| w.byte > write_byte && w.byte < read_byte)
-            }),
-    }
 }
 
 fn lookup_binding(scopes: &[Scope], scope: usize, pos: usize, name: &str) -> Option<usize> {
