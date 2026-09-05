@@ -182,6 +182,11 @@ fn dead_offense(
     if !e.reads.is_empty() || e.writes.is_empty() {
         return None;
     }
+    // C++ `auto& alias = …; alias = …` — later assignments use the binding
+    // as an lvalue even though it is never read.
+    if e.writes.len() > 1 && intro_is_reference(e, nodes) {
+        return None;
+    }
     let first = e.writes.iter().map(|w| w.byte).min()?;
     let (line, column) = line_col(first);
     Some(NeverUsedOffense {
@@ -190,6 +195,25 @@ fn dead_offense(
         name: name.to_string(),
         keep_init: keep_init_for_dead(e, nodes, src, scopes, scope, sem),
     })
+}
+
+/// True when the introducing write sits under a `reference_declarator`
+/// (`Type& x` / `auto& x`).
+fn intro_is_reference(e: &Entry, nodes: &HashMap<usize, Node>) -> bool {
+    let Some(w) = e.writes.iter().min_by_key(|w| w.byte) else {
+        return false;
+    };
+    let mut cur = nodes.get(&w.node_id).copied();
+    while let Some(n) = cur {
+        if n.kind() == "reference_declarator" {
+            return true;
+        }
+        if n.kind() == "declaration" {
+            return false;
+        }
+        cur = n.parent();
+    }
+    false
 }
 
 fn keep_init_for_dead(

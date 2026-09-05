@@ -27,3 +27,8 @@ When touching a language’s scope/usage backend, add a vector that asserts type
 - Dart: `walk_state_initializer` (name unbound, value walked)
 - Python/Go: refuse bind in Root (and Python Class); RHS still walked
 - Java/C#/PHP/Zig/Solidity: skip or never bind field decls; distinct member tokens
+- C/C++/ObjC: `skip_kinds` must apply under block scopes (`custom_children` → `dispatch`);
+  do not bind misparsed keywords/macros; do not bind RAII lifetime guards; count
+  `type_identifier` in template args as reads; resolve `* const` via `@declarator`;
+  walk `#if`/`#ifdef` bodies (skip only include/macro defs); for-init RHS reads without
+  binding loop vars; if-init declarators count as used

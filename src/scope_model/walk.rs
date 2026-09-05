@@ -94,12 +94,13 @@ fn boundary_kind(spec: &Spec, kind: &str) -> Option<ScopeKind> {
     }
 }
 
-/// Route every child of `n` through the backend's custom arms -- the
-/// shared traversal for scope boundaries whose opening/closing tokens
-/// carry no semantics of their own.
+/// Route every child of `n` through [`dispatch`] -- same as a normal
+/// walk, so `skip_kinds` / reads / nested boundaries still apply under
+/// a scope opening. Using `custom` here would bypass `skip_kinds` and
+/// mis-bind preprocessor junk (e.g. `#ifdef` wrapping `else if`).
 fn custom_children(b: &mut impl Backend, n: Node, scope: usize) {
     let mut cursor = n.walk();
     for child in n.children(&mut cursor) {
-        b.custom(child, scope);
+        dispatch(b, child, scope);
     }
 }

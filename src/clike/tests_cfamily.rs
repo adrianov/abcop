@@ -141,3 +141,67 @@ fn export_macro_class_is_not_a_function_of_locals() {
     assert_eq!(dead(Lang::Cpp, src), Vec::<String>::new());
     assert_eq!(used(Lang::Cpp, src), Vec::<String>::new());
 }
+
+#[test]
+fn cpp_ifdef_else_if_does_not_bind_if_keyword() {
+    // Preprocessor-split `if` / `else if` parses `if` as a declarator;
+    // keyword bind filter must refuse it (ifdef bodies are walked for
+    // real reads). Keep `dead` before the broken `else` — that misparse
+    // can close the function early in the CST.
+    let src = "void f(int sock) {\n  int dead = 1;\n  if (sock == 1) { return; }\n#ifdef WITH_UTP\n  else if (sock == 2) { return; }\n#endif\n  else { return; }\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), vec!["dead".to_string()]);
+}
+
+#[test]
+fn cpp_raii_lifetime_guards_are_not_never_used() {
+    let src = "void f(Session* session, std::mutex& m, addrinfo* info) {\n  auto const lock = session->unique_lock();\n  std::lock_guard const guard{ m };\n  auto const keep_alive = shared_from_this();\n  auto const blocker = QSignalBlocker{ w };\n  auto const info_uniq = std::unique_ptr<addrinfo, decltype(&freeaddrinfo)>{ info, freeaddrinfo };\n  int dead = 1;\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), vec!["dead".to_string()]);
+}
+
+#[test]
+fn cpp_template_arg_reads_constexpr_local() {
+    // Non-type template arguments are `type_identifier` in tree-sitter-cpp;
+    // counting them as reads clears the NeverUsed false positive on BufSize.
+    let src = "template<std::size_t N, class T> struct StackBuffer { T data[N]; };\nvoid f() {\n  static auto constexpr BufSize = 32U;\n  auto outbuf = StackBuffer<BufSize, char>{};\n  (void)outbuf;\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), Vec::<String>::new());
+    assert_eq!(used(Lang::Cpp, src), vec!["BufSize".to_string()]);
+}
+
+#[test]
+fn cpp_nullability_macro_is_not_a_local() {
+    let src = "void f(void) {\n  NS_ASSUME_NONNULL_END;\n  int dead = 1;\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), vec!["dead".to_string()]);
+}
+
+#[test]
+fn cpp_pointer_const_declarator_still_walks_rhs_reads() {
+    // `* const ptr` must resolve via @declarator, not named_child(0) (the
+    // const qualifier), or the RHS is dropped and outer locals look dead.
+    let src = "bool f(char const* address) {\n  auto native = std::string{};\n  auto const* const addr = std::empty(native) ? address : native.c_str();\n  return addr != nullptr;\n}";
+    assert_eq!(dead(Lang::Cpp, src), Vec::<String>::new());
+}
+
+#[test]
+fn cpp_for_init_reads_outer_locals_without_binding_loop_var() {
+    let src = "void f() {\n  auto const& spans = getSpans();\n  for (auto it = spans.rbegin(); it != spans.rend(); ++it) { use(*it); }\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), Vec::<String>::new());
+    assert_eq!(used(Lang::Cpp, src), Vec::<String>::new());
+}
+
+#[test]
+fn cpp_if_init_condition_counts_as_a_use() {
+    let src = "void f(Task* task) {\n  if (auto const range = task->range()) { (void)0; }\n  int dead = 1;\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), vec!["dead".to_string()]);
+}
+
+#[test]
+fn cpp_reads_inside_ifdef_still_count() {
+    let src = "void f() {\n  auto const abs = path();\n#if defined(A)\n  use(abs);\n#endif\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), Vec::<String>::new());
+}
+
+#[test]
+fn cpp_reference_alias_written_later_is_not_never_used() {
+    let src = "void f(int& a, int& b, int dir) {\n  auto& tgt = dir == 0 ? a : b;\n  tgt = 1;\n  int dead = 1;\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), vec!["dead".to_string()]);
+}

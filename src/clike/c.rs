@@ -8,24 +8,31 @@
 
 use tree_sitter::Node;
 
+use super::c_bind;
 use crate::paths::Lang;
 use crate::scope_model::walk::{Backend, Spec, dispatch};
 use crate::scope_model::{IntroKind, Model, ScopeKind, Write};
 
+/// Skip macro *definitions* and includes only. Conditional bodies
+/// (`preproc_ifdef` / `preproc_if`) are still walked so reads inside
+/// `#if` / `#ifdef` branches count; misparsed `else if` is handled by
+/// refusing to bind keywords in [`c_bind`].
 const PREPROC: &[&str] = &[
     "preproc_include",
     "preproc_def",
     "preproc_function_def",
     "preproc_call",
-    "preproc_ifdef",
-    "preproc_if",
 ];
+
+/// Identifiers plus `type_identifier`: template args like
+/// `StackBuffer<BufSize, char>` use the latter for the non-type value.
+const C_READS: &[&str] = &["identifier", "type_identifier"];
 
 const C_SPEC: Spec = Spec {
     skip_kinds: PREPROC,
     block_scoped: &["compound_statement", "lambda_expression"],
     function_kinds: &["function_definition", "method_definition"],
-    read_kinds: &["identifier"],
+    read_kinds: C_READS,
     exclude_fields: &[],
 };
 
@@ -35,7 +42,7 @@ const CPP_SPEC: Spec = Spec {
     skip_kinds: PREPROC,
     block_scoped: &["compound_statement", "lambda_expression"],
     function_kinds: &["method_definition"],
-    read_kinds: &["identifier"],
+    read_kinds: C_READS,
     exclude_fields: &[],
 };
 
@@ -45,8 +52,6 @@ const OBJC_SPEC: Spec = Spec {
         "preproc_def",
         "preproc_function_def",
         "preproc_call",
-        "preproc_ifdef",
-        "preproc_if",
         // interface prototypes declare but define nothing; the
         // implementation section carries the bodies
         "class_interface",
@@ -56,7 +61,7 @@ const OBJC_SPEC: Spec = Spec {
     ],
     block_scoped: &["compound_statement", "lambda_expression"],
     function_kinds: &["function_definition", "method_definition"],
-    read_kinds: &["identifier"],
+    read_kinds: C_READS,
     exclude_fields: &[],
 };
 
@@ -101,10 +106,9 @@ impl Backend for Collector<'_> {
                 self.bind_assignment(n, scope);
             }
             "update_expression" => self.bind_update(n, scope),
-            // loop heads are protocol: initializer/control variables are
-            // never tracked (an `int i` written once and read once would
-            // otherwise surface a bogus inlining suggestion)
-            "for_statement" => self.walk_children_excluding_field(n, scope, "initializer"),
+            // loop heads are protocol: do not bind `int i`, but still
+            // collect reads in the initializer (`spans.rbegin()`).
+            "for_statement" => self.walk_for_statement(n, scope),
             "for_range_statement" => self.walk_children_excluding_field(n, scope, "declarator"),
             _ => self.walk_children(n, scope),
         }
@@ -155,37 +159,64 @@ impl Collector<'_> {
         }
     }
 
-    /// Bind one declarator position: either the identifier itself (bare
-    /// `int x;`) or an init_declarator whose @declarator may sit under
-    /// pointer/array/function wrappers. An initializer links as the
-    /// inlinable RHS; a bare definition is a valueless write.
+    /// Bind one declarator: bare `int x;` or `init_declarator` (possibly
+    /// under pointer/array wrappers). Skip keywords/macros and RAII guards.
     fn bind_declarator(&mut self, d: Node, scope: usize) {
-        if d.kind() == "identifier" {
-            self.bind_var(
-                d,
-                scope,
-                Write::assign(d.start_byte(), d.id(), None),
-                IntroKind::Assign,
-            );
-            return;
-        }
-        let Some(name) = d
-            .child_by_field_name("declarator")
-            .and_then(resolve_declarator_name)
-        else {
+        let rhs = init_rhs(d);
+        self.try_bind_local(d, scope, rhs);
+        self.dispatch_opt(rhs, scope);
+    }
+
+    fn try_bind_local(&mut self, d: Node, scope: usize, rhs: Option<Node>) {
+        let Some(name) = declarator_ident(d) else {
             return;
         };
-        let rhs = d.child_by_field_name("value");
-
+        if !c_bind::should_bind(d, self.text_of(name), rhs, self.src) {
+            return;
+        }
         self.bind_var(
             name,
             scope,
             Write::assign(name.start_byte(), name.id(), rhs.map(|v| v.id())),
             IntroKind::Assign,
         );
-        // initializer subtrees may hold nested declarations
-        if let Some(value) = rhs {
-            dispatch(self, value, scope);
+        if condition_introduces(d) {
+            let n = self.text_of(name).to_string();
+            self.model().record_read(scope, &n, name.start_byte());
+        }
+    }
+
+    fn dispatch_opt(&mut self, n: Option<Node>, scope: usize) {
+        if let Some(n) = n {
+            dispatch(self, n, scope);
+        }
+    }
+
+    /// `for` head: skip binding init declarators, still walk their RHS.
+    fn walk_for_statement(&mut self, n: Node, scope: usize) {
+        if let Some(init) = n.child_by_field_name("initializer") {
+            self.walk_for_init_reads(init, scope);
+        }
+        self.walk_children_excluding_field(n, scope, "initializer");
+    }
+
+    fn walk_for_init_reads(&mut self, n: Node, scope: usize) {
+        match n.kind() {
+            "init_declarator" => self.dispatch_opt(init_rhs(n), scope),
+            "assignment_expression" | "augmented_assignment_expression" => {
+                if let Some(right) = n.child_by_field_name("right") {
+                    dispatch(self, right, scope);
+                }
+            }
+            k if self.spec().read_kinds.contains(&k) => {
+                dispatch(self, n, scope);
+            }
+            _ => {
+                let mut c = n.walk();
+                for ch in n.children(&mut c) {
+                    self.walk_for_init_reads(ch, scope);
+                }
+            }
         }
     }
 
@@ -213,11 +244,46 @@ impl Collector<'_> {
     }
 }
 
+fn declarator_ident(d: Node) -> Option<Node> {
+    if d.kind() == "identifier" {
+        Some(d)
+    } else {
+        d.child_by_field_name("declarator")
+            .and_then(resolve_declarator_name)
+    }
+}
+
+fn init_rhs(d: Node) -> Option<Node> {
+    (d.kind() == "init_declarator")
+        .then(|| d.child_by_field_name("value"))
+        .flatten()
+}
+
 /// Strip declarator wrappers (`pointer_declarator`, `array_declarator`,
 /// `function_declarator`, ...) until the named identifier underneath.
+/// Prefer the `@declarator` field so a `* const ptr` qualifier is not
+/// mistaken for the name (named_child(0) would be the `const`).
 fn resolve_declarator_name<'tree>(mut decl: Node<'tree>) -> Option<Node<'tree>> {
     while decl.kind().ends_with("_declarator") && decl.kind() != "init_declarator" {
-        decl = decl.named_child(0)?;
+        decl = decl
+            .child_by_field_name("declarator")
+            .or_else(|| decl.named_child(0))?;
     }
     (decl.kind() == "identifier").then_some(decl)
+}
+
+/// True when this declarator is introduced as an `if`/`while`/`switch`
+/// condition (C++ init-statement or declaration-as-condition).
+fn condition_introduces(d: Node) -> bool {
+    let Some(decl) = d.parent().filter(|p| p.kind() == "declaration") else {
+        return false;
+    };
+    match decl.parent().map(|p| p.kind()) {
+        Some("condition_clause") => true,
+        Some("init_statement") => decl
+            .parent()
+            .and_then(|p| p.parent())
+            .is_some_and(|g| g.kind() == "condition_clause"),
+        _ => false,
+    }
 }

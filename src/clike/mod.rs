@@ -4,11 +4,13 @@
 //!
 //! Submodules: [`spec`] (per-language grammar tables), [`scan`] (unit
 //! discovery and naming), [`tally`] (the ABC counter), [`scope`] (the
-//! JavaScript/TypeScript scope collector), [`swift`] (the Swift scope
-//! collector), [`purity`] (shared RHS-purity predicates), [`tests`] and
+//! JavaScript/TypeScript scope collector), [`c`] / [`c_bind`] (C/C++/ObjC
+//! scopes and bind filters), [`swift`] (the Swift scope collector),
+//! [`purity`] (shared RHS-purity predicates), [`tests`] and
 //! [`tests_abc`] (end-to-end vector assertions).
 
 mod c;
+mod c_bind;
 mod purity;
 mod scan;
 mod scope;
