@@ -154,7 +154,40 @@ fn cpp_ifdef_else_if_does_not_bind_if_keyword() {
 
 #[test]
 fn cpp_raii_lifetime_guards_are_not_never_used() {
-    let src = "void f(Session* session, std::mutex& m, addrinfo* info) {\n  auto const lock = session->unique_lock();\n  std::lock_guard const guard{ m };\n  auto const keep_alive = shared_from_this();\n  auto const blocker = QSignalBlocker{ w };\n  auto const info_uniq = std::unique_ptr<addrinfo, decltype(&freeaddrinfo)>{ info, freeaddrinfo };\n  int dead = 1;\n}\n";
+    let src = "void f(Session* session, std::mutex& m, addrinfo* info, QMutex* qm, CriticalSection& cs) {\n  auto const lock = session->unique_lock();\n  auto const held = cm->lock();\n  std::lock_guard const guard{ m };\n  QMutexLocker qlock(qm);\n  HashManager::HashPauser pauser;\n  Lock l(cs);\n  FastLock fl(cs);\n  File f(target, File::WRITE, File::CREATE);\n  auto const keep_alive = shared_from_this();\n  auto const blocker = QSignalBlocker{ w };\n  auto const info_uniq = std::unique_ptr<addrinfo, decltype(&freeaddrinfo)>{ info, freeaddrinfo };\n  int dead = 1;\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), vec!["dead".to_string()]);
+}
+
+#[test]
+fn cpp_block_ctor_style_args_count_as_reads() {
+    // `QFile f(path)` parses as function_declarator; params are expression args.
+    let src = "void g() {\n  QString path = x();\n  QFile f(path);\n  (void)f;\n  int dead = 1;\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), vec!["dead".to_string()]);
+}
+
+#[test]
+fn cpp_qt_emit_and_debug_block_are_not_locals() {
+    // `emit sig(x)` and `DEBUG_BLOCK\\n call()` parse as declarations whose
+    // type is the macro; refuse the bind and still count arg reads. A single
+    // use of `status` via emit is UsedOnce (real), not NeverUsed (the old FP).
+    let src = "void f(Hubs& hubs) {\n  auto it = hubs.find(url);\n  if (it != hubs.end()) {\n    emit hubUnregistered(it.value());\n    hubs.erase(it);\n  }\n  QString status = tr(\"hi\");\n  emit coreConnecting(status);\n  DEBUG_BLOCK\n  setAcceptDrops(true);\n  int dead = 1;\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), vec!["dead".to_string()]);
+    assert_eq!(used(Lang::Cpp, src), vec!["status".to_string()]);
+}
+
+#[test]
+fn cpp_ifdef_orphaned_else_does_not_bind_following_name() {
+    // `#ifdef` between `if` and `else` makes `else stmt` a declaration with
+    // type `else` — do not bind `notify` / `fprintf` as locals.
+    let src = "void f(Module* notify) {\n  if (t == QtNotify)\n    notify = new A();\n#ifdef DBUS\n  else\n    notify = new B();\n#endif\n  int dead = 1;\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), vec!["dead".to_string()]);
+}
+
+#[test]
+fn cpp_adjacent_macros_and_index_assign_are_not_locals() {
+    // Error recovery: `paths[I] = a + "x" MACRO MACRO` splits into a fake
+    // structured_binding decl and `MACRO MACRO;`.
+    let src = "void f(string* paths) {\n  paths[PATH_LOCALE] = linExecutablePath() + \"/../../\" LOCALE_DIR PATH_SEPARATOR_STR;\n  int dead = 1;\n}\n";
     assert_eq!(dead(Lang::Cpp, src), vec!["dead".to_string()]);
 }
 
@@ -192,6 +225,14 @@ fn cpp_for_init_reads_outer_locals_without_binding_loop_var() {
 fn cpp_if_init_condition_counts_as_a_use() {
     let src = "void f(Task* task) {\n  if (auto const range = task->range()) { (void)0; }\n  int dead = 1;\n}\n";
     assert_eq!(dead(Lang::Cpp, src), vec!["dead".to_string()]);
+}
+
+#[test]
+fn cpp_if_init_pointer_rhs_reads_outer_locals() {
+    // `if (T* x = call(priv))` puts `@value` on the declaration (no
+    // init_declarator); args must still count as reads.
+    let src = "bool f() {\n  const bool priv = isPrivate();\n  if (OnlineUser* ou = findBest(priv)) { return true; }\n  return false;\n}\n";
+    assert_eq!(dead(Lang::Cpp, src), Vec::<String>::new());
 }
 
 #[test]

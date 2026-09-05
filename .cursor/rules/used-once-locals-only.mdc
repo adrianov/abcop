@@ -28,7 +28,12 @@ When touching a language’s scope/usage backend, add a vector that asserts type
 - Python/Go: refuse bind in Root (and Python Class); RHS still walked
 - Java/C#/PHP/Zig/Solidity: skip or never bind field decls; distinct member tokens
 - C/C++/ObjC: `skip_kinds` must apply under block scopes (`custom_children` → `dispatch`);
-  do not bind misparsed keywords/macros; do not bind RAII lifetime guards; count
+  do not bind when decl `@type` is a statement macro (`emit`, `DEBUG_BLOCK`, orphaned
+  `else`, …) or error-recovery expression shapes (`paths[I]=…`, adjacent `MACRO MACRO;`) —
+  still walk so args/operands count as reads; treat block-local `Type name(args)`
+  (`function_declarator`) as construction (bind name, read args); do not bind RAII
+  lifetime guards (`Lock`, `File`, `QMutexLocker`, `HashPauser`, `…->lock()`); count
   `type_identifier` in template args as reads; resolve `* const` via `@declarator`;
   walk `#if`/`#ifdef` bodies (skip only include/macro defs); for-init RHS reads without
-  binding loop vars; if-init declarators count as used
+  binding loop vars; if-init declarators count as used (including `T* x = call(args)`
+  where `@value` sits on the declaration)

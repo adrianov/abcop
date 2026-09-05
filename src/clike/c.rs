@@ -150,12 +150,59 @@ impl Collector<'_> {
 
     /// Bind each declarator of a `declaration`.
     fn bind_declaration(&mut self, n: Node, scope: usize) {
+        // Statement macros / misparsed expressions (`emit`, `paths[I]=…`) — walk only.
+        if c_bind::skip_declaration_bind(n, self.src) {
+            self.walk_children(n, scope);
+            return;
+        }
+        // C++ if-init `T* x = rhs` may put `@value` on the declaration itself.
+        let decl_value = n.child_by_field_name("value");
+        let in_block = n
+            .parent()
+            .is_some_and(|p| p.kind() == "compound_statement");
         let mut cursor = n.walk();
-        for d in n
+        for d in n.children(&mut cursor) {
+            self.bind_decl_child(d, scope, decl_value, in_block);
+        }
+        self.dispatch_opt(decl_value, scope);
+    }
+
+    fn bind_decl_child(&mut self, d: Node, scope: usize, decl_value: Option<Node>, in_block: bool) {
+        match d.kind() {
+            "init_declarator" | "identifier" => self.bind_declarator(d, scope),
+            // Local `QFile f(path)` — most-vexing-parse as function_declarator.
+            "function_declarator" if in_block => self.bind_ctor_declarator(d, scope),
+            // `T* x` / `T& x` (value may sit on the declaration in if-init)
+            k if k.ends_with("_declarator") && k != "function_declarator" => {
+                self.try_bind_local(d, scope, decl_value);
+            }
+            _ => {}
+        }
+    }
+
+    /// `Type name(args)` inside a block: bind `name`, walk param slots as
+    /// expression reads (`path` in `QFile f(path)` is a `type_identifier`).
+    fn bind_ctor_declarator(&mut self, fd: Node, scope: usize) {
+        let rhs = fd.child_by_field_name("parameters");
+        self.try_bind_local(fd, scope, rhs);
+        if let Some(params) = rhs {
+            self.walk_ctor_args(params, scope);
+        }
+    }
+
+    fn walk_ctor_args(&mut self, params: Node, scope: usize) {
+        let mut cursor = params.walk();
+        for p in params
             .children(&mut cursor)
-            .filter(|ch| ch.kind() == "init_declarator" || ch.kind() == "identifier")
+            .filter(|ch| ch.kind() == "parameter_declaration")
         {
-            self.bind_declarator(d, scope);
+            if let Some(ty) = p.child_by_field_name("type") {
+                if p.child_by_field_name("declarator").is_none() {
+                    dispatch(self, ty, scope);
+                    continue;
+                }
+            }
+            self.walk_children(p, scope);
         }
     }
 
