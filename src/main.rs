@@ -15,6 +15,7 @@ mod golang;
 mod hasslang;
 mod inlinable;
 mod javalang;
+mod mcp;
 mod model;
 mod modulesize;
 mod mr_scope;
@@ -99,6 +100,9 @@ pub(crate) struct Cli {
     /// Debug: dump the syntax tree of a single file
     #[arg(long, hide = true)]
     dump_tree: bool,
+    /// Start an MCP (Model Context Protocol) server on stdio
+    #[arg(long)]
+    pub(crate) mcp: bool,
 }
 
 fn main() -> ExitCode {
@@ -108,6 +112,9 @@ fn main() -> ExitCode {
     }
     let cli = Cli::parse();
 
+    if cli.mcp {
+        return mcp::run();
+    }
     if cli.dump_tree {
         return run_dump_tree(&cli.paths);
     }

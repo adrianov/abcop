@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.adrianov/abcop",
+  "title": "abcop",
+  "description": "ABC complexity gate for AI-written code with an MCP inspection tool.",
+  "websiteUrl": "https://github.com/adrianov/abcop",
+  "repository": {
+    "url": "https://github.com/adrianov/abcop",
+    "source": "github"
+  },
+  "version": "0.18.1",
+  "packages": [
+    {
+      "registryType": "cargo",
+      "registryBaseUrl": "https://crates.io",
+      "identifier": "abcop",
+      "version": "0.18.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "--mcp"
+        }
+      ]
+    }
+  ]
+}

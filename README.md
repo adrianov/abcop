@@ -84,6 +84,11 @@ NeverUsed are secondary.
 - **Signal only.** No formatting or style cops. Vendored, generated and
   test trees are skipped by default. Two knobs: `--max-abc` and
   `--max-module-abc`.
+- **MCP** — `abcop --mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io/)
+  server (official Rust [`rmcp`](https://crates.io/crates/rmcp) SDK) with
+  `abcop_inspection` for AI clients. Listed on the
+  [MCP Registry](https://registry.modelcontextprotocol.io/) as
+  `io.github.adrianov/abcop` (crates.io package + each GitHub `v*` tag).
 
 Inspired by [RuboCop](https://github.com/rubocop/rubocop) (Ruby AbcSize
 parity and `# rubocop:disable` directives) and
@@ -121,6 +126,7 @@ abcop [OPTIONS] PATH...
 | `--mr` | off | MR scope (uncommitted + branch vs base) |
 | `--uncommitted` | off | working-tree + index + untracked vs `HEAD` only |
 | `--no-cache` | off | skip on-disk cache |
+| `--mcp` | off | MCP server on stdio (for AI clients) |
 | `--dump-tree FILE` | — | debug syntax tree |
 
 Exit codes: `0` clean, `1` findings, `2` usage error.
@@ -134,6 +140,7 @@ abcop --max-module-abc 80 lib           # stricter module budget
 abcop --sort-by-score --only abc lib   # worst first
 abcop --uncommitted                    # pre-commit / agent loop
 abcop --mr --only abc                  # this branch's touched units
+abcop --mcp                            # MCP server on stdio (for AI clients)
 ```
 
 JSON diagnostics include `file`, `line`, `column`, `severity`, `rule`,
@@ -188,6 +195,48 @@ def legacy_path # rubocop:disable Metrics/AbcSize
   ...
 end
 ```
+
+## MCP (Model Context Protocol)
+
+`abcop --mcp` runs a long-lived MCP server on stdio — same idea as
+[RuboCop’s MCP](https://docs.rubocop.org/rubocop/latest/usage/mcp.html)
+and [rrubocop](https://github.com/adrianov/rrubocop), with no Ruby `mcp`
+gem. Tool:
+
+| Tool | Purpose |
+|---|---|
+| `abcop_inspection` | Analyse via `path` and/or inline `source_code`; returns LSP-shaped offense JSON (`score` / `vector` in `data` for ABC rules) |
+
+- MCP Registry name: `mcp-name: io.github.adrianov/abcop`
+
+Metadata lives in [`server.json`](./server.json), which is part of the
+Cargo package on [crates.io](https://crates.io/crates/abcop). Each GitHub
+`v*` release tag publishes that listing to the
+[MCP Registry](https://registry.modelcontextprotocol.io/) (after the
+crates.io upload).
+
+Example client config (Cursor / VS Code / Windsurf):
+
+```json
+{
+  "mcpServers": {
+    "abcop": {
+      "type": "stdio",
+      "command": "abcop",
+      "args": ["--mcp"],
+      "cwd": "/path/to/your/project"
+    }
+  }
+}
+```
+
+Claude Code:
+
+```sh
+claude mcp add abcop -- abcop --mcp
+```
+
+Intended for MCP clients, not interactive use.
 
 ## Caching
 

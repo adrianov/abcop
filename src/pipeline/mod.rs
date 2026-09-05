@@ -66,20 +66,45 @@ pub(crate) fn analyze_one(
         return hit;
     }
 
-    let file_lang = lang_for(path);
-    let Some(tree) = parse_file_lang(&src_buf, file_lang) else {
-        return r;
-    };
-    let checks = Checks::new(only);
-    if file_lang.is_clike() {
-        backends::clike_arm(&mut r, file_lang, &src_buf, &tree, &checks, limits);
-    } else if !backends::non_clike_arm(&mut r, file_lang, &src_buf, tree, &checks, limits) {
-        // Unparsable Ruby tree: report the blank result without caching it.
+    if !analyze_src_into(&mut r, path, &src_buf, only, limits) {
         return r;
     }
     store_result(cache, path, &src_buf, only, limits, &r);
     narrow::apply(changeset, &mut r, limits.module, &src_buf);
     r
+}
+
+/// Analyse in-memory source (MCP inline `source_code`); `path` selects language.
+pub(crate) fn analyze_src(
+    path: &std::path::Path,
+    src: &[u8],
+    only: Option<&str>,
+    limits: Limits,
+) -> crate::output::FileResult {
+    let mut r = blank_with(path);
+    let _ = analyze_src_into(&mut r, path, src, only, limits);
+    r
+}
+
+/// Run backends into `r`. False when the tree is unusable (e.g. Ruby reparse).
+fn analyze_src_into(
+    r: &mut crate::output::FileResult,
+    path: &std::path::Path,
+    src: &[u8],
+    only: Option<&str>,
+    limits: Limits,
+) -> bool {
+    let file_lang = lang_for(path);
+    let Some(tree) = parse_file_lang(src, file_lang) else {
+        return true;
+    };
+    let checks = Checks::new(only);
+    if file_lang.is_clike() {
+        backends::clike_arm(r, file_lang, src, &tree, &checks, limits);
+        true
+    } else {
+        backends::non_clike_arm(r, file_lang, src, tree, &checks, limits)
+    }
 }
 
 /// Blank result plus source bytes; None when the file cannot be read.

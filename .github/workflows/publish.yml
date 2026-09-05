@@ -175,3 +175,36 @@ jobs:
               --title "abcop $version" \
               --notes "$notes"
           fi
+
+  # Official MCP Registry listing (crates.io ownership via README mcp-name:).
+  # Runs after crates.io so the version README is already public for verification.
+  mcp-registry:
+    needs: [crates-io]
+    if: needs.crates-io.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Install mcp-publisher
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" \
+            | tar xz mcp-publisher
+      - name: Sync server.json version from tag
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          jq --arg v "$version" \
+            '.version = $v | .packages[].version = $v' \
+            server.json > server.tmp
+          mv server.tmp server.json
+          cat server.json
+      - name: Authenticate to MCP Registry
+        run: ./mcp-publisher login github-oidc
+      - name: Publish server.json
+        run: ./mcp-publisher publish

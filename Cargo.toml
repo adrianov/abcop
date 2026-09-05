@@ -2,7 +2,7 @@
 name = "abcop"
 version = "0.18.1"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 authors = ["Peter Adrianov"]
 license = "GPL-3.0-or-later"
 repository = "https://github.com/adrianov/abcop"
@@ -10,7 +10,7 @@ homepage = "https://github.com/adrianov/abcop"
 documentation = "https://github.com/adrianov/abcop"
 description = "Must-have ABC complexity gate for AI development. Ruby, Rust, Python, Go, JS/TS, C/C++, PHP, Java, C#, Swift, Zig, Dart, Solidity, Haskell, ObjC"
 readme = "README.md"
-keywords = ["linter", "complexity", "static-analysis", "ai", "llm"]
+keywords = ["linter", "complexity", "static-analysis", "ai", "mcp"]
 categories = ["command-line-utilities", "development-tools"]
 include = [
     "src/**",
@@ -19,15 +19,20 @@ include = [
     "README.md",
     "LICENSE",
     "man/**",
+    "server.json",
 ]
 
 [dependencies]
+anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 libc = "0.2"
 ignore = "0.4"
 rayon = "1"
+rmcp = { version = "3.2", default-features = false, features = ["server", "macros", "transport-io", "schemars"] }
+schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "io-std", "macros", "sync"] }
 tree-sitter = "0.26"
 tree-sitter-ruby = { version = "0.23.1", path = "vendor/tree-sitter-ruby" }
 tree-sitter-rust = { version = "0.24.2", path = "vendor/tree-sitter-rust" }
@@ -51,6 +56,9 @@ tree-sitter-zig = { version = "1.1.2", path = "vendor/tree-sitter-zig" }
 tree-sitter-haskell = { version = "0.23.1", path = "vendor/tree-sitter-haskell" }
 git2 = { version = "0.20", default-features = false }
 
+[dev-dependencies]
+rmcp = { version = "3.2", default-features = false, features = ["client"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util"] }
 
 [profile.release]
 lto = true

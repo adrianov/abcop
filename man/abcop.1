@@ -273,6 +273,12 @@ analysis finishes.
 .B \-\-no\-cache
 Skip the on\-disk result cache for this run, forcing a full reanalysis.
 .TP
+.B \-\-mcp
+Start an MCP (Model Context Protocol) server on stdio for AI clients.
+Exposes
+.B abcop_inspection
+(ABC / UsedOnce / NeverUsed; LSP\-shaped offense JSON).
+.TP
 .B \-\-dump\-tree " FILE"
 Debug aid: print the tree\-sitter syntax tree of a single file and exit.
 .TP
