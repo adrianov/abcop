@@ -1,0 +1,29 @@
+---
+description: UsedOnce/NeverUsed must not treat type or module members as locals
+alwaysApply: true
+---
+
+# UsedOnce / NeverUsed: locals only
+
+UsedOnce and NeverUsed analyze **local** bindings only. Never report:
+
+- Type members: class/struct/record fields, properties, `@State` / instance vars, associated consts
+- Module / package / file-level exports that other units may read
+
+## Collector rules
+
+1. **Do not bind** type-body or module/package declarations as locals. Prefer walk-without-bind (Dart/Swift/Python/Go): still walk initializers and computed/observer bodies so nested locals are found.
+2. If the grammar uses a distinct member token (`field_identifier`, `property_identifier`), never treat it as a variable read.
+3. Prefer not binding over skipping scopes in offense loops. Use `include_root_scope: false` (or equivalent) only when Root bindings must exist for another reason.
+4. Keep **grammar kind names** in sync with the vendored tree-sitter grammar (`lambda_literal` vs stale `closure_expression`, real body kinds, etc.).
+
+## Regression
+
+When touching a language’s scope/usage backend, add a vector that asserts type/module members stay quiet while a real unread local and a real UsedOnce local still fire.
+
+## Known good patterns
+
+- Swift: `TYPE_BODIES` + skip bind; walk value/computed/observer children
+- Dart: `walk_state_initializer` (name unbound, value walked)
+- Python/Go: refuse bind in Root (and Python Class); RHS still walked
+- Java/C#/PHP/Zig/Solidity: skip or never bind field decls; distinct member tokens
