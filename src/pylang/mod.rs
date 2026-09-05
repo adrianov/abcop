@@ -18,7 +18,8 @@
 //! - UsedOnce: single non-augmented write, pure RHS, straight-line
 //!   write position, single read after the write. Parameters, loop and
 //!   `with ... as` / `except ... as` bindings, imports and
-//!   underscore-prefixed names are excluded.
+//!   underscore-prefixed names are excluded. Class attributes and
+//!   module-level names are not bound as locals.
 //! - NeverUsed: written but never read, reported at the first write;
 //!   same exclusions.
 pub(crate) mod abc;

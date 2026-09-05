@@ -14,7 +14,7 @@
 //! - UsedOnce: single plain write, pure RHS, straight-line write, single
 //!   read after the write. Parameters, results, blank `_` and
 //!   underscore-free-only rule apply; struct fields (`field_identifier`)
-//!   are never variable reads.
+//!   are never variable reads. Package-level names are not bound as locals.
 //! - NeverUsed: written but never read, reported at the first write;
 //!   same exclusions.
 

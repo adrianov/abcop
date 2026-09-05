@@ -144,8 +144,16 @@ impl Collector<'_> {
 
     /// Bind a written identifier token under `intro`: assignment/walrus
     /// heads pass an RHS node id, protocol bindings and pattern captures
-    /// none -- only plain Assign writes are inline candidates.
+    /// none -- only plain Assign writes are inline candidates. Module and
+    /// class-body names are attributes/exports (not locals) and stay
+    /// unbound; callers still walk the RHS for nested locals.
     fn bind_name(&mut self, name_node: Node, scope: usize, intro: IntroKind, rhs: Option<usize>) {
+        if matches!(
+            self.scopes[scope].kind,
+            ScopeKind::Root | ScopeKind::Class
+        ) {
+            return;
+        }
         let w = Write {
             byte: name_node.start_byte(),
             node_id: name_node.id(),

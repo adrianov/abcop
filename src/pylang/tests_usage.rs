@@ -130,3 +130,20 @@ fn never_used_flags_unread_with_and_except_aliases() {
                \x20       pass\n";
     assert_eq!(dead(src), vec!["err", "fh"]);
 }
+
+#[test]
+fn class_and_module_attributes_are_not_locals() {
+    // Class body assignments and module-level names are attributes /
+    // exports, not UsedOnce/NeverUsed locals -- even when unread in the
+    // same file (methods use `self.x` / do not resolve into Class/Root).
+    let src = "MOD = 1\n\
+               class C:\n\
+               \x20   x = 1\n\
+               \x20   y: int = 2\n\
+               \x20   def f(self):\n\
+               \x20       unused = 1\n\
+               \x20       once = 2\n\
+               \x20       return once + self.x + C.y + MOD\n";
+    assert_eq!(dead(src), vec!["unused"]);
+    assert_eq!(used(src), vec!["once"]);
+}

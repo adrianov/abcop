@@ -83,3 +83,20 @@ fn never_used_reports_unread_local() {
         vec!["unused"]
     );
 }
+
+#[test]
+fn package_level_vars_are_not_locals() {
+    // Package `var` lives in Root; Function scopes do not resolve into
+    // Root, so flagging package state is a single-file false positive.
+    // Struct fields stay quiet via `field_identifier`.
+    let src = "package m\n\
+               var Used = 1\n\
+               type T struct{ F int }\n\
+               func F(t T) int {\n\
+               \x20 unused := 1\n\
+               \x20 once := 2\n\
+               \x20 return once + Used + t.F\n\
+               }\n";
+    assert_eq!(dead(src), vec!["unused"]);
+    assert_eq!(used(src), vec!["once"]);
+}

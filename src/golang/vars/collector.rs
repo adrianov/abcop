@@ -77,7 +77,9 @@ impl Collector<'_> {
     }
 
     pub(super) fn bind(&mut self, scope: usize, name: &str, w: Write, intro: IntroKind) {
-        if name.starts_with('_') {
+        // Package-level names are exports, not locals (Function scopes do
+        // not resolve into Root). Still walk their RHS via callers.
+        if name.starts_with('_') || self.scopes[scope].kind == ScopeKind::Root {
             return;
         }
         match self.lookup(scope, w.byte, name) {

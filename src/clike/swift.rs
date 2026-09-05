@@ -1,32 +1,42 @@
 //! Swift backend for the shared `scope_model` walk.
 //!
-//! Swift mirrors the JS/TS family: nominal type bodies (`class_body`/
-//! `struct_body`) are namespaces, not function boundaries -- nested
-//! `func`/`init`/closures capture outer `let` bindings -- so every unit
-//! opens a `Block` scope that escapes to root and `include_root_scope`
-//! stays false (module-level bindings may be consumed in other files).
+//! Nominal type bodies (`class_body` / `enum_class_body` / `protocol_body`)
+//! are namespaces, not local-variable scopes: nested `func` / `init` /
+//! `lambda_literal` / computed properties capture outer locals, so those
+//! units open [`ScopeKind::Block`] and escape to root. Type members
+//! (`property_declaration` directly under a type body) are not locals --
+//! UsedOnce / NeverUsed ignore them -- but their initializers and
+//! computed / observer bodies are still walked for nested locals and
+//! captures. `include_root_scope` stays false (file-level bindings may be
+//! consumed in other files).
 
 use tree_sitter::Node;
 
 use crate::scope_model::walk::{Backend, Spec, dispatch};
-use crate::scope_model::{IntroKind, Model, Write};
+use crate::scope_model::{IntroKind, Model, ScopeKind, Write};
 
-// Swift's static scope/spec tables. Swift mirrors the JS/TS family:
-// nominal type bodies (`class_body`/`struct_body`) are namespaces, not
-// function boundaries -- nested `func`/`init`/closures capture outer
-// `let` bindings -- so every unit opens a `Block` scope that escapes to
-// root and `include_root_scope` stays false (module-level bindings may
-// be consumed in other files).
+/// Type-body kinds whose direct `property_declaration` children are members,
+/// not locals (tree-sitter-swift uses `class_body` for class/struct/actor/
+/// extension; enums and protocols have their own body kinds).
+const TYPE_BODIES: &[&str] = &["class_body", "enum_class_body", "protocol_body"];
+
+// Grammar note: kinds must match tree-sitter-swift (`lambda_literal`, not
+// a JS-style `closure_expression`; no `struct_body` / `statement_block`).
 static SWIFT_SPEC: Spec = Spec {
     skip_kinds: &["import_declaration"],
     block_scoped: &[
-        "statement_block",
         "class_body",
-        "struct_body",
-        "enum_case_block",
+        "enum_class_body",
+        "protocol_body",
         "function_declaration",
         "init_declaration",
-        "closure_expression",
+        "lambda_literal",
+        "computed_property",
+        "computed_getter",
+        "computed_setter",
+        "computed_modify",
+        "willset_didset_block",
+        "catch_block",
     ],
     // Swift's functions/init/closures are closures w.r.t. outer locals.
     function_kinds: &[],
@@ -70,8 +80,8 @@ impl Backend for SwiftCollector<'_> {
     fn custom(&mut self, n: Node, scope: usize) {
         match n.kind() {
             // `let`/`var` declaration: `property_declaration` wraps a
-            // `value_binding_pattern` plus a `@value` initializer. Bind
-            // the pattern's bound identifier, linking the init as RHS.
+            // `value_binding_pattern` plus optional `@value` / `@computed_value`.
+            // Type members are not locals; function/computed locals bind.
             "property_declaration" => self.swift_bind(n, scope),
             // Member access `expr.member`: the `suffix` field holds the
             // member-name `simple_identifier`; skip it so `self.x` /
@@ -82,38 +92,46 @@ impl Backend for SwiftCollector<'_> {
             // rewrite-and-read; compound binds as `Binding`, never an
             // inline candidate (see `candidates`).
             "assignment" => self.walk_assignment(n, scope),
+            // for-in head `@item` is protocol (not a local introduction we
+            // track); open a Block so body locals stay loop-scoped and walk
+            // `@collection` / body via dispatch (a block_scoped boundary
+            // would route the collection identifier through `custom` and
+            // miss the read).
+            "for_statement" => {
+                let s = self.model.open_scope(ScopeKind::Block, scope);
+                self.walk_children_excluding_field(n, s, "item");
+            }
             _ => self.walk_children(n, scope),
         }
     }
 }
 
 impl SwiftCollector<'_> {
-    /// Bind a `property_declaration`: introduce the bound identifier in its
-    /// `@name` pattern, linking the initializer (`@value`) as the inlinable
-    /// RHS when present.
+    /// Bind a local `property_declaration`, or walk a type member without
+    /// introducing it. Always walks initializer / computed / observer
+    /// subtrees (excluding the bound name) so nested locals and reads of
+    /// outer locals are recorded.
     fn swift_bind(&mut self, n: Node, scope: usize) {
-        // `@name` is a `pattern` node wrapping a `bound_identifier`
-        // `simple_identifier`; walk its named children to find the name.
-        let name = n
-            .child_by_field_name("name")
-            .and_then(|p| p.named_children(&mut p.walk()).next());
-        let Some(name) = name else {
-            return;
-        };
-
-        self.bind_var(
-            name,
-            scope,
-            Write::assign(
-                name.start_byte(),
-                name.id(),
-                n.child_by_field_name("value").map(|v| v.id()),
-            ),
-            IntroKind::Assign,
-        );
-        if let Some(value) = n.child_by_field_name("value") {
-            dispatch(self, value, scope);
+        if !is_type_member(n) {
+            // `@name` is a `pattern` node wrapping a `bound_identifier`
+            // `simple_identifier`; walk its named children to find the name.
+            if let Some(name) = n
+                .child_by_field_name("name")
+                .and_then(|p| p.named_children(&mut p.walk()).next())
+            {
+                self.bind_var(
+                    name,
+                    scope,
+                    Write::assign(
+                        name.start_byte(),
+                        name.id(),
+                        n.child_by_field_name("value").map(|v| v.id()),
+                    ),
+                    IntroKind::Assign,
+                );
+            }
         }
+        self.walk_children_excluding_field(n, scope, "name");
     }
 
     /// Plain `=` rebinds a visible local; compound assignment operators
@@ -143,4 +161,9 @@ impl SwiftCollector<'_> {
             dispatch(self, right, scope);
         }
     }
+}
+
+fn is_type_member(n: Node) -> bool {
+    n.parent()
+        .is_some_and(|p| TYPE_BODIES.iter().any(|k| p.kind() == *k))
 }

@@ -138,3 +138,39 @@ fn swift_closure_rhs_is_not_pure() {
     let src = "func f() {\n  let n = 1\n  let c = { (_: Int) in n }\n  return c(0) + n\n}";
     assert_eq!(used(Lang::Swift, src), Vec::<String>::new());
 }
+
+#[test]
+fn swift_type_members_are_not_locals() {
+    // Stored / computed / @State members under class_body must not be
+    // UsedOnce or NeverUsed; only nested function locals are.
+    let src = "struct V: View {\n  var projects: [Int]\n  @State private var text: String = \"\"\n  var body: some View {\n    Text(text)\n  }\n  func f() {\n    let unused = 1\n    let once = 2\n    return once + projects.count\n  }\n}";
+    assert_eq!(dead(Lang::Swift, src), vec!["unused".to_string()]);
+    assert_eq!(used(Lang::Swift, src), vec!["once".to_string()]);
+}
+
+#[test]
+fn swift_computed_property_locals_are_tracked() {
+    // Locals inside `@computed_value` must bind and resolve reads; the
+    // computed property name itself is a type member and stays quiet.
+    let src = "struct S {\n  var body: Int {\n    let dead = 1\n    let once = 2\n    return once\n  }\n}";
+    assert_eq!(dead(Lang::Swift, src), vec!["dead".to_string()]);
+    assert_eq!(used(Lang::Swift, src), vec!["once".to_string()]);
+}
+
+#[test]
+fn swift_lambda_literal_captures_outer_local() {
+    // tree-sitter-swift uses `lambda_literal` (not `closure_expression`);
+    // a read inside the trailing closure must count toward the outer local.
+    let src = "func f(_ items: [Int]) {\n  let a = 1\n  items.forEach { _ in print(a) }\n}";
+    assert_eq!(dead(Lang::Swift, src), Vec::<String>::new());
+    assert_eq!(used(Lang::Swift, src), vec!["a".to_string()]);
+}
+
+#[test]
+fn swift_for_in_collection_counts_as_read() {
+    // `for x in ids` must record a read of `ids` (and not treat the loop
+    // binder as a local introduction).
+    let src = "func f(_ items: [Int]) {\n  let ids = items\n  for x in ids { print(x) }\n}";
+    assert_eq!(dead(Lang::Swift, src), Vec::<String>::new());
+    assert_eq!(used(Lang::Swift, src), vec!["ids".to_string()]);
+}

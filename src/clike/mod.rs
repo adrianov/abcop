@@ -100,7 +100,8 @@ static SWIFT_SEMANTICS: crate::scope_model::Semantics = crate::scope_model::Sema
     owners: &[
         "function_declaration",
         "init_declaration",
-        "closure_expression",
+        "lambda_literal",
+        "computed_property",
     ],
     include_root_scope: false,
     exempt_bindings: false,
