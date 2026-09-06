@@ -2,6 +2,7 @@
 //! on on-disk Ruby fixtures.
 
 use super::analyze_one;
+use super::analyze_src;
 use super::narrow::apply;
 use crate::abc::Limits;
 use crate::git_changes::{Changeset, Lines};
@@ -146,4 +147,41 @@ fn full_scan_drops_module_abc_on_test_trees() {
         "full scans keep the test-tree exemption"
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn explicit_html_is_not_scored_as_ruby() {
+    let dir = std::env::temp_dir().join(format!("abcop_html_skip_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("index.html");
+    std::fs::write(
+        &file,
+        b"<!doctype html><html lang=\"en\"><body><script>const x = 1;</script></body></html>\n",
+    )
+    .unwrap();
+    let r = analyze_one(&file, None, test_limits(), None, None);
+    assert!(r.is_clean(), "html must not be scored as ruby");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn inline_unknown_ext_is_skipped_extensionless_still_scores() {
+    let html = analyze_src(
+        std::path::Path::new("index.html"),
+        b"<html lang=\"en\"></html>\n",
+        None,
+        test_limits(),
+    );
+    assert!(html.is_clean(), "inline html path must not score as ruby");
+    let probe = analyze_src(
+        std::path::Path::new("snippet"),
+        b"def foo\n  x = 1\nend\n",
+        None,
+        test_limits(),
+    );
+    assert!(
+        probe.never_used.iter().any(|o| o.name == "x"),
+        "extensionless MCP path must still select Ruby"
+    );
 }

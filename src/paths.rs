@@ -71,8 +71,7 @@ pub fn lang_for(path: &std::path::Path) -> Lang {
             return *lang;
         }
     }
-    // Gemfile-style names and anything else text-shaped stay Ruby,
-    // whose scorer is a no-op for non-Ruby content.
+    // Unknown extension — on-disk scans must skip via `is_code_path`.
     Lang::Ruby
 }
 

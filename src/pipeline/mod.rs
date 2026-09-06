@@ -5,7 +5,7 @@
 use crate::abc::Limits;
 use crate::cache;
 use crate::git_changes;
-use crate::paths::{Lang, lang_for, parse_file_lang};
+use crate::paths::{Lang, is_code_path, lang_for, parse_file_lang};
 use crate::srcbuf::{SrcBuf, load_src};
 mod backends;
 mod narrow;
@@ -55,6 +55,11 @@ pub(crate) fn analyze_one(
     changeset: Option<&git_changes::Changeset>,
     cache: Option<&cache::Cache>,
 ) -> crate::output::FileResult {
+    // Explicit CLI/MCP paths bypass the walker filter; still refuse unknown
+    // extensions so HTML (etc.) is not mis-scored as Ruby — and never cache them.
+    if !is_code_path(path) {
+        return blank_with(path);
+    }
     let Some((mut r, src_buf)) = loaded_result(path) else {
         return blank_with(path);
     };
@@ -82,6 +87,11 @@ pub(crate) fn analyze_src(
     limits: Limits,
 ) -> crate::output::FileResult {
     let mut r = blank_with(path);
+    // Path is a language hint: refuse unknown extensions (.html), but keep
+    // extensionless probes (they fall through to Ruby via `lang_for`).
+    if path.extension().is_some() && !is_code_path(path) {
+        return r;
+    }
     let _ = analyze_src_into(&mut r, path, src, only, limits);
     r
 }
