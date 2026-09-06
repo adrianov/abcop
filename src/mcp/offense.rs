@@ -1,4 +1,6 @@
-//! LSP-shaped offense JSON (matches RuboCop / rrubocop MCP diagnostics).
+//! LSP-shaped offense JSON for MCP diagnostics.
+//!
+//! No `correctable` field — abcop does not autocorrect.
 
 use serde_json::{json, Value};
 
@@ -25,26 +27,19 @@ fn range(line: usize, column: usize, len: usize) -> Value {
     })
 }
 
-fn offense(
-    range: Value,
-    severity: &str,
-    code: &str,
-    message: String,
-    data: Value,
-) -> Value {
+fn offense(range: Value, severity: &str, code: &str, message: String) -> Value {
     json!({
         "range": range,
         "severity": lsp_severity(severity),
         "source": "abcop",
         "code": code,
         "message": message,
-        "data": data
     })
 }
 
 fn abc_offense(o: &AbcOffense) -> Value {
     let len = o.name.chars().count().max(1);
-    offense(
+    let mut v = offense(
         range(o.line, o.column, len),
         "C",
         "Metrics/AbcSize",
@@ -54,12 +49,13 @@ fn abc_offense(o: &AbcOffense) -> Value {
             o.vector,
             crate::abc::g4(o.score)
         ),
-        json!({ "correctable": false, "score": o.score, "vector": o.vector }),
-    )
+    );
+    v["data"] = json!({ "score": o.score, "vector": o.vector });
+    v
 }
 
 fn module_offense(m: &ModuleAbc) -> Value {
-    offense(
+    let mut v = offense(
         range(1, 0, 1),
         "W",
         "Metrics/ModuleAbcSize",
@@ -68,8 +64,9 @@ fn module_offense(m: &ModuleAbc) -> Value {
             m.vector,
             crate::abc::g4(m.score)
         ),
-        json!({ "correctable": false, "score": m.score, "vector": m.vector }),
-    )
+    );
+    v["data"] = json!({ "score": m.score, "vector": m.vector });
+    v
 }
 
 fn used_once_offense(o: &UsedOnceOffense) -> Value {
@@ -82,7 +79,6 @@ fn used_once_offense(o: &UsedOnceOffense) -> Value {
             "variable `{}` is assigned once and read once -- consider inlining",
             o.name
         ),
-        json!({ "correctable": false }),
     )
 }
 
@@ -98,7 +94,6 @@ fn never_used_offense(o: &NeverUsedOffense) -> Value {
         "W",
         "NeverUsed",
         format!("variable `{}` is assigned but never used{hint}", o.name),
-        json!({ "correctable": false }),
     )
 }
 
