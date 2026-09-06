@@ -71,7 +71,7 @@ fn pack_offenses(targets: &[PathBuf], all: &[(String, FileResult)]) -> String {
         .map(|(path, r)| {
             json!({
                 "path": path,
-                "offenses": offense::to_lsp_offenses(r)
+                "offenses": offense::to_offenses(r)
             })
         })
         .collect();

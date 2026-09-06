@@ -1,7 +1,8 @@
 //! MCP server over stdio (`abcop --mcp`).
 //!
 //! Uses the official [`rmcp`] SDK. Tool: `abcop_inspection` (ABC / UsedOnce /
-//! NeverUsed). No autocorrect — abcop is a gate, not a rewriter.
+//! NeverUsed). Compact offense JSON for agents (not full LSP diagnostics).
+//! No autocorrect — abcop is a gate, not a rewriter.
 
 mod offense;
 mod tools;
@@ -163,7 +164,7 @@ mod tests {
     #[tokio::test]
     async fn inspect_inline_never_used() {
         with_client(|client| async move {
-            let result = client
+            let text = client
                 .call_tool(
                     CallToolRequestParams::new("abcop_inspection").with_arguments(args_map(
                         serde_json::json!({
@@ -173,18 +174,16 @@ mod tests {
                     )),
                 )
                 .await
-                .expect("call");
-            assert_eq!(result.is_error, Some(false));
-            let offenses: serde_json::Value =
-                serde_json::from_str(result.content[0].as_text().unwrap().text.as_str()).unwrap();
-            assert!(
-                offenses
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|o| o["code"] == "NeverUsed"),
-                "got: {offenses}"
-            );
+                .expect("call")
+                .content[0]
+                .as_text()
+                .unwrap()
+                .text
+                .clone();
+            assert!(text.contains("\"code\":\"NeverUsed\""));
+            assert!(text.contains("\"line\":") && text.contains("\"column\":"));
+            assert!(!text.contains("\"source\"") && !text.contains("\"severity\""));
+            assert!(!text.contains("\"range\""));
             let _ = client.cancel().await;
         })
         .await;

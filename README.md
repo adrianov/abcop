@@ -205,7 +205,7 @@ gem. Tool:
 
 | Tool | Purpose |
 |---|---|
-| `abcop_inspection` | Analyse via `path` and/or inline `source_code`; returns LSP-shaped offense JSON (`score` / `vector` in `data` for ABC rules) |
+| `abcop_inspection` | Analyse via `path` and/or inline `source_code`; returns compact offense JSON (`code`, `line`, `column`, `message`; `score` / `vector` for ABC rules) |
 
 - MCP Registry name: `mcp-name: io.github.adrianov/abcop`
 
