@@ -114,12 +114,12 @@ mod tests {
             }],
             module_abc: None,
         };
-        let v = &to_offenses(&r)[0];
-        assert_eq!(
-            (v["code"].as_str(), v["line"].as_u64(), v["column"].as_u64()),
-            (Some("NeverUsed"), Some(2), Some(2))
+        let text = offenses_json(&r);
+        assert!(text.contains("\"code\":\"NeverUsed\""));
+        assert!(
+            text.find("\"line\"").unwrap() < text.find("\"column\"").unwrap(),
+            "line before column for LLMs, got {text}"
         );
-        assert!(v.get("source").is_none() && v.get("range").is_none() && v.get("severity").is_none());
-        assert!(v.get("data").is_none());
+        assert!(!text.contains("\"source\"") && !text.contains("\"range\"") && !text.contains("\"data\""));
     }
 }
