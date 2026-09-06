@@ -162,6 +162,12 @@ fn js_object_pattern_shorthand_binds() {
 
 #[test]
 fn js_shorthand_object_literal_is_a_read() {
-    let src = "function emit(diagLog, insRun) {\n\x20 return { diagLog, insRun };\n}";
-    assert_eq!(dead(Lang::Js, src), Vec::<String>::new());
+    // Grammar: `shorthand_property_identifier` (not a valueless pair).
+    // Params are Binding-exempt — use a real local so NeverUsed can fire.
+    let src = "function emit(body) {
+  const headers = { \"content-type\": \"text/html\" };
+  const dead = 1;
+  return new Response(body, { headers });
+}";
+    assert_eq!(dead(Lang::Js, src), vec!["dead"]);
 }

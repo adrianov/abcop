@@ -2,12 +2,13 @@
 //! scope_model dispatcher.
 //!
 //! Grammar notes: member slots are `property_identifier` (a distinct
-//! kind, so plain `identifier` reads never confuse them); loop heads
-//! carry their protocol variable under `@left`; declarations bind via
-//! `variable_declarator` (`@name` + initializer sibling). Plain `=`
-//! rebinds a visible local; compound operators rewrite-and-read;
-//! assignments to names no visible binding introduced create globals,
-//! contributing operand reads only.
+//! kind, so plain `identifier` reads never confuse them); object-literal
+//! shorthand `{ headers }` is `shorthand_property_identifier` (counted as
+//! a read); loop heads carry their protocol variable under `@left`;
+//! declarations bind via `variable_declarator` (`@name` + initializer
+//! sibling). Plain `=` rebinds a visible local; compound operators
+//! rewrite-and-read; assignments to names no visible binding introduced
+//! create globals, contributing operand reads only.
 
 use tree_sitter::Node;
 
@@ -31,7 +32,7 @@ static SPEC: Spec = Spec {
         "function",
     ],
     function_kinds: &[],
-    read_kinds: &["identifier"],
+    read_kinds: &["identifier", "shorthand_property_identifier"],
     exclude_fields: &[],
 };
 
@@ -65,9 +66,6 @@ impl Backend for Collector<'_> {
     fn custom(&mut self, n: Node, scope: usize) {
         match n.kind() {
             "variable_declarator" => self.bind_variable_declarator(n, scope),
-            // shorthand object literals ({ diagLog }) read the identically
-            // named local; keyed pairs fall through to generic walking
-            "pair" if n.child_by_field_name("value").is_none() => self.read_shorthand_key(n, scope),
             "assignment_expression" | "augmented_assignment_expression" => {
                 self.walk_assignment(n, scope);
             }
@@ -98,20 +96,6 @@ impl Collector<'_> {
             }
             Some(pattern) => self.bind_pattern_elements(pattern, scope),
             None => {}
-        }
-    }
-
-    /// Shorthand object literal `{ diagLog }`: the key text is also a read
-    /// of the identically named local.
-    fn read_shorthand_key(&mut self, n: Node, scope: usize) {
-        if let Some(key) = n.child_by_field_name("key")
-            && matches!(
-                key.kind(),
-                "property_identifier" | "shorthand_property_identifier"
-            )
-        {
-            self.model
-                .record_read(scope, &self.text_of(key).to_string(), key.start_byte());
         }
     }
 
