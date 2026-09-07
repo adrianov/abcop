@@ -84,9 +84,12 @@ NeverUsed are secondary.
 - **Signal only.** No formatting or style cops. Vendored, generated and
   test trees are skipped by default. Two knobs: `--max-abc` and
   `--max-module-abc`.
-- **MCP** — `abcop --mcp` starts a [Model Context Protocol](https://modelcontextprotocol.io/)
-  server (official Rust [`rmcp`](https://crates.io/crates/rmcp) SDK) with
-  `abcop_inspection` for AI clients. Listed on the
+- **Prefer MCP with LLMs.** `abcop --mcp` is the best way to use abcop from
+  an agent: the model gets offenses as soon as it writes, so it can fix
+  complexity and dead locals in the same turn and ship effective code
+  right away — not after a later CLI/CI pass. Official Rust
+  [`rmcp`](https://crates.io/crates/rmcp) SDK; tool `abcop_inspection`.
+  Listed on the
   [MCP Registry](https://registry.modelcontextprotocol.io/) as
   `io.github.adrianov/abcop` (crates.io package + each GitHub `v*` tag).
 
@@ -197,6 +200,11 @@ end
 ```
 
 ## MCP (Model Context Protocol)
+
+**Preferred for LLM / agent workflows.** Wire abcop as an MCP server so the
+model can call `abcop_inspection` while it edits: feedback arrives in the
+same turn, the agent corrects soon, and it writes maintainable code on the
+first pass instead of discovering ABC / UsedOnce / NeverUsed only in CI.
 
 `abcop --mcp` runs a long-lived MCP server on stdio — same idea as
 [RuboCop’s MCP](https://docs.rubocop.org/rubocop/latest/usage/mcp.html)
