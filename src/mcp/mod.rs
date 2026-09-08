@@ -5,6 +5,7 @@
 //! No autocorrect — abcop is a gate, not a rewriter.
 
 mod offense;
+mod targets;
 mod tools;
 
 use std::process::ExitCode;
@@ -32,9 +33,12 @@ pub struct AbcopMcp {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct InspectionArgs {
-    /// File or directory to inspect (default: current directory).
+    /// File/dir string, or array of paths (required unless `paths` or `source_code`).
     #[serde(default)]
-    path: Option<String>,
+    path: Option<targets::OneOrMany>,
+    /// Multiple files or directories (same as an array in `path`).
+    #[serde(default)]
+    paths: Vec<String>,
     /// Inline source (skips filesystem discovery; `path` selects language).
     #[serde(default)]
     source_code: Option<String>,
@@ -51,7 +55,7 @@ impl AbcopMcp {
 
     #[tool(
         name = "abcop_inspection",
-        description = "Inspect code for ABC complexity, UsedOnce, and NeverUsed findings. Provide `source_code` to check inline code (optional `path` for language) or `path` to check files.",
+        description = "Inspect code for ABC complexity, UsedOnce, and NeverUsed findings. Pass `path` (string or array), `paths`, and/or `source_code` (inline; `path` picks language). Always pass an explicit project path.",
         annotations(
             title = "abcop inspection",
             read_only_hint = true,
@@ -66,7 +70,7 @@ impl AbcopMcp {
     ) -> Result<CallToolResult, McpError> {
         Ok(tool_result(tools::inspect(
             &self.state,
-            args.path,
+            targets::merge(args.path, args.paths),
             args.source_code,
         )))
     }
@@ -89,7 +93,8 @@ impl ServerHandler for AbcopMcp {
             ))
             .with_protocol_version(ProtocolVersion::V_2025_06_18)
             .with_instructions(
-                "abcop complexity gate: abcop_inspection (ABC / UsedOnce / NeverUsed)."
+                "abcop complexity gate: abcop_inspection (ABC / UsedOnce / NeverUsed). \
+                 Always pass `path` or `paths` (absolute preferred; `path` may be a string or array)."
                     .to_string(),
             )
     }
@@ -184,6 +189,61 @@ mod tests {
             assert!(text.contains("\"line\":") && text.contains("\"column\":"));
             assert!(!text.contains("\"source\"") && !text.contains("\"severity\""));
             assert!(!text.contains("\"range\""));
+            let _ = client.cancel().await;
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn inspect_without_targets_errors() {
+        with_client(|client| async move {
+            let result = client
+                .call_tool(CallToolRequestParams::new("abcop_inspection").with_arguments(
+                    args_map(serde_json::json!({})),
+                ))
+                .await
+                .expect("call");
+            assert!(result.is_error == Some(true));
+            let text = result.content[0].as_text().unwrap().text.clone();
+            assert!(text.contains("`path` or `paths`"), "{text}");
+            let _ = client.cancel().await;
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn inspect_paths_arg_accepted() {
+        with_client(|client| async move {
+            let result = client
+                .call_tool(
+                    CallToolRequestParams::new("abcop_inspection").with_arguments(args_map(
+                        serde_json::json!({ "paths": ["/no/such/abcop_mcp_paths.rb"] }),
+                    )),
+                )
+                .await
+                .expect("call");
+            assert!(result.is_error == Some(true));
+            let text = result.content[0].as_text().unwrap().text.clone();
+            assert!(text.contains("No such file"), "{text}");
+            let _ = client.cancel().await;
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn inspect_path_array_accepted() {
+        with_client(|client| async move {
+            let result = client
+                .call_tool(
+                    CallToolRequestParams::new("abcop_inspection").with_arguments(args_map(
+                        serde_json::json!({ "path": ["/no/such/abcop_mcp_path.rb"] }),
+                    )),
+                )
+                .await
+                .expect("call");
+            assert!(result.is_error == Some(true));
+            let text = result.content[0].as_text().unwrap().text.clone();
+            assert!(text.contains("No such file"), "{text}");
             let _ = client.cancel().await;
         })
         .await;

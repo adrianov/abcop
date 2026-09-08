@@ -213,7 +213,7 @@ gem. Tool:
 
 | Tool | Purpose |
 |---|---|
-| `abcop_inspection` | Analyse via `path` and/or inline `source_code`; returns compact offense JSON (`code`, `line`, `column`, `message`; `score` / `vector` for ABC rules) |
+| `abcop_inspection` | Analyse via `path` / `paths` (string or array) and/or inline `source_code`; returns compact offense JSON (`code`, `line`, `column`, `message`; `score` / `vector` for ABC rules). Always pass an explicit project path — omitting targets errors out (avoids scanning `$HOME` when MCP `cwd` is mis-set). |
 
 - MCP Registry name: `mcp-name: io.github.adrianov/abcop`
 
