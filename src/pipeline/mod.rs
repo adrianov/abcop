@@ -56,7 +56,8 @@ pub(crate) fn analyze_one(
     cache: Option<&cache::Cache>,
 ) -> crate::output::FileResult {
     // Explicit CLI/MCP paths bypass the walker filter; still refuse unknown
-    // extensions so HTML (etc.) is not mis-scored as Ruby — and never cache them.
+    // extensions so random markup is not mis-scored as Ruby — and never cache
+    // them. HTML/template hosts are code paths via `embed`.
     if !is_code_path(path) {
         return blank_with(path);
     }
@@ -87,8 +88,9 @@ pub(crate) fn analyze_src(
     limits: Limits,
 ) -> crate::output::FileResult {
     let mut r = blank_with(path);
-    // Path is a language hint: refuse unknown extensions (.html), but keep
+    // Path is a language hint: refuse unknown extensions, but keep
     // extensionless probes (they fall through to Ruby via `lang_for`).
+    // HTML/template hosts are analysed via `embed`.
     if path.extension().is_some() && !is_code_path(path) {
         return r;
     }
@@ -104,6 +106,10 @@ fn analyze_src_into(
     only: Option<&str>,
     limits: Limits,
 ) -> bool {
+    if crate::embed::is_host(path) {
+        crate::embed::analyze(r, path, src, only, limits);
+        return true;
+    }
     let file_lang = lang_for(path);
     let Some(tree) = parse_file_lang(src, file_lang) else {
         return true;

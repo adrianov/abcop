@@ -7,6 +7,7 @@ mod csharp;
 mod dart;
 mod directives;
 mod dump;
+mod embed;
 mod fork_point;
 mod git_changes;
 #[cfg(test)]

@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<body>
+<script>
+function checkout(user, items) {
+  let total = 0;
+  for (const it of items) {
+    total = total + it.price;
+  }
+  if (user.vip) {
+    total = applyDiscount(total);
+  }
+  log(total);
+}
+const unused = 1;
+</script>
+<script type="application/ld+json">
+{"unused": 1}
+</script>
+</body>
+</html>

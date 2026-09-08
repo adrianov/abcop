@@ -161,7 +161,10 @@ fn explicit_html_is_not_scored_as_ruby() {
     )
     .unwrap();
     let r = analyze_one(&file, None, test_limits(), None, None);
-    assert!(r.is_clean(), "html must not be scored as ruby");
+    assert!(
+        r.never_used.iter().any(|o| o.name == "x"),
+        "inline script JS must be scored"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -173,7 +176,7 @@ fn inline_unknown_ext_is_skipped_extensionless_still_scores() {
         None,
         test_limits(),
     );
-    assert!(html.is_clean(), "inline html path must not score as ruby");
+    assert!(html.is_clean(), "html without script stays quiet");
     let probe = analyze_src(
         std::path::Path::new("snippet"),
         b"def foo\n  x = 1\nend\n",

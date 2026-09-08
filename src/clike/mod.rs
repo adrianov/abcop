@@ -161,6 +161,31 @@ pub(crate) fn never_used_offenses(
     )
 }
 
+/// Classic inline script snippets: also report root-scope locals.
+pub(crate) fn used_once_offenses_embed(sc: &JsScopes) -> Vec<UsedOnceOffense> {
+    let mut sem = JS_SEMANTICS;
+    sem.include_root_scope = true;
+    crate::scope_model::used_once_offenses(
+        sc.root,
+        sc.src,
+        &|b| line_col(sc.root, b),
+        &sc.scopes,
+        &sem,
+    )
+}
+
+pub(crate) fn never_used_offenses_embed(sc: &JsScopes) -> Vec<NeverUsedOffense> {
+    let mut sem = JS_SEMANTICS;
+    sem.include_root_scope = true;
+    crate::scope_model::never_used_offenses(
+        sc.root,
+        sc.src,
+        &|b| line_col(sc.root, b),
+        &sc.scopes,
+        &sem,
+    )
+}
+
 fn line_col(root: tree_sitter::Node, byte: usize) -> (usize, usize) {
     let point = root
         .descendant_for_byte_range(byte, byte)

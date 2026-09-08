@@ -133,6 +133,9 @@ fn is_code_ext(ext: &str) -> bool {
 }
 
 pub fn is_code_path(p: &std::path::Path) -> bool {
+    if crate::embed::is_host(p) {
+        return true;
+    }
     match p.extension().and_then(|e| e.to_str()) {
         Some(ext) => is_code_ext(ext),
         None => p

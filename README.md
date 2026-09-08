@@ -256,7 +256,7 @@ disables. Nothing is written inside the project.
 
 ## Supported languages
 
-Seventeen languages, four rules each, one CI gate.
+Seventeen languages plus embedded JS in HTML/templates, four rules each, one CI gate.
 
 | Language | Files | Notes |
 |---|---|---|
@@ -271,8 +271,9 @@ Seventeen languages, four rules each, one CI gate.
 | Dart | `.dart` | |
 | Zig | `.zig` | |
 | Haskell | `.hs .lhs` | |
-| JavaScript | `.js .mjs .cjs .jsx` | |
-| TypeScript | `.ts .tsx .mts .cts` | |
+| JavaScript | `.js .mjs .cjs .jsx` | also `<script>` in HTML/templates |
+| TypeScript | `.ts .tsx .mts .cts` | `lang="ts"` / typescript script types |
+| Embedded JS | `.html .htm .xhtml .erb .slim .haml .pug .vue .svelte .ejs .njk .jinja .j2 .twig .liquid .hbs …`, `*.js.erb` | extract scripts; blank `<% %>`, `{{ }}`, `{% %}` holes |
 | C / C++ | `.c .h .cc .cpp .cxx .hpp .hxx .hh` | `.h` via C++ grammar |
 | Objective-C | `.m .mm` | |
 | Swift | `.swift` | |

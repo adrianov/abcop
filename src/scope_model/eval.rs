@@ -12,6 +12,7 @@ use crate::never_used::NeverUsedOffense;
 use crate::used_once::UsedOnceOffense;
 
 /// The parts of candidate evaluation that differ per language.
+#[derive(Clone, Copy)]
 pub struct Semantics {
     /// Literals and operator compositions over them.
     pub pure: fn(Node) -> bool,
