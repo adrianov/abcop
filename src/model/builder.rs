@@ -52,6 +52,14 @@ impl<'m> Builder<'m> {
         let pos = w.byte;
         match self.lookup(scope, pos, name) {
             Some(s) => {
+                // Resolving into an ancestor entry means the write sits inside
+                // a closure: it may run zero times, so it never surely
+                // overwrites the outer binding (and removing the outer write
+                // would change the inner write's binding).
+                let mut w = w;
+                if s != scope {
+                    w.unconditional = false;
+                }
                 self.scopes[s].entries.get_mut(name).unwrap().writes.push(w);
             }
             None => {
