@@ -158,6 +158,19 @@ mod tests {
     }
 
     #[test]
+    fn member_writes_stay_quiet_while_single_use_fires() {
+        // Scope-backend regression: members are not collected as locals; the
+        // plain single-use local still fires.
+        let f = flags(
+            "class K\n  @member = 1\n  CONST = 2\n\n  def m\n    @loaded = compute\n    tmp = 42\n    p tmp\n  end\nend\n",
+        );
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert_eq!(f[0].name, "tmp");
+        assert_eq!(f[0].line, 7);
+        assert_eq!(f[0].column, 4);
+    }
+
+    #[test]
     fn method_call_rhs_is_flagged() {
         let f = flags("def k(items)\n  tmp = items.size\n  p tmp\nend\n");
         assert_eq!(f.len(), 1);

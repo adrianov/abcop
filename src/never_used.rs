@@ -216,6 +216,18 @@ mod tests {
     }
 
     #[test]
+    fn member_writes_stay_quiet_while_dead_local_fires() {
+        // Scope-backend regression: ivars/class-vars/constants are members,
+        // never locals; only the plain unread local is collected.
+        let f = flags(
+            "class K\n  @member = 1\n  @@shared = 2\n  CONST = 3\n\n  def m\n    @loaded = compute\n    dead = compute\n  end\nend\n",
+        );
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert_eq!(f[0].name, "dead");
+        assert_eq!(f[0].line, 8);
+    }
+
+    #[test]
     fn underscore_names_exempt() {
         let f = flags("def k\n  _tmp = 1\nend\n");
         assert!(f.is_empty());
