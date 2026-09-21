@@ -198,6 +198,24 @@ mod tests {
     }
 
     #[test]
+    fn closure_overwrite_keeps_prior_write_live() {
+        // A block may run zero times, and deleting the prior write would turn
+        // the block write into a block-local binding (`NameError` at `use`).
+        let f = flags(
+            "def k\n  result = nil\n  tap do\n    result = compute\n  end\n  use(result)\nend\n",
+        );
+        assert!(f.is_empty(), "closure overwrite is not sure: {f:?}");
+    }
+
+    #[test]
+    fn closure_opassign_keeps_prior_write_live() {
+        let f = flags(
+            "def k(arr)\n  x = 0\n  arr.each { |i| x += i }\n  use(x)\nend\n",
+        );
+        assert!(f.is_empty(), "accumulator start value may be observed: {f:?}");
+    }
+
+    #[test]
     fn underscore_names_exempt() {
         let f = flags("def k\n  _tmp = 1\nend\n");
         assert!(f.is_empty());

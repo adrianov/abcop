@@ -150,6 +150,14 @@ mod tests {
     }
 
     #[test]
+    fn closure_write_is_never_inlined() {
+        // The block may run zero times, so inlining the RHS at the read
+        // would change behavior.
+        let f = flags("def k(arr)\n  x = nil\n  arr.each do\n    x = 42\n  end\n  p x\nend\n");
+        assert!(f.is_empty(), "closure write must not inline: {f:?}");
+    }
+
+    #[test]
     fn method_call_rhs_is_flagged() {
         let f = flags("def k(items)\n  tmp = items.size\n  p tmp\nend\n");
         assert_eq!(f.len(), 1);
