@@ -82,20 +82,20 @@ impl Backend for Collector<'_> {
 }
 
 impl Collector<'_> {
-    /// Bind a const/let/var declarator: a plain identifier name binds with
-    /// its initializer linked; destructuring patterns bind every contained
-    /// element name (no RHS link). Initializer subtrees may contain closures
-    /// reading outer bindings -- walked in the identifier case.
+    /// Bind a const/let/var declarator. A plain identifier links its
+    /// initializer; a destructuring pattern binds each element name with
+    /// no RHS link. The initializer is walked either way so outer reads
+    /// and nested closures count.
     fn bind_variable_declarator(&mut self, n: Node, scope: usize) {
         match n.child_by_field_name("name") {
             Some(name) if name.kind() == "identifier" => {
                 self.bind_declarator_with_rhs_field(n, scope);
-                if let Some(value) = n.child_by_field_name("value") {
-                    dispatch(self, value, scope);
-                }
             }
             Some(pattern) => self.bind_pattern_elements(pattern, scope),
-            None => {}
+            None => return,
+        }
+        if let Some(value) = n.child_by_field_name("value") {
+            dispatch(self, value, scope);
         }
     }
 
