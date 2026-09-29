@@ -104,23 +104,61 @@ mod tests {
     }
 
     #[test]
-    fn shorthand_only_read_never_qualifies_as_inlinable() {
-        // Inlining would demand the invalid `g(42:)`; the binding must stay.
+    fn shorthand_hash_value_is_inlinable() {
+        // `g(x:)` expands to `g(x: 42)`.
         let f = flags("def k\n  x = 42\n  g(x:)\nend\n");
-        assert!(f.is_empty(), "shorthand read cannot be inlined: {f:?}");
-    }
-
-    #[test]
-    fn shorthand_read_on_one_binding_leaves_others_flagged() {
-        // `a` is only read via shorthand -> stays; `b` has one plain read.
-        let f = flags("def k\n  a = 5\n  b = 7\n  g(a:, b)\nend\n");
         assert_eq!(
             f,
             vec![UsedOnceOffense {
-                line: 3,
+                line: 2,
                 column: 2,
-                name: "b".into()
+                name: "x".into()
             }]
+        );
+    }
+
+    #[test]
+    fn shorthand_and_plain_reads_both_flag() {
+        let f = flags("def k\n  a = 5\n  b = 7\n  g(a:, b)\nend\n");
+        assert_eq!(
+            f,
+            vec![
+                UsedOnceOffense {
+                    line: 2,
+                    column: 2,
+                    name: "a".into()
+                },
+                UsedOnceOffense {
+                    line: 3,
+                    column: 2,
+                    name: "b".into()
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn yield_into_shorthand_keyword_is_flagged() {
+        let f = flags(
+            "def call\n  favorite_categories = yield fetch_favorite_categories\n\n  Success(\n    favorite_categories:,\n    favorite_categories_limits: yield(fetch_favorite_categories_limits)\n  )\nend\n",
+        );
+        assert_eq!(
+            f,
+            vec![UsedOnceOffense {
+                line: 2,
+                column: 2,
+                name: "favorite_categories".into()
+            }],
+            "{f:?}"
+        );
+    }
+
+    #[test]
+    fn effectful_shorthand_rejected_with_intervening_statement() {
+        let f = flags("def k\n  x = compute\n  side_effect()\n  g(x:)\nend\n");
+        assert!(
+            f.is_empty(),
+            "effectful RHS must not cross statements into a shorthand: {f:?}"
         );
     }
 
