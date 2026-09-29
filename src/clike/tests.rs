@@ -152,6 +152,30 @@ fn js_destructuring_declarations_bind_elements() {
 }
 
 #[test]
+fn js_destructured_initializer_reads_count() {
+    // reads inside a destructured declarator's initializer must count:
+    // `const [fx] = steer(me, [me, threat], calm, 0)` reads me/threat/calm
+    // there and nowhere else
+    let src = "function tick() {
+  const me = bot(0);
+  const threat = giant(0);
+  const calm = new Map();
+  const [fx] = steer(me, [me, threat], calm, 0);
+  sink(fx);
+}";
+    assert_eq!(dead(Lang::Js, src), Vec::<String>::new());
+}
+
+#[test]
+fn js_destructured_still_reports_unread_names() {
+    let src = "function tick() {
+  const [used, ignored] = pair();
+  sink(used);
+}";
+    assert_eq!(dead(Lang::Js, src), vec!["ignored"]);
+}
+
+#[test]
 fn js_object_pattern_shorthand_binds() {
     let src = "function controlHuman(p) {
   const { ix, iy } = p.input;
