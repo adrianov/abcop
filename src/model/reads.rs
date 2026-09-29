@@ -38,9 +38,9 @@ impl Builder<'_> {
         }
     }
 
-    /// Record the shorthand key as a read of the identically named
+    /// Record the shorthand key as one read of the identically named
     /// local (or a vcall when no such local exists -- Ruby would call
-    /// the method).
+    /// the method). Inlining keeps the label: `name:` becomes `name: rhs`.
     fn walk_shorthand_pair(&mut self, n: Node, scope: ScopeId, under_defined: bool) {
         let Some(key) = n.child_by_field_name("key") else {
             return;
@@ -49,28 +49,23 @@ impl Builder<'_> {
             return;
         }
         let name = key.utf8_text(self.src).unwrap_or("").to_string();
-        // Two read positions across the key: UsedOnce demands exactly one
-        // read, and a shorthand read can never be inlined away (`42:` is
-        // not valid Ruby), so it must never qualify as the single use.
-        let bytes = [key.start_byte(), key.end_byte()];
+        let byte = key.start_byte();
 
-        if !self.lookup(scope, bytes[0], &name).is_some() {
-            self.vcall_sites.push(bytes[0]);
+        if self.lookup(scope, byte, &name).is_none() {
+            self.vcall_sites.push(byte);
             return;
         }
         if name.starts_with('_') {
             return;
         }
-        for byte in bytes {
-            self.record_read(
-                scope,
-                &name,
-                Read {
-                    byte,
-                    under_defined,
-                },
-            );
-        }
+        self.record_read(
+            scope,
+            &name,
+            Read {
+                byte,
+                under_defined,
+            },
+        );
     }
 
     fn walk_unary(&mut self, n: Node, scope: ScopeId, under_defined: bool) {
