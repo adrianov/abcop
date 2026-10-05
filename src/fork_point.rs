@@ -50,8 +50,8 @@ fn fork_label(sha: &str, names: &HashMap<String, String>) -> (String, String) {
     (
         sha.into(),
         names
-        .get(sha)
-        .map(|p| format!("changes since fork point (parent {p})"))
+            .get(sha)
+            .map(|p| format!("changes since fork point (parent {p})"))
             .unwrap_or_else(|| "changes since fork point".into()),
     )
 }

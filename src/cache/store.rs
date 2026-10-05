@@ -78,9 +78,9 @@ impl EntryStore {
 
         self.remove_keys(
             &newest_first
-            .iter()
-            .skip(MAX_ENTRIES)
-            .map(|(_, k)| k.clone())
+                .iter()
+                .skip(MAX_ENTRIES)
+                .map(|(_, k)| k.clone())
                 .collect::<Vec<_>>(),
         );
     }

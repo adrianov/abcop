@@ -14,9 +14,9 @@ fn used(lang: Lang, src: &'static str) -> Vec<String> {
         ),
         lang,
     )
-        .into_iter()
-        .map(|o| o.name)
-        .collect();
+    .into_iter()
+    .map(|o| o.name)
+    .collect();
     v.sort();
     v
 }
@@ -30,9 +30,9 @@ fn dead(lang: Lang, src: &'static str) -> Vec<String> {
         ),
         lang,
     )
-        .into_iter()
-        .map(|o| o.name)
-        .collect();
+    .into_iter()
+    .map(|o| o.name)
+    .collect();
     v.sort();
     v
 }
@@ -83,7 +83,10 @@ fn js_call_chain_in_loop_read_rejected() {
 #[test]
 fn js_bare_alias_flagged_until_source_reassigned() {
     assert_eq!(
-        used(Lang::Js, "function f(items) {\n  const a = items;\n  return a;\n}"),
+        used(
+            Lang::Js,
+            "function f(items) {\n  const a = items;\n  return a;\n}"
+        ),
         vec!["a"]
     );
     // params are not local bindings here; reassignment guard needs a local source

@@ -2,9 +2,7 @@
 
 use crate::paths::Lang;
 
-use super::attrs::{
-    find_byte, find_subslice, has_token, is_js_mime, to_ascii_lower, type_or_lang,
-};
+use super::attrs::{find_byte, find_subslice, has_token, is_js_mime, to_ascii_lower, type_or_lang};
 use super::blank::blank_holes;
 use super::filter::filter_blocks;
 use super::host::{is_module_host, is_whole_js_file};

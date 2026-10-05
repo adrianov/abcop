@@ -11,9 +11,9 @@ fn scores(lang: Lang, code: &str, max: f64) -> Vec<AbcOffense> {
         &crate::paths::parse_file_lang(code.as_bytes(), lang).unwrap(),
         lang,
     )
-        .into_iter()
-        .filter(|o| o.score > max)
-        .collect()
+    .into_iter()
+    .filter(|o| o.score > max)
+    .collect()
 }
 
 #[test]
@@ -186,7 +186,10 @@ Foo::operator int() const {
     .into_iter()
     .map(|o| o.name)
     .collect();
-    assert!(names.iter().any(|n| n == "onGetFileListClicked_gui"), "got {names:?}");
+    assert!(
+        names.iter().any(|n| n == "onGetFileListClicked_gui"),
+        "got {names:?}"
+    );
     assert!(names.iter().any(|n| n == "get"), "got {names:?}");
     assert!(names.iter().any(|n| n == "operator="), "got {names:?}");
     assert!(names.iter().any(|n| n == "~Transfers"), "got {names:?}");

@@ -148,10 +148,7 @@ impl Collector<'_> {
     /// class-body names are attributes/exports (not locals) and stay
     /// unbound; callers still walk the RHS for nested locals.
     fn bind_name(&mut self, name_node: Node, scope: usize, intro: IntroKind, rhs: Option<usize>) {
-        if matches!(
-            self.scopes[scope].kind,
-            ScopeKind::Root | ScopeKind::Class
-        ) {
+        if matches!(self.scopes[scope].kind, ScopeKind::Root | ScopeKind::Class) {
             return;
         }
         let w = Write {

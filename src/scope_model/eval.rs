@@ -74,7 +74,16 @@ fn candidate_offense(
 ) -> Option<UsedOnceOffense> {
     let w = candidate(e)?;
     let (rhs, write_node) = write_rhs_nodes(w, nodes)?;
-    inlinable_write(src, w, rhs, write_node, scopes, scope, sem, Some(e.reads[0]))?;
+    inlinable_write(
+        src,
+        w,
+        rhs,
+        write_node,
+        scopes,
+        scope,
+        sem,
+        Some(e.reads[0]),
+    )?;
     let (line, column) = line_col(w.byte);
     Some(UsedOnceOffense {
         line,
@@ -157,8 +166,7 @@ pub fn never_used_offenses(
             continue;
         }
         for (name, e) in &scope_data.entries {
-            if let Some(offense) =
-                dead_offense(name, e, &nodes, src, scopes, scope, sem, line_col)
+            if let Some(offense) = dead_offense(name, e, &nodes, src, scopes, scope, sem, line_col)
             {
                 out.push(offense);
             }

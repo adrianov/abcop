@@ -53,8 +53,14 @@ fn single_use<'t>(
     }
     let w = &e.writes[0];
     let (rhs_node, write_node) = resolved_rhs(nodes, w)?;
-    if !inlinable_rhs(fm, rhs_node, scope, w.byte, Some(e.reads[0]), Some(write_node))
-        || !unconditionally_executed(write_node)
+    if !inlinable_rhs(
+        fm,
+        rhs_node,
+        scope,
+        w.byte,
+        Some(e.reads[0]),
+        Some(write_node),
+    ) || !unconditionally_executed(write_node)
         || reborrow_blocks(fm, rhs_node, e.reads[0])
         || guard_rhs_blocks(fm, rhs_node)
         || lifetime_guard_blocks(fm, rhs_node, e.reads[0])

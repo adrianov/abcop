@@ -206,12 +206,7 @@ impl Collector<'_> {
         let mut ids = Vec::new();
         pattern_vars(pattern, self.src, &mut ids);
         for id in ids {
-            self.bind_var(
-                id,
-                scope,
-                Write::rewrite(id.start_byte(), id.id()),
-                intro,
-            );
+            self.bind_var(id, scope, Write::rewrite(id.start_byte(), id.id()), intro);
         }
     }
 }

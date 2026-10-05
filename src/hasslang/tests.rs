@@ -41,11 +41,7 @@ fn dead(src: &'static str) -> Vec<String> {
 }
 
 fn fixture(name: &str) -> String {
-    let path = format!(
-        "{}/fixtures/haskell/{}",
-        env!("CARGO_MANIFEST_DIR"),
-        name
-    );
+    let path = format!("{}/fixtures/haskell/{}", env!("CARGO_MANIFEST_DIR"), name);
     std::fs::read_to_string(path).expect("fixture")
 }
 
@@ -65,10 +61,7 @@ fn scores_owned(src: &str) -> Vec<(String, u32, u32, u32)> {
 #[test]
 fn abc_top_level_function_vector() {
     // A: none (params protocol); B: + ; C: none
-    assert_eq!(
-        scores("add a b = a + b\n"),
-        vec![("add".into(), 0, 1, 0)]
-    );
+    assert_eq!(scores("add a b = a + b\n"), vec![("add".into(), 0, 1, 0)]);
 }
 
 #[test]
@@ -88,10 +81,7 @@ fn abc_let_bind_counts_as_assignment() {
 #[test]
 fn abc_where_function_is_separate_unit() {
     let got = scores("f x = bar x\n  where\n    bar y = y + 1\n");
-    assert_eq!(
-        got,
-        vec![("f".into(), 0, 1, 0), ("bar".into(), 0, 1, 0)]
-    );
+    assert_eq!(got, vec![("f".into(), 0, 1, 0), ("bar".into(), 0, 1, 0)]);
 }
 
 #[test]
@@ -171,18 +161,12 @@ fn abc_fixture_nested_where() {
 
 #[test]
 fn used_once_inline_candidate_for_pure_literal() {
-    assert_eq!(
-        used("f x = let dead = 5 in dead\n"),
-        vec!["dead"]
-    );
+    assert_eq!(used("f x = let dead = 5 in dead\n"), vec!["dead"]);
 }
 
 #[test]
 fn used_once_immediate_call_yes_intervening_no() {
-    assert_eq!(
-        used("f b = let g = compute b in g\n"),
-        vec!["g"]
-    );
+    assert_eq!(used("f b = let g = compute b in g\n"), vec!["g"]);
     assert_eq!(
         used("f b = let g = compute b in side () `seq` g\n"),
         Vec::<String>::new()
@@ -191,9 +175,7 @@ fn used_once_immediate_call_yes_intervening_no() {
 
 #[test]
 fn never_used_dead_call_keeps_initializer() {
-    let f = never_used_offenses(&parse(
-        "f = let gone = compute 1 in 0\n",
-    ));
+    let f = never_used_offenses(&parse("f = let gone = compute 1 in 0\n"));
     assert_eq!(f.len(), 1);
     assert_eq!(f[0].name, "gone");
     assert!(f[0].keep_init);
@@ -217,10 +199,7 @@ fn used_once_conditional_let_is_vetoed() {
 
 #[test]
 fn used_once_let_inside_lambda_is_candidate() {
-    assert_eq!(
-        used("f xs = map (\\x -> let y = 5 in y) xs\n"),
-        vec!["y"]
-    );
+    assert_eq!(used("f xs = map (\\x -> let y = 5 in y) xs\n"), vec!["y"]);
 }
 
 #[test]
@@ -250,8 +229,5 @@ fn abc_class_instance_methods_are_units() {
     let got = scores(
         "class C a where\n  op :: a -> a\n  op x = x\ninstance C Int where\n  op n = n + 1\n",
     );
-    assert_eq!(
-        got,
-        vec![("op".into(), 0, 0, 0), ("op".into(), 0, 1, 0)]
-    );
+    assert_eq!(got, vec![("op".into(), 0, 0, 0), ("op".into(), 0, 1, 0)]);
 }

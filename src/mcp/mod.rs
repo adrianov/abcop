@@ -17,7 +17,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo,
 };
-use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler, ServiceExt};
+use rmcp::{ErrorData as McpError, ServerHandler, ServiceExt, tool, tool_handler, tool_router};
 use serde::Deserialize;
 use tokio::runtime::Runtime;
 
@@ -198,9 +198,10 @@ mod tests {
     async fn inspect_without_targets_errors() {
         with_client(|client| async move {
             let result = client
-                .call_tool(CallToolRequestParams::new("abcop_inspection").with_arguments(
-                    args_map(serde_json::json!({})),
-                ))
+                .call_tool(
+                    CallToolRequestParams::new("abcop_inspection")
+                        .with_arguments(args_map(serde_json::json!({}))),
+                )
                 .await
                 .expect("call");
             assert!(result.is_error == Some(true));

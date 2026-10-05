@@ -147,7 +147,9 @@ fn used_once_immediate_call_chain_yes_intervening_and_compound_no() {
 
 #[test]
 fn never_used_dead_call_keeps_initializer() {
-    let f = never_used_offenses(&parse("int f() {\n  var gone = compute(1);\n  return 0;\n}"));
+    let f = never_used_offenses(&parse(
+        "int f() {\n  var gone = compute(1);\n  return 0;\n}",
+    ));
     assert_eq!(f.len(), 1);
     assert_eq!(f[0].name, "gone");
     assert!(f[0].keep_init);

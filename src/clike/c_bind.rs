@@ -89,13 +89,11 @@ fn declaration_has_structured_binding(decl: Node) -> bool {
 }
 
 fn declaration_has_initializer(decl: Node) -> bool {
-    decl.child_by_field_name("value").is_some()
-        || {
-            let mut c = decl.walk();
-            decl.children(&mut c).any(|ch| {
-                ch.kind() == "init_declarator" && ch.child_by_field_name("value").is_some()
-            })
-        }
+    decl.child_by_field_name("value").is_some() || {
+        let mut c = decl.walk();
+        decl.children(&mut c)
+            .any(|ch| ch.kind() == "init_declarator" && ch.child_by_field_name("value").is_some())
+    }
 }
 
 fn bare_declarator_name<'a>(decl: Node<'a>, src: &'a [u8]) -> Option<&'a str> {
@@ -115,9 +113,7 @@ fn is_macroish(name: &str) -> bool {
 
 fn type_is_statement_macro(n: Node, src: &[u8]) -> bool {
     match n.kind() {
-        "type_identifier" | "identifier" => {
-            is_statement_macro_name(n.utf8_text(src).unwrap_or(""))
-        }
+        "type_identifier" | "identifier" => is_statement_macro_name(n.utf8_text(src).unwrap_or("")),
         _ => false,
     }
 }

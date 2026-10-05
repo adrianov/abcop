@@ -19,9 +19,7 @@ pub(super) fn substitutable(write_site: Node, read_site: Node) -> bool {
 }
 
 fn peeled_is(mut body: Node, read_site: Node) -> bool {
-    while body.named_child_count() == 1
-        && matches!(body.kind(), "parens" | "expression" | "exp")
-    {
+    while body.named_child_count() == 1 && matches!(body.kind(), "parens" | "expression" | "exp") {
         body = body.named_child(0).expect("named_child_count == 1");
     }
     body.id() == read_site.id()

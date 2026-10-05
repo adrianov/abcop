@@ -170,9 +170,15 @@ fn is_borrow_extending_method(name: &str) -> bool {
 fn bound_borrow_result(mut call: Node) -> bool {
     while let Some(parent) = call.parent() {
         match parent.kind() {
-            "method_call_expression" | "field_expression" | "call_expression"
-            | "try_expression" | "await_expression" | "reference_expression"
-            | "parenthesized_expression" | "let_condition" | "condition" => {
+            "method_call_expression"
+            | "field_expression"
+            | "call_expression"
+            | "try_expression"
+            | "await_expression"
+            | "reference_expression"
+            | "parenthesized_expression"
+            | "let_condition"
+            | "condition" => {
                 call = parent;
             }
             "let_declaration" => {

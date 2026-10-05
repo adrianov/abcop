@@ -140,13 +140,19 @@ fn method_call_rhs_is_flagged() {
 #[test]
 fn call_chain_rejected_with_intervening_statement() {
     let f = flags("fn f() {\n  let s = compute();\n  side();\n  p(s);\n}");
-    assert!(f.is_empty(), "effectful RHS must not cross statements: {f:?}");
+    assert!(
+        f.is_empty(),
+        "effectful RHS must not cross statements: {f:?}"
+    );
 }
 
 #[test]
 fn call_chain_in_loop_read_rejected() {
     let f = flags("fn f(items: &[u8]) {\n  let s = compute();\n  for _ in items { p(s); }\n}");
-    assert!(f.is_empty(), "read inside loop must not inline calls: {f:?}");
+    assert!(
+        f.is_empty(),
+        "read inside loop must not inline calls: {f:?}"
+    );
 }
 
 #[test]

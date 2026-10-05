@@ -63,13 +63,20 @@ fn html_skips_json_ld_script() {
         "</script></html>\n"
     );
     assert!(
-        analyze_src(std::path::Path::new("seo.html"), src.as_bytes(), None, limits()).is_clean()
+        analyze_src(
+            std::path::Path::new("seo.html"),
+            src.as_bytes(),
+            None,
+            limits()
+        )
+        .is_clean()
     );
 }
 
 #[test]
 fn erb_script_with_ruby_holes() {
-    let src = "<script>\nconst unused = <%= @n %>;\nconst sum = 1 + 2;\nconsole.log(sum);\n</script>\n";
+    let src =
+        "<script>\nconst unused = <%= @n %>;\nconst sum = 1 + 2;\nconsole.log(sum);\n</script>\n";
     assert_eq!(never_names("show.html.erb", src), vec!["unused"]);
 }
 

@@ -157,9 +157,7 @@ impl Collector<'_> {
         }
         // C++ if-init `T* x = rhs` may put `@value` on the declaration itself.
         let decl_value = n.child_by_field_name("value");
-        let in_block = n
-            .parent()
-            .is_some_and(|p| p.kind() == "compound_statement");
+        let in_block = n.parent().is_some_and(|p| p.kind() == "compound_statement");
         let mut cursor = n.walk();
         for d in n.children(&mut cursor) {
             self.bind_decl_child(d, scope, decl_value, in_block);

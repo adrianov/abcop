@@ -134,14 +134,22 @@ const REPEAT_ANCESTORS: &[&str] = &[
 
 /// Branch bodies that may skip evaluating the read (Ruby `then`/`when`, etc.).
 const BRANCH_BODY_KINDS: &[&str] = &[
-    "then", "else", "elsif", "when", "in_clause", "rescue", "ensure", "alternative",
+    "then",
+    "else",
+    "elsif",
+    "when",
+    "in_clause",
+    "rescue",
+    "ensure",
+    "alternative",
 ];
 
 /// Effectful RHS may move to the read only when it is the next statement and
 /// the read always runs there (not under a loop, conditional branch, or
 /// modifier body — those change when/whether the call executes).
 pub fn immediate_substitutable(write_site: Node, read_byte: usize) -> bool {
-    let Some(read_site) = root_of(write_site).descendant_for_byte_range(read_byte, read_byte) else {
+    let Some(read_site) = root_of(write_site).descendant_for_byte_range(read_byte, read_byte)
+    else {
         return false;
     };
     let_in::substitutable(write_site, read_site) || stmt_list_substitutable(write_site, read_site)
@@ -262,15 +270,12 @@ pub fn alias_stable(
 ) -> bool {
     match lookup_binding(scopes, scope, pos, name) {
         None => true,
-        Some(bind_scope) => scopes[bind_scope]
-            .entries
-            .get(name)
-            .is_none_or(|entry| {
-                !entry
-                    .writes
-                    .iter()
-                    .any(|w| w.byte > write_byte && w.byte < read_byte)
-            }),
+        Some(bind_scope) => scopes[bind_scope].entries.get(name).is_none_or(|entry| {
+            !entry
+                .writes
+                .iter()
+                .any(|w| w.byte > write_byte && w.byte < read_byte)
+        }),
     }
 }
 

@@ -29,7 +29,7 @@ impl<'f> Calc<'f> {
 
         if kind == "rescue_modifier"
             || n.prev_named_sibling()
-            .map(|p| p.kind() != "rescue")
+                .map(|p| p.kind() != "rescue")
                 .unwrap_or(true)
         {
             self.c += 1;

@@ -57,8 +57,14 @@ fn single_use_offense<'t>(
     let w = exactly_one_plain_write(e)?;
     let read = later_single_read(e, w)?;
     let (rhs_node, write_node) = offense_nodes(nodes, w)?;
-    if !ruby_inlinable_rhs(fm, rhs_node, scope, w.byte, Some(read.byte), Some(write_node))
-        || !w.unconditional
+    if !ruby_inlinable_rhs(
+        fm,
+        rhs_node,
+        scope,
+        w.byte,
+        Some(read.byte),
+        Some(write_node),
+    ) || !w.unconditional
     {
         return None;
     }
@@ -173,9 +179,7 @@ mod tests {
 
     #[test]
     fn surviving_write_after_dead_overwrite_is_flagged() {
-        let f = flags(
-            "def k\n  tmp = create(:a)\n  tmp = 42\n  p tmp\nend\n",
-        );
+        let f = flags("def k\n  tmp = create(:a)\n  tmp = 42\n  p tmp\nend\n");
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].name, "tmp");
         assert_eq!(f[0].line, 3);
@@ -236,7 +240,10 @@ mod tests {
     #[test]
     fn call_chain_rejected_with_intervening_statement() {
         let f = flags("def k\n  tmp = compute()\n  side_effect()\n  use(tmp)\nend\n");
-        assert!(f.is_empty(), "effectful RHS must not cross statements: {f:?}");
+        assert!(
+            f.is_empty(),
+            "effectful RHS must not cross statements: {f:?}"
+        );
     }
 
     #[test]
@@ -249,7 +256,10 @@ mod tests {
     #[test]
     fn call_chain_in_block_read_rejected() {
         let f = flags("def k(arr)\n  tmp = compute()\n  arr.each { |i| p tmp }\nend\n");
-        assert!(f.is_empty(), "read inside loop block must not inline calls: {f:?}");
+        assert!(
+            f.is_empty(),
+            "read inside loop block must not inline calls: {f:?}"
+        );
     }
 
     #[test]
@@ -264,13 +274,19 @@ mod tests {
     #[test]
     fn call_in_conditional_body_rejected() {
         let f = flags("def k(c)\n  tmp = compute()\n  if c\n    use(tmp)\n  end\nend\n");
-        assert!(f.is_empty(), "inlining into if body skips the call when false: {f:?}");
+        assert!(
+            f.is_empty(),
+            "inlining into if body skips the call when false: {f:?}"
+        );
     }
 
     #[test]
     fn call_in_ternary_arm_rejected() {
         let f = flags("def k(c)\n  tmp = compute()\n  c ? use(tmp) : other\nend\n");
-        assert!(f.is_empty(), "inlining into ternary arm is conditional: {f:?}");
+        assert!(
+            f.is_empty(),
+            "inlining into ternary arm is conditional: {f:?}"
+        );
     }
 
     #[test]
@@ -335,18 +351,15 @@ mod tests {
 
     #[test]
     fn pure_ternary_with_interpolation_is_flagged() {
-        let f = flags(
-            "def k(frames)\n  note = frames > 1 ? \"x#{frames}\" : \"\"\n  p note\nend\n",
-        );
+        let f =
+            flags("def k(frames)\n  note = frames > 1 ? \"x#{frames}\" : \"\"\n  p note\nend\n");
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].name, "note");
     }
 
     #[test]
     fn ternary_with_call_is_flagged_when_immediate() {
-        let f = flags(
-            "def k\n  hint = @hint.present? ? \"y#{@hint}\" : \"\"\n  p hint\nend\n",
-        );
+        let f = flags("def k\n  hint = @hint.present? ? \"y#{@hint}\" : \"\"\n  p hint\nend\n");
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].name, "hint");
     }
@@ -369,7 +382,10 @@ mod tests {
         );
         let names: Vec<_> = f.iter().map(|o| o.name.as_str()).collect();
         assert!(names.contains(&"note"), "pure ternary can cross: {f:?}");
-        assert!(names.contains(&"other"), "literal other still flagged: {f:?}");
+        assert!(
+            names.contains(&"other"),
+            "literal other still flagged: {f:?}"
+        );
     }
 
     #[test]
@@ -390,9 +406,7 @@ mod tests {
 
     #[test]
     fn hash_and_scope_resolution_are_flagged() {
-        let f = flags(
-            "def k(x)\n  h = { a: x }\n  c = Foo::Bar\n  p h\n  p c\nend\n",
-        );
+        let f = flags("def k(x)\n  h = { a: x }\n  c = Foo::Bar\n  p h\n  p c\nend\n");
         let names: Vec<_> = f.iter().map(|o| o.name.as_str()).collect();
         assert!(names.contains(&"h"), "hash missed: {f:?}");
         assert!(names.contains(&"c"), "scope_resolution missed: {f:?}");

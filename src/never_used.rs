@@ -166,9 +166,7 @@ mod tests {
 
     #[test]
     fn overwrite_before_read_is_flagged() {
-        let f = flags(
-            "def k\n  x = create(:a)\n  x = create(:b)\n  use(x)\nend\n",
-        );
+        let f = flags("def k\n  x = create(:a)\n  x = create(:b)\n  use(x)\nend\n");
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].name, "x");
         assert_eq!(f[0].line, 2);
@@ -191,10 +189,11 @@ mod tests {
 
     #[test]
     fn conditional_overwrite_keeps_prior_write_live() {
-        let f = flags(
-            "def k(c)\n  x = create(:a)\n  x = create(:b) if c\n  use(x)\nend\n",
+        let f = flags("def k(c)\n  x = create(:a)\n  x = create(:b) if c\n  use(x)\nend\n");
+        assert!(
+            f.is_empty(),
+            "prior write may be read when condition is false: {f:?}"
         );
-        assert!(f.is_empty(), "prior write may be read when condition is false: {f:?}");
     }
 
     #[test]
@@ -209,10 +208,11 @@ mod tests {
 
     #[test]
     fn closure_opassign_keeps_prior_write_live() {
-        let f = flags(
-            "def k(arr)\n  x = 0\n  arr.each { |i| x += i }\n  use(x)\nend\n",
+        let f = flags("def k(arr)\n  x = 0\n  arr.each { |i| x += i }\n  use(x)\nend\n");
+        assert!(
+            f.is_empty(),
+            "accumulator start value may be observed: {f:?}"
         );
-        assert!(f.is_empty(), "accumulator start value may be observed: {f:?}");
     }
 
     #[test]

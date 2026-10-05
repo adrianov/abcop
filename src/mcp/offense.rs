@@ -3,7 +3,7 @@
 //! No `source` / `severity` / nested `range` — those repeat on every row and
 //! waste tokens. Line/column are 1-based like CLI text and `--format json`.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::abc::AbcOffense;
 use crate::modulesize::ModuleAbc;
@@ -120,6 +120,10 @@ mod tests {
             text.find("\"line\"").unwrap() < text.find("\"column\"").unwrap(),
             "line before column for LLMs, got {text}"
         );
-        assert!(!text.contains("\"source\"") && !text.contains("\"range\"") && !text.contains("\"data\""));
+        assert!(
+            !text.contains("\"source\"")
+                && !text.contains("\"range\"")
+                && !text.contains("\"data\"")
+        );
     }
 }

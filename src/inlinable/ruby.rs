@@ -4,7 +4,7 @@ use tree_sitter::Node;
 
 use crate::model::FileModel;
 
-use super::{immediate_substitutable, RUBY_IDENT, RUBY_UNITS};
+use super::{RUBY_IDENT, RUBY_UNITS, immediate_substitutable};
 
 /// Call/index trees (including nested in ternaries or interpolations) need
 /// an immediate read; otherwise pure compositions — ternaries, interpolated
@@ -140,15 +140,12 @@ fn alias_stable(
 ) -> bool {
     match fm.lookup(scope, write_byte, name) {
         None => true,
-        Some(bind_scope) => fm.scopes[bind_scope]
-            .entries
-            .get(name)
-            .is_none_or(|entry| {
-                !entry
-                    .writes
-                    .iter()
-                    .any(|w| w.byte > write_byte && w.byte < read_byte)
-            }),
+        Some(bind_scope) => fm.scopes[bind_scope].entries.get(name).is_none_or(|entry| {
+            !entry
+                .writes
+                .iter()
+                .any(|w| w.byte > write_byte && w.byte < read_byte)
+        }),
     }
 }
 

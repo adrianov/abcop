@@ -83,7 +83,7 @@ pub(crate) fn on_default_branch(branch: &str, default_branch: &str) -> bool {
 
     branch
         == default_branch
-        .strip_prefix("origin/")
+            .strip_prefix("origin/")
             .unwrap_or(default_branch)
         || branch == default_branch
 }

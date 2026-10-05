@@ -43,7 +43,7 @@ pub trait Backend {
                     name.start_byte(),
                     name.id(),
                     n.child_by_field_name("value")
-                .map(|v| v.id())
+                        .map(|v| v.id())
                         .or_else(|| rhs_after_eq(self as &dyn Backend, n).map(|v| v.id())),
                 ),
                 IntroKind::Assign,

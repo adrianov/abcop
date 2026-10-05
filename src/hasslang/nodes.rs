@@ -13,8 +13,7 @@ pub(super) fn has_match(n: Node<'_>) -> bool {
 }
 
 pub(super) fn is_decl_list_child(n: Node<'_>) -> bool {
-    n.parent()
-        .is_some_and(|p| DECL_LISTS.contains(&p.kind()))
+    n.parent().is_some_and(|p| DECL_LISTS.contains(&p.kind()))
 }
 
 /// Value-level function (has a `match`) or module/class/instance bind.

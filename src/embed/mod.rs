@@ -90,11 +90,7 @@ fn score_all(
     path: &std::path::Path,
     src: &[u8],
     want: &Want,
-) -> (
-    Vec<AbcOffense>,
-    Vec<UsedOnceOffense>,
-    Vec<NeverUsedOffense>,
-) {
+) -> (Vec<AbcOffense>, Vec<UsedOnceOffense>, Vec<NeverUsedOffense>) {
     let mut all_scores = Vec::new();
     let mut used = Vec::new();
     let mut never = Vec::new();
@@ -134,10 +130,18 @@ fn collect_usage(
     }
     let scopes = crate::clike::collect_scopes(&frag.code, tree, frag.lang);
     if want.used {
-        used.extend(usage_once(frag, &scopes).into_iter().map(|o| remap_used(frag, o)));
+        used.extend(
+            usage_once(frag, &scopes)
+                .into_iter()
+                .map(|o| remap_used(frag, o)),
+        );
     }
     if want.never {
-        never.extend(usage_never(frag, &scopes).into_iter().map(|o| remap_never(frag, o)));
+        never.extend(
+            usage_never(frag, &scopes)
+                .into_iter()
+                .map(|o| remap_never(frag, o)),
+        );
     }
 }
 
@@ -145,10 +149,7 @@ fn js_family(lang: Lang) -> bool {
     matches!(lang, Lang::Js | Lang::Ts | Lang::Tsx)
 }
 
-fn usage_once(
-    frag: &extract::Fragment,
-    scopes: &crate::clike::JsScopes,
-) -> Vec<UsedOnceOffense> {
+fn usage_once(frag: &extract::Fragment, scopes: &crate::clike::JsScopes) -> Vec<UsedOnceOffense> {
     if frag.report_root {
         crate::clike::used_once_offenses_embed(scopes)
     } else {
@@ -156,10 +157,7 @@ fn usage_once(
     }
 }
 
-fn usage_never(
-    frag: &extract::Fragment,
-    scopes: &crate::clike::JsScopes,
-) -> Vec<NeverUsedOffense> {
+fn usage_never(frag: &extract::Fragment, scopes: &crate::clike::JsScopes) -> Vec<NeverUsedOffense> {
     if frag.report_root {
         crate::clike::never_used_offenses_embed(scopes)
     } else {

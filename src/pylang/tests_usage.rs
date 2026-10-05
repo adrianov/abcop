@@ -69,10 +69,7 @@ fn used_once_rejections() {
 
 #[test]
 fn used_once_immediate_call_chain_yes_intervening_and_loop_no() {
-    assert_eq!(
-        used("def ok():\n    a = id(1)\n    return a\n"),
-        vec!["a"]
-    );
+    assert_eq!(used("def ok():\n    a = id(1)\n    return a\n"), vec!["a"]);
     assert_eq!(
         used("def no():\n    a = id(1)\n    side()\n    return a\n"),
         Vec::<String>::new()

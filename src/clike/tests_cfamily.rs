@@ -12,9 +12,9 @@ fn used(lang: Lang, src: &'static str) -> Vec<String> {
         ),
         lang,
     )
-        .into_iter()
-        .map(|o| o.name)
-        .collect();
+    .into_iter()
+    .map(|o| o.name)
+    .collect();
     v.sort();
     v
 }
@@ -28,9 +28,9 @@ fn dead(lang: Lang, src: &'static str) -> Vec<String> {
         ),
         lang,
     )
-        .into_iter()
-        .map(|o| o.name)
-        .collect();
+    .into_iter()
+    .map(|o| o.name)
+    .collect();
     v.sort();
     v
 }
@@ -56,7 +56,10 @@ fn c_pointer_wrappers_still_bind_the_name() {
 #[test]
 fn c_immediate_call_chain_yes_intervening_and_loop_no() {
     assert_eq!(
-        used(Lang::C, "int f(void) {\n  int a = helper();\n  return a;\n}"),
+        used(
+            Lang::C,
+            "int f(void) {\n  int a = helper();\n  return a;\n}"
+        ),
         vec!["a"]
     );
     assert_eq!(
@@ -161,7 +164,8 @@ fn cpp_raii_lifetime_guards_are_not_never_used() {
 #[test]
 fn cpp_block_ctor_style_args_count_as_reads() {
     // `QFile f(path)` parses as function_declarator; params are expression args.
-    let src = "void g() {\n  QString path = x();\n  QFile f(path);\n  (void)f;\n  int dead = 1;\n}\n";
+    let src =
+        "void g() {\n  QString path = x();\n  QFile f(path);\n  (void)f;\n  int dead = 1;\n}\n";
     assert_eq!(dead(Lang::Cpp, src), vec!["dead".to_string()]);
 }
 

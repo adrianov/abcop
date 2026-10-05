@@ -11,9 +11,9 @@ fn used(lang: Lang, src: &'static str) -> Vec<String> {
         ),
         lang,
     )
-        .into_iter()
-        .map(|o| o.name)
-        .collect();
+    .into_iter()
+    .map(|o| o.name)
+    .collect();
     v.sort();
     v
 }
@@ -27,9 +27,9 @@ fn dead(lang: Lang, src: &'static str) -> Vec<String> {
         ),
         lang,
     )
-        .into_iter()
-        .map(|o| o.name)
-        .collect();
+    .into_iter()
+    .map(|o| o.name)
+    .collect();
     v.sort();
     v
 }
@@ -105,11 +105,11 @@ fn swift_member_reads_are_not_variable_reads() {
         &parse_file_lang(src.as_bytes(), Lang::Swift).unwrap(),
         Lang::Swift,
     )
-        .scopes
-        .iter()
-        .flat_map(|s| s.entries.keys())
-        .map(|k| k.as_ref().to_string())
-        .collect();
+    .scopes
+    .iter()
+    .flat_map(|s| s.entries.keys())
+    .map(|k| k.as_ref().to_string())
+    .collect();
     // `x` is a local binding (read via the trailing expression); `helper`
     // is a member read off `self` and must NOT appear as a local binding.
     assert!(bindings.contains(&"x".to_string()));
