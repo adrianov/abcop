@@ -82,6 +82,14 @@ fn file_pattern_leaves_siblings() {
 }
 
 #[test]
+fn invalid_pattern_leaves_valid_ones() {
+    let repo = ruby_repo("exclude_bad_repo", &["keep.rb", "legacy/old.rb"]);
+    let excludes = loaded("ignore = [z-a]\nignore = legacy/\n", &[repo.clone()]);
+    assert!(excludes.skips(&repo.join("legacy/old.rb")));
+    assert!(!excludes.skips(&repo.join("keep.rb")));
+}
+
+#[test]
 fn missing_config_skips_nothing() {
     let repo = ruby_repo("exclude_none_repo", &["legacy/old.rb"]);
     let excludes = Excludes::from_file(

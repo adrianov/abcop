@@ -106,7 +106,9 @@ fn build_matcher(patterns: &[String], root: &Path) -> Option<Arc<Gitignore>> {
     }
     let mut builder = GitignoreBuilder::new(root);
     for pattern in patterns {
-        let _ = builder.add_line(None, pattern);
+        if let Err(err) = builder.add_line(None, pattern) {
+            eprintln!("abcop: ignore pattern `{pattern}`: {err}");
+        }
     }
     let gi = builder.build().ok()?;
     (!gi.is_empty()).then(|| Arc::new(gi))
