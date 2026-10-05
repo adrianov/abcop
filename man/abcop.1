@@ -23,7 +23,8 @@ for a deliberate whole\-tree scan,
 .B \-\-uncommitted
 for only your working\-tree edits, and
 .B \-\-everything
-to lift every filter.
+to lift the built\-in filters (user\-config ignores still apply; see
+CONFIG below).
 .PP
 Default walks prune test and fixture trees
 .RB ( spec/, " tests/, " fixtures/, " testdata/),
@@ -300,6 +301,30 @@ opens first and grows, then
 close the document. With
 .B \-\-sort\-by\-score
 results are buffered and emitted largest ABC first.
+.SH CONFIG
+User options live in one file:
+.B $XDG_CONFIG_HOME/abcop
+when that variable is set, otherwise
+.IR ~/.config/abcop .
+.B $ABCOP_CONFIG
+replaces the path. Nothing is read from the repository.
+.PP
+.B ignore
+is a gitignore pattern, one option per line, applied in every project
+relative to that project's root. A directory pattern covers files inside
+it. Naming the path on the command line,
+.BR \-\-full ,
+and
+.B \-\-everything
+do not opt a match back in. An MCP inspection of a matched path returns
+no offenses.
+.PP
+.RS
+.nf
+ignore = app/services/legacy/
+ignore = lib/old.rb
+.fi
+.RE
 .SH CACHING
 Results for unchanged files are cached in the user\-wide XDG cache dir
 (

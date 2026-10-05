@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::abc::Limits;
 use crate::modulesize;
@@ -34,12 +34,20 @@ pub(crate) fn inspect(
     source: Option<String>,
 ) -> Result<String, String> {
     match source {
-        Some(code) => Ok(inspect_inline(state, targets.first().map(String::as_str), &code)),
+        Some(code) => Ok(inspect_inline(
+            state,
+            targets.first().map(String::as_str),
+            &code,
+        )),
         None => inspect_paths(state, targets),
     }
 }
 
 fn inspect_inline(state: &State, path: Option<&str>, code: &str) -> String {
+    if path.is_some_and(|p| crate::user_exclude::Excludes::load(&[]).skips(std::path::Path::new(p)))
+    {
+        return "[]".into();
+    }
     offense::offenses_json(&pipeline::analyze_src(
         Path::new(path.unwrap_or("example.rb")),
         code.as_bytes(),
@@ -87,10 +95,7 @@ fn pack_offenses(targets: &[PathBuf], all: &[(String, FileResult)]) -> String {
 }
 
 fn finding_count(r: &FileResult) -> usize {
-    r.abc.len()
-        + r.used_once.len()
-        + r.never_used.len()
-        + usize::from(r.module_abc.is_some())
+    r.abc.len() + r.used_once.len() + r.never_used.len() + usize::from(r.module_abc.is_some())
 }
 
 fn target_files(targets: &[String]) -> Result<Vec<PathBuf>, String> {

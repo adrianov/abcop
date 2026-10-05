@@ -38,8 +38,9 @@ mod scope_model;
 mod skip;
 mod sollang;
 mod srcbuf;
-mod ziglang;
 mod untracked_scan;
+mod user_exclude;
+mod ziglang;
 
 #[cfg(test)]
 mod test_repo;

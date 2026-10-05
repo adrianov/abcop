@@ -123,7 +123,7 @@ abcop [OPTIONS] PATH...
 | `--max-module-abc N` | `120` | module ABC ceiling |
 | `--only abc\|used-once\|never-used` | all | single check |
 | `--full` | off | whole production tree (default skips stay on) |
-| `--everything` | off | no gitignore / hidden / vendored pruning |
+| `--everything` | off | no gitignore / hidden / vendored pruning (`ignore` in the user config still applies) |
 | `--format text\|json\|jsonl` | `text` | CI-friendly output |
 | `--sort-by-score` | off | highest ABC first |
 | `--mr` | off | MR scope (uncommitted + branch vs base) |
@@ -186,6 +186,22 @@ On a dirty tree the bare default is uncommitted-only; `--mr` takes the
 full branch union. Commits straight to main use a 36-hour window when no
 branch base applies. `--uncommitted` fails outside a repository instead
 of silently widening.
+
+### User config
+
+One file holds user options. It is `$XDG_CONFIG_HOME/abcop` when that
+variable is set, otherwise `~/.config/abcop`. `$ABCOP_CONFIG` replaces
+the path. Nothing is written into the project.
+
+`ignore` is a gitignore pattern, one option per line, applied in every
+project relative to that project's root. A directory pattern covers
+everything inside it. Naming the path, `--full`, and `--everything` do
+not bring a match back. An MCP inspection of a matched path is empty.
+
+```text
+ignore = app/services/legacy/
+ignore = lib/old.rb
+```
 
 ### Directives
 

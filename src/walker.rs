@@ -4,6 +4,7 @@
 
 use crate::paths::is_code_path;
 use crate::skip::skipped_by_default;
+use crate::user_exclude::{Excludes, anchor_paths};
 
 /// A discovered file plus its depth below the walked root.
 #[derive(Debug)]
@@ -20,26 +21,41 @@ struct Found {
 /// produced by the final multi-key sort over the recorded depths. Entries
 /// below a root are filtered through `skipped_by_default` and the walker's
 /// ignore rules -- unless `everything` is set (`--everything`), which lifts
-/// every filter: gitignore, hidden files, vendored/generated pruning.
+/// gitignore, hidden files, and vendored/generated pruning. Patterns from
+/// the user config stay in force either way.
 pub(crate) fn collect_files(paths: &[String], everything: bool) -> Vec<std::path::PathBuf> {
-    let (explicit, roots) = classify_targets(paths);
+    collect_files_with(paths, everything, &Excludes::load(&anchor_paths(paths)))
+}
+
+pub(crate) fn collect_files_with(
+    paths: &[String],
+    everything: bool,
+    excludes: &Excludes,
+) -> Vec<std::path::PathBuf> {
+    let (explicit, roots) = classify_targets(paths, excludes);
     let mut all = explicit;
-    all.extend(walk_roots(&roots, everything));
+    all.extend(walk_roots(&roots, everything, excludes));
     breadth_first_order(all)
 }
 
 /// Split CLI targets: existing files are scanned directly (depth 0),
 /// everything else that exists becomes a walked root; missing paths drop.
-fn classify_targets(paths: &[String]) -> (Vec<Found>, Vec<std::path::PathBuf>) {
+/// Files matching the user config's ignore list are dropped even when named.
+fn classify_targets(
+    paths: &[String],
+    excludes: &Excludes,
+) -> (Vec<Found>, Vec<std::path::PathBuf>) {
     let mut explicit = Vec::new();
     let mut roots = Vec::new();
     for raw in paths {
         let p = std::path::Path::new(raw);
         if p.is_file() {
-            explicit.push(Found {
-                path: p.to_path_buf(),
-                depth: 0,
-            });
+            if !excludes.skips(p) {
+                explicit.push(Found {
+                    path: p.to_path_buf(),
+                    depth: 0,
+                });
+            }
         } else if p.exists() {
             roots.push(p.to_path_buf());
         }
@@ -48,7 +64,7 @@ fn classify_targets(paths: &[String]) -> (Vec<Found>, Vec<std::path::PathBuf>) {
 }
 
 /// Walk every root on one shared parallel visitor and return the discovery.
-fn walk_roots(roots: &[std::path::PathBuf], everything: bool) -> Vec<Found> {
+fn walk_roots(roots: &[std::path::PathBuf], everything: bool, excludes: &Excludes) -> Vec<Found> {
     if roots.is_empty() {
         return Vec::new();
     }
@@ -67,6 +83,7 @@ fn walk_roots(roots: &[std::path::PathBuf], everything: bool) -> Vec<Found> {
         sink: &discovered,
         roots,
         no_skip: everything,
+        excludes,
     };
     builder.build_parallel().visit(&mut collector);
     discovered.into_inner().unwrap_or_default()
@@ -137,6 +154,7 @@ struct CollectorBuilder<'s> {
     roots: &'s [std::path::PathBuf],
     /// `--everything`: bypass default-skip pruning entirely.
     no_skip: bool,
+    excludes: &'s Excludes,
 }
 
 impl<'s> ignore::ParallelVisitorBuilder<'s> for CollectorBuilder<'s> {
@@ -145,6 +163,7 @@ impl<'s> ignore::ParallelVisitorBuilder<'s> for CollectorBuilder<'s> {
             sink: self.sink,
             roots: self.roots,
             no_skip: self.no_skip,
+            excludes: self.excludes,
         })
     }
 }
@@ -153,6 +172,7 @@ struct Collector<'s> {
     sink: &'s std::sync::Mutex<Vec<Found>>,
     roots: &'s [std::path::PathBuf],
     no_skip: bool,
+    excludes: &'s Excludes,
 }
 
 impl ignore::ParallelVisitor for Collector<'_> {
@@ -160,6 +180,9 @@ impl ignore::ParallelVisitor for Collector<'_> {
         let Ok(entry) = entry else {
             return ignore::WalkState::Continue;
         };
+        if let Some(state) = user_skip(self.excludes, &entry) {
+            return state;
+        }
         if !self.no_skip
             && let Some(state) = prune_state(&entry, self.roots)
         {
@@ -176,6 +199,19 @@ impl ignore::ParallelVisitor for Collector<'_> {
         }
         ignore::WalkState::Continue
     }
+}
+
+/// User-config ignores prune a matching directory and drop a matching file.
+/// They stay active under `--everything`.
+fn user_skip(excludes: &Excludes, entry: &ignore::DirEntry) -> Option<ignore::WalkState> {
+    if !excludes.skips(entry.path()) {
+        return None;
+    }
+    Some(if entry.file_type().is_some_and(|t| t.is_dir()) {
+        ignore::WalkState::Skip
+    } else {
+        ignore::WalkState::Continue
+    })
 }
 
 /// WalkState when this entry should prune out of the default walk: whole

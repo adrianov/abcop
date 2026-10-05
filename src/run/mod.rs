@@ -197,16 +197,25 @@ fn collect_targets(
     changeset: Option<&git_changes::Changeset>,
 ) -> Vec<std::path::PathBuf> {
     match changeset {
-        Some(cs) => cs
-            .code_files()
-            .into_iter()
-            .filter(|p| !crate::modulesize::is_route_table(p))
-            .filter(|p| !crate::modulesize::is_third_party(p))
-            .filter(|p| !crate::modulesize::is_fixture_tree(p))
-            .collect(),
+        Some(cs) => scoped_files(cs),
         None if explicit_paths => collect_files(run.paths, run.everything),
         None => collect_files(&[String::from(".")], run.everything),
     }
+}
+
+fn scoped_files(cs: &git_changes::Changeset) -> Vec<std::path::PathBuf> {
+    let excludes = crate::user_exclude::Excludes::load(&[std::path::PathBuf::from(&cs.root)]);
+    cs.code_files()
+        .into_iter()
+        .filter(|path| scoped_keep(path, &excludes))
+        .collect()
+}
+
+fn scoped_keep(path: &std::path::Path, excludes: &crate::user_exclude::Excludes) -> bool {
+    !crate::modulesize::is_route_table(path)
+        && !crate::modulesize::is_third_party(path)
+        && !crate::modulesize::is_fixture_tree(path)
+        && !excludes.skips(path)
 }
 
 fn exit_code(results: &[FileResult]) -> ExitCode {
