@@ -28,19 +28,19 @@ macOS (`.tar.gz` from [GitHub Releases](https://github.com/adrianov/abcop/releas
 
 ```sh
 # Apple Silicon — use the *-x86_64-apple-darwin.tar.gz asset on Intel Macs
-curl -LO https://github.com/adrianov/abcop/releases/download/v0.19.1/abcop-0.19.1-aarch64-apple-darwin.tar.gz
-tar -xzf abcop-0.19.1-aarch64-apple-darwin.tar.gz
-sudo cp abcop-0.19.1-aarch64-apple-darwin/abcop /usr/local/bin/
+curl -LO https://github.com/adrianov/abcop/releases/download/v0.20.0/abcop-0.20.0-aarch64-apple-darwin.tar.gz
+tar -xzf abcop-0.20.0-aarch64-apple-darwin.tar.gz
+sudo cp abcop-0.20.0-aarch64-apple-darwin/abcop /usr/local/bin/
 sudo mkdir -p /usr/local/share/man/man1
-sudo cp abcop-0.19.1-aarch64-apple-darwin/abcop.1 /usr/local/share/man/man1/
+sudo cp abcop-0.20.0-aarch64-apple-darwin/abcop.1 /usr/local/share/man/man1/
 ```
 
 Ubuntu / Debian (`.deb` from [GitHub Releases](https://github.com/adrianov/abcop/releases); amd64, Ubuntu 22.04+ / Debian bookworm+):
 
 ```sh
-# example for v0.19.1 — use the asset name from the release page
-curl -LO https://github.com/adrianov/abcop/releases/download/v0.19.1/abcop_0.19.1-1_amd64.deb
-sudo dpkg -i abcop_0.19.1-1_amd64.deb
+# example for v0.20.0 — use the asset name from the release page
+curl -LO https://github.com/adrianov/abcop/releases/download/v0.20.0/abcop_0.20.0-1_amd64.deb
+sudo dpkg -i abcop_0.20.0-1_amd64.deb
 man abcop
 ```
 
@@ -61,10 +61,10 @@ Fitzpatrick defined both method and module scope; abcop gates both:
 
 | Rule | Severity | Meaning |
 |---|---|---|
-| `Metrics/AbcSize` | C | function ABC above `--max-abc` (default 17) |
+| `Metrics/AbcSize` | C | function ABC above `--max-abc` (default 17). A normal scan reports a rise vs `HEAD`; `--full` and `--everything` report every function over the ceiling |
 | `Metrics/ModuleAbcSize` | W | module ABC above `--max-module-abc` (default 120) |
-| `UsedOnce` | W | local written once, read once — consider inlining |
-| `NeverUsed` | W | local written, never read |
+| `UsedOnce` | W | local written once and read once, inside a function the edit changed. `--full` and `--everything` report every such local |
+| `NeverUsed` | W | local written and never read, inside a function the edit changed. Same whole-tree switch as UsedOnce |
 
 A sparse wrapper and a dense god-object can share a line count; ABC
 separates them. Complexity is the gate — never a line budget. UsedOnce /
@@ -82,8 +82,9 @@ NeverUsed are secondary.
 - **Fast enough for every push.** Sub-second whole-tree scans — including
   code an agent will never re-read tomorrow.
 - **Signal only.** No formatting or style cops. Vendored, generated and
-  test trees are skipped by default. Two knobs: `--max-abc` and
-  `--max-module-abc`.
+  test trees are skipped by default. Knobs: `--max-abc` and
+  `--max-module-abc`. `--full` and `--everything` report every hit, not
+  only the current edit.
 - **Prefer MCP with LLMs.** `abcop --mcp` is the best way to use abcop from
   an agent: the model gets offenses as soon as it writes, so it can fix
   complexity and dead locals in the same turn and ship effective code
@@ -122,8 +123,8 @@ abcop [OPTIONS] PATH...
 | `--max-abc N` | `17` | function ABC ceiling |
 | `--max-module-abc N` | `120` | module ABC ceiling |
 | `--only abc\|used-once\|never-used` | all | single check |
-| `--full` | off | whole production tree (default skips stay on) |
-| `--everything` | off | no gitignore / hidden / vendored pruning (`ignore` in the user config still applies) |
+| `--full` | off | whole production tree, and every function over the ceiling plus every local (default skips stay on) |
+| `--everything` | off | no gitignore / hidden / vendored pruning (`ignore` in the user config still applies); same full report as `--full` |
 | `--format text\|json\|jsonl` | `text` | CI-friendly output |
 | `--sort-by-score` | off | highest ABC first |
 | `--mr` | off | MR scope (uncommitted + branch vs base) |
@@ -135,14 +136,16 @@ abcop [OPTIONS] PATH...
 Exit codes: `0` clean, `1` findings, `2` usage error.
 
 ```sh
-abcop app lib                          # two trees
+abcop app lib                          # two trees; rises and edited functions only
 abcop --format jsonl lib > abcop.jsonl # streaming CI / agent input
-abcop --only used-once src             # inline candidates
+abcop --only used-once src             # inline candidates in edited functions
 abcop --max-abc 12 --only abc lib      # stricter function budget
-abcop --max-module-abc 80 lib           # stricter module budget
+abcop --full lib                       # every function over the ceiling, every local
+abcop --everything lib                 # same report, with no default pruning
+abcop --max-module-abc 80 lib          # stricter module budget
 abcop --sort-by-score --only abc lib   # worst first
-abcop --uncommitted                    # pre-commit / agent loop
-abcop --mr --only abc                  # this branch's touched units
+abcop --uncommitted                    # pre-commit; rises and edited functions only
+abcop --mr --only abc                  # branch files; still only ABC rises vs HEAD
 abcop --mcp                            # MCP server on stdio (for AI clients)
 ```
 
@@ -156,13 +159,13 @@ JSON diagnostics include `file`, `line`, `column`, `severity`, `rule`,
 
 ### Scope selection
 
-**Named paths** — those targets only.
+**Named paths** — those targets only. Findings still follow the edit filter below.
 
 **Omitted** — narrowest useful scope, announced on stderr:
 
 1. uncommitted work vs `HEAD` if the tree is dirty
 2. else current MR (`--mr` forces this)
-3. else full tree (outside a repo)
+3. else the tree (outside a repo)
 
 Default walks prune test/fixture trees, vendored/build output
 (`vendor/`, `node_modules/`, `target/`, …), `db/migrate/`, route tables
@@ -172,20 +175,44 @@ Third-party, route-table, and fixture paths are never scoped review
 surface — a diff through `vendor/` or `tests/fixtures/` does not make
 that material owned code.
 
-**Scoped ModuleAbcSize** re-sums only methods that intersect the diff and
-compares that total to `--max-module-abc` (default 120; untracked =
-every method). A small patch into an oversized legacy file stays quiet
-unless the touched methods themselves exceed the ceiling; AbcSize still
-reports any changed method over `--max-abc`. Full scans (`--full`,
-`--everything`) report every production module over the ceiling;
-ModuleAbcSize still exempts test trees on full scans (scoped runs can
-flag them when changed methods sum over the limit). UsedOnce /
-NeverUsed always follow the changed lines.
-
 On a dirty tree the bare default is uncommitted-only; `--mr` takes the
 full branch union. Commits straight to main use a 36-hour window when no
 branch base applies. `--uncommitted` fails outside a repository instead
 of silently widening.
+
+### What a normal scan reports
+
+Every scan except `--full` and `--everything` compares the working tree
+to `HEAD`:
+
+- **AbcSize** reports a method over `--max-abc` only when its score is
+  strictly higher than the same method in `HEAD` (same name, source
+  order). A score that stayed the same or fell stays quiet, including a
+  legacy method that was already over the ceiling. A method that exists
+  only in the working tree counts as an increase. The message names the
+  previous score (`rose from 20 to 21 -- back to 20 or below`). Clear it
+  by bringing the score back down to that `HEAD` score or below.
+- **UsedOnce / NeverUsed** report only inside a function whose text
+  changed against `HEAD`. A local in a function the edit did not touch
+  stays quiet. Locals outside any function still report.
+- **No `HEAD` blob** (not a git checkout, or an untracked file) reports
+  every method over the ceiling and every local.
+
+`--uncommitted` and `--mr` also drop findings on lines the diff did not
+touch. **ModuleAbcSize** on those runs re-sums only methods that intersect
+the diff and compares that total to `--max-module-abc` (default 120;
+untracked = every method). A small patch into an oversized legacy file
+stays quiet unless the touched methods themselves exceed the ceiling.
+
+### Whole-tree report
+
+`--full` and `--everything` report every method over `--max-abc` and every
+local. They also report every production module over
+`--max-module-abc`. ModuleAbcSize still exempts test trees on `--full`;
+a scoped run can flag a test file when the changed methods sum over the
+limit. `--full` keeps the default skips. `--everything` lifts gitignore,
+hidden directories, and vendored/generated/test pruning. `ignore` in the
+user config still applies to both.
 
 ### User config
 
@@ -229,7 +256,7 @@ gem. Tool:
 
 | Tool | Purpose |
 |---|---|
-| `abcop_inspection` | Analyse via `path` / `paths` (string or array) and/or inline `source_code`; returns compact offense JSON (`code`, `line`, `column`, `message`; `score` / `vector` for ABC rules). Always pass an explicit project path — omitting targets errors out (avoids scanning `$HOME` when MCP `cwd` is mis-set). |
+| `abcop_inspection` | Analyse via `path` / `paths` (string or array) and/or inline `source_code`; returns compact offense JSON (`code`, `line`, `column`, `message`; `score` / `vector` for ABC rules). Same edit filter as a normal scan: AbcSize only when the score rose against `HEAD`, UsedOnce and NeverUsed only inside functions the edit changed. Always pass an explicit project path — omitting targets errors out (avoids scanning `$HOME` when MCP `cwd` is mis-set). |
 
 - MCP Registry name: `mcp-name: io.github.adrianov/abcop`
 

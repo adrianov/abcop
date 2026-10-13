@@ -1,4 +1,4 @@
-.TH ABCOP 1 "2026-09-08" "abcop 0.19.1" "User Commands"
+.TH ABCOP 1 "2026-10-13" "abcop 0.20.0" "User Commands"
 .SH NAME
 abcop \- must\-have ABC complexity gate for AI development. Ruby, Rust, Python, Go, JS/TS, C/C++, PHP, Java, C#, Swift, Zig, Dart, Solidity, Haskell, ObjC
 .SH SYNOPSIS
@@ -85,7 +85,20 @@ rescue bindings, closure/loop parameters of nested callables),
 exception handlers). The score is sqrt(A^2 + B^2 + C^2), rounded to two
 decimals. Units scoring strictly above
 .I max
-are reported with a vector
+are candidates. A normal scan reports one only when its working\-tree
+score is strictly higher than the same function in HEAD (matched by name,
+in source order). A score that stayed the same or fell stays quiet,
+including a legacy function that was already over the ceiling. A function
+missing from HEAD counts as new. UsedOnce and NeverUsed report only
+inside a function whose text changed against HEAD. A local in a function
+the edit did not touch stays quiet. Locals outside any function still
+report. Outside a repository, or when the file is untracked, every
+over\-ceiling function and every local is reported.
+.B \-\-full
+and
+.B \-\-everything
+report every function over the ceiling and every local. Each hit carries
+a vector
 .IB < A , " B , " C >
 in the message.
 .IP \(bu
@@ -109,8 +122,12 @@ Production modules whose summed method ABC exceeds
 extraction (Fitzpatrick total of method vectors). Test suites and test
 directories, lockfiles, schema dumps and documentation trees are exempt
 on full scans. On scoped runs the score is re\-summed from methods that
-intersect the diff only (untracked files count every method); AbcSize
-still reports each changed method over
+intersect the diff only (untracked files count every method). A normal
+scan reports AbcSize only when the score rose against HEAD.
+.B \-\-full
+and
+.B \-\-everything
+report every function over
 .IR max\-abc .
 For Rust files the trailing
 .B #[cfg(test)]
@@ -257,7 +274,9 @@ instead of widening to a full\-tree scan.
 .TP
 .B \-\-full
 Scan the whole production tree instead of the scoped run; the default
-pruning of vendored/generated/test material stays active. Bare
+pruning of vendored/generated/test material stays active. Reports every
+function over the ABC ceiling and every local, not only the current edit.
+Bare
 .B \-\-full
 targets the current directory.
 .TP
@@ -265,6 +284,8 @@ targets the current directory.
 Scan literally everything below the target: gitignore files are not
 honoured, hidden directories are entered, and vendored/generated/test
 pruning is disabled. The escape hatch for auditing what the defaults hide.
+The report is the same full set as
+.BR \-\-full .
 .TP
 .B \-\-sort\-by\-score
 Buffer every finding and emit highest\-score diagnostics first
