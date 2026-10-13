@@ -20,6 +20,12 @@ pub struct AbcOffense {
     pub line: usize,
     pub end_line: usize,
     pub column: usize,
+    /// Byte range of the unit in the source that was scored. Zero when the
+    /// span is not a slice of that source (reconstructed template blocks).
+    #[serde(default)]
+    pub start_byte: usize,
+    #[serde(default)]
+    pub end_byte: usize,
     pub name: String,
     pub score: f64,
     pub vector: String,
@@ -27,6 +33,31 @@ pub struct AbcOffense {
     /// for `--full` / `--everything`, which report every over-ceiling method.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prior: Option<f64>,
+}
+
+/// One scored function, including those under the ceiling. The edit
+/// filter pairs these; the reported `abc` list is only the hits.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct Unit {
+    pub name: String,
+    pub line: usize,
+    pub end_line: usize,
+    pub start_byte: usize,
+    pub end_byte: usize,
+    pub score: f64,
+}
+
+impl From<&AbcOffense> for Unit {
+    fn from(o: &AbcOffense) -> Self {
+        Self {
+            name: o.name.clone(),
+            line: o.line,
+            end_line: o.end_line,
+            start_byte: o.start_byte,
+            end_byte: o.end_byte,
+            score: o.score,
+        }
+    }
 }
 
 /// Method and module ABC ceilings for one scan.
@@ -49,15 +80,22 @@ pub(crate) fn fmt_vector(a: u32, b: u32, c: u32) -> String {
 pub(crate) fn offense_at(unit: Node<'_>, name: &str, a: u32, b: u32, c: u32) -> AbcOffense {
     let raw = ((a * a + b * b + c * c) as f64).sqrt();
     let pos = unit.start_position();
+    let (start_byte, end_byte) = byte_span(unit);
     AbcOffense {
         line: pos.row + 1,
         end_line: unit.end_position().row + 1,
         column: pos.column,
+        start_byte,
+        end_byte,
         name: name.to_string(),
         score: (raw * 100.0).round() / 100.0,
         vector: fmt_vector(a, b, c),
         prior: None,
     }
+}
+
+fn byte_span(unit: Node<'_>) -> (usize, usize) {
+    (unit.start_byte(), unit.end_byte())
 }
 
 /// Lead clause of an AbcSize finding. A recorded HEAD score means the

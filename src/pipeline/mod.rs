@@ -8,6 +8,7 @@ use crate::git_changes;
 use crate::paths::{Lang, is_code_path, lang_for, parse_file_lang};
 use crate::srcbuf::{SrcBuf, load_src};
 mod backends;
+mod baseline;
 mod increased;
 mod narrow;
 mod non_clike;
@@ -41,6 +42,7 @@ fn blank_with(path: &std::path::Path) -> crate::output::FileResult {
         used_once: Vec::new(),
         never_used: Vec::new(),
         module_abc: None,
+        units: Vec::new(),
     }
 }
 
@@ -69,7 +71,7 @@ pub(crate) fn analyze_one(
     // must also apply when the analysis itself comes from the cache.
     let hit = cache.and_then(|c| cache_hit(c, path, &src_buf, only, limits));
     if let Some(mut hit) = hit {
-        apply_scope(changeset, limits, path, &src_buf, &mut hit);
+        apply_scope(changeset, limits, path, &src_buf, cache, &mut hit);
         return hit;
     }
 
@@ -77,7 +79,7 @@ pub(crate) fn analyze_one(
         return r;
     }
     store_result(cache, path, &src_buf, only, limits, &r);
-    apply_scope(changeset, limits, path, &src_buf, &mut r);
+    apply_scope(changeset, limits, path, &src_buf, cache, &mut r);
     r
 }
 
@@ -87,10 +89,11 @@ fn apply_scope(
     limits: Limits,
     path: &std::path::Path,
     src: &[u8],
+    cache: Option<&cache::Cache>,
     r: &mut crate::output::FileResult,
 ) {
     narrow::apply(changeset, r, limits.module, src);
-    increased::apply(limits.increased, path, src, r);
+    increased::apply(limits.increased, path, src, cache, r);
 }
 
 /// Analyse in-memory source (MCP inline `source_code`); `path` selects language.
@@ -108,7 +111,7 @@ pub(crate) fn analyze_src(
         return r;
     }
     let _ = analyze_src_into(&mut r, path, src, only, limits);
-    increased::apply(limits.increased, path, src, &mut r);
+    increased::apply(limits.increased, path, src, None, &mut r);
     r
 }
 
@@ -152,7 +155,7 @@ fn cache_hit(
     only: Option<&str>,
     limits: Limits,
 ) -> Option<crate::output::FileResult> {
-    let (abc, used_once, never_used, module_abc) =
+    let (abc, used_once, never_used, module_abc, units) =
         cache.get(&cache.file_key(path, src, only, limits))?;
     Some(crate::output::FileResult {
         path: path.display().to_string(),
@@ -160,6 +163,7 @@ fn cache_hit(
         used_once,
         never_used,
         module_abc,
+        units,
     })
 }
 
@@ -178,6 +182,7 @@ fn store_result(
             &r.used_once,
             &r.never_used,
             r.module_abc.clone(),
+            &r.units,
         );
     }
 }

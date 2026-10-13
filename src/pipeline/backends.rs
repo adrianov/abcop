@@ -25,18 +25,15 @@ fn suppressed<T>(v: Vec<T>, keep: impl Fn(&T) -> bool) -> Vec<T> {
 }
 
 fn set_module_abc(r: &mut FileResult, src: &[u8], all: &[AbcOffense], max: f64) {
+    r.units = all.iter().map(crate::abc::Unit::from).collect();
     r.module_abc =
         modulesize::from_scores(all, &r.path, std::str::from_utf8(src).unwrap_or(""), max);
 }
 
 fn keep_abc(dirs: &Directives, all: Vec<AbcOffense>, max: f64) -> Vec<AbcOffense> {
-    let over: Vec<_> = all.into_iter().filter(|o| o.score > max).collect();
-    // Negative max is the edit-filter inventory: every unit, including
-    // ones a directive would hide from the report.
-    if max < 0.0 {
-        return over;
-    }
-    suppressed(over, |o| dirs.suppresses_abc(o.line))
+    suppressed(all.into_iter().filter(|o| o.score > max).collect(), |o| {
+        dirs.suppresses_abc(o.line)
+    })
 }
 
 /// Run the clike scope-model family (JS/TS, Swift and the plain-C trio):

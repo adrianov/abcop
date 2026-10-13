@@ -66,6 +66,7 @@ fn finish(
     scored: (Vec<AbcOffense>, Vec<UsedOnceOffense>, Vec<NeverUsedOffense>),
 ) {
     let (all_scores, used, never) = scored;
+    r.units = all_scores.iter().map(crate::abc::Unit::from).collect();
     r.module_abc = modulesize::from_scores(
         &all_scores,
         &r.path,
@@ -167,7 +168,7 @@ fn usage_never(frag: &extract::Fragment, scopes: &crate::clike::JsScopes) -> Vec
 
 fn keep_abc(dirs: &Directives, all: Vec<AbcOffense>, max: f64) -> Vec<AbcOffense> {
     all.into_iter()
-        .filter(|o| o.score > max && (max < 0.0 || !dirs.suppresses_abc(o.line)))
+        .filter(|o| o.score > max && !dirs.suppresses_abc(o.line))
         .collect()
 }
 
@@ -186,9 +187,23 @@ fn remap_abc(frag: &extract::Fragment, mut o: AbcOffense) -> AbcOffense {
     } else {
         frag.start_line + o.end_line - 1
     };
+    shift_bytes(frag, &mut o);
     o.line = line;
     o.column = column;
     o
+}
+
+fn shift_bytes(frag: &extract::Fragment, o: &mut AbcOffense) {
+    match frag.start_byte {
+        Some(base) => {
+            o.start_byte += base;
+            o.end_byte += base;
+        }
+        None => {
+            o.start_byte = 0;
+            o.end_byte = 0;
+        }
+    }
 }
 
 fn remap_used(frag: &extract::Fragment, mut o: UsedOnceOffense) -> UsedOnceOffense {

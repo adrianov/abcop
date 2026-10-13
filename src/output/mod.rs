@@ -32,6 +32,8 @@ pub(crate) struct FileResult {
     pub used_once: Vec<UsedOnceOffense>,
     pub never_used: Vec<NeverUsedOffense>,
     pub module_abc: Option<ModuleAbc>,
+    /// Every scored function, under the ceiling included. Not reported.
+    pub units: Vec<abc::Unit>,
 }
 
 impl FileResult {
@@ -322,6 +324,8 @@ mod tests {
                     name: "small".into(),
                     score: 18.0,
                     vector: "<10, 10, 10>".into(),
+                    start_byte: 0,
+                    end_byte: 0,
                     prior: None,
                 }],
                 used_once: vec![UsedOnceOffense {
@@ -331,6 +335,7 @@ mod tests {
                 }],
                 never_used: vec![],
                 module_abc: None,
+                units: Vec::new(),
             },
             FileResult {
                 path: "b.rb".into(),
@@ -341,6 +346,8 @@ mod tests {
                     name: "big".into(),
                     score: 42.0,
                     vector: "<20, 30, 20>".into(),
+                    start_byte: 0,
+                    end_byte: 0,
                     prior: None,
                 }],
                 used_once: vec![],
@@ -355,6 +362,7 @@ mod tests {
                     vector: "<50, 80, 60>".into(),
                     methods: vec![],
                 }),
+                units: Vec::new(),
             },
         ]
     }

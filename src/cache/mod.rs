@@ -88,9 +88,22 @@ impl Cache {
         used_once: &[crate::used_once::UsedOnceOffense],
         never_used: &[crate::never_used::NeverUsedOffense],
         module_abc: Option<crate::modulesize::ModuleAbc>,
+        units: &[crate::abc::Unit],
     ) {
         self.store
-            .store(key, abc, used_once, never_used, module_abc)
+            .store(key, abc, used_once, never_used, module_abc, units)
+    }
+
+    /// Identity of a HEAD blob's unit inventory. The blob id is the
+    /// content hash, so a new commit misses and the old row ages out.
+    pub(crate) fn blob_key(&self, path: &Path, oid: &git2::Oid) -> String {
+        let path = path.display().to_string();
+        hash_parts(&[
+            env!("CARGO_PKG_VERSION").as_bytes(),
+            &RULES_REV.to_le_bytes(),
+            path.as_bytes(),
+            oid.as_bytes(),
+        ])
     }
 
     /// Keep the newest MAX_ENTRIES entries; drop the rest.

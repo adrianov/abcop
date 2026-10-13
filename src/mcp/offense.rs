@@ -114,6 +114,7 @@ mod tests {
                 keep_init: false,
             }],
             module_abc: None,
+            units: Vec::new(),
         };
         let text = offenses_json(&r);
         assert!(text.contains("\"code\":\"NeverUsed\""));

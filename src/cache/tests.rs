@@ -18,6 +18,8 @@ fn sample(module_abc: Option<crate::modulesize::ModuleAbc>) -> CachedDiags {
             name: "Foo#bar".into(),
             score: 22.5,
             vector: "<9, 4, 2>".into(),
+            start_byte: 0,
+            end_byte: 0,
             prior: None,
         }],
         vec![crate::used_once::UsedOnceOffense {
@@ -32,6 +34,7 @@ fn sample(module_abc: Option<crate::modulesize::ModuleAbc>) -> CachedDiags {
             keep_init: false,
         }],
         module_abc,
+        vec![],
     )
 }
 
@@ -53,7 +56,7 @@ fn roundtrip_returns_stored_diagnostics() {
     };
     let diags = sample(Some(module_abc.clone()));
     let key = "a".repeat(64);
-    cache.store(&key, &diags.0, &diags.1, &diags.2, diags.3);
+    cache.store(&key, &diags.0, &diags.1, &diags.2, diags.3.clone(), &diags.4);
     assert_sample_hit(&cache.get(&key).expect("cache hit"), Some(module_abc));
 }
 
@@ -61,7 +64,7 @@ fn roundtrip_returns_stored_diagnostics() {
 fn miss_on_other_key_is_none() {
     let cache = Cache::open_at(&temp_cache_dir("miss")).expect("cache opens");
     let diags = sample(None);
-    cache.store(&"a".repeat(64), &diags.0, &diags.1, &diags.2, diags.3);
+    cache.store(&"a".repeat(64), &diags.0, &diags.1, &diags.2, diags.3, &diags.4);
     assert!(cache.get(&"b".repeat(64)).is_none(), "unrelated key misses");
 }
 

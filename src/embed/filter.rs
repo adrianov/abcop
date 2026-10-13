@@ -143,6 +143,7 @@ fn finish_body(body: String, start_line: usize, start_col: usize) -> Option<Frag
         code,
         start_line,
         start_col,
+        start_byte: None,
         report_root: true,
     })
 }

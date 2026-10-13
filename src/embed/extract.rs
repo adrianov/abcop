@@ -15,6 +15,9 @@ pub(super) struct Fragment {
     pub start_line: usize,
     /// 0-based host column of the first code byte.
     pub start_col: usize,
+    /// Host byte of `code[0]` when `code` is a same-length slice of the
+    /// host. Absent when the fragment was rebuilt (indent stripped).
+    pub start_byte: Option<usize>,
     /// Report root-scope locals (classic inline scripts, not modules/SFCs).
     pub report_root: bool,
 }
@@ -51,6 +54,7 @@ fn whole_file(src: &[u8], lang: Lang) -> Vec<Fragment> {
         code,
         start_line: 1,
         start_col: 0,
+        start_byte: Some(0),
         report_root: false,
     }]
 }
@@ -168,6 +172,7 @@ fn push_ready(
         code,
         start_line,
         start_col,
+        start_byte: Some(start),
         report_root,
     })
 }

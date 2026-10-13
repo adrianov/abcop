@@ -7,35 +7,46 @@
 //! baseline. A name missing from HEAD counts as new. No HEAD blob
 //! (untracked file, or not a git checkout) keeps the absolute hits.
 //! Identical bytes clear those three rules. ModuleAbcSize is left alone.
+//!
+//! Pairing uses the unit inventory captured during the file's own
+//! analysis (and cached with it). The HEAD inventory is cached by blob
+//! id, so a later scan does not parse either side again.
 
 use std::collections::{HashMap, VecDeque};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use crate::abc::{AbcOffense, Limits};
+use super::baseline::{Head, head_units, load_head};
+use crate::abc::Unit;
 use crate::output::FileResult;
 
 /// Drop edit-scoped hits when `enabled`: AbcSize that did not rise, and
 /// locals that sit in a function whose text matches HEAD.
-pub(super) fn apply(enabled: bool, path: &Path, src: &[u8], r: &mut FileResult) {
+pub(super) fn apply(
+    enabled: bool,
+    path: &Path,
+    src: &[u8],
+    cache: Option<&crate::cache::Cache>,
+    r: &mut FileResult,
+) {
     if !enabled || (r.abc.is_empty() && r.used_once.is_empty() && r.never_used.is_empty()) {
         return;
     }
-    let Some(head) = committed_source(path) else {
+    let Some(head) = load_head(path, src) else {
         return;
     };
-    if head == src {
+    let Head::Diff { oid, bytes } = head else {
         r.abc.clear();
         r.used_once.clear();
         r.never_used.clear();
         return;
-    }
-    let current = every_method(path, src);
-    let base = every_method(path, &head);
+    };
+    let base = head_units(cache, path, oid, &bytes);
+    let current = std::mem::take(&mut r.units);
     keep_risen(&current, &base, r);
-    keep_edited_locals(src, &head, &current, &base, r);
+    keep_edited_locals(src, &bytes, &current, &base, r);
 }
 
-fn keep_risen(current: &[AbcOffense], base: &[AbcOffense], r: &mut FileResult) {
+fn keep_risen(current: &[Unit], base: &[Unit], r: &mut FileResult) {
     if r.abc.is_empty() {
         return;
     }
@@ -51,8 +62,8 @@ fn keep_risen(current: &[AbcOffense], base: &[AbcOffense], r: &mut FileResult) {
 fn keep_edited_locals(
     src: &[u8],
     head: &[u8],
-    current: &[AbcOffense],
-    base: &[AbcOffense],
+    current: &[Unit],
+    base: &[Unit],
     r: &mut FileResult,
 ) {
     if r.used_once.is_empty() && r.never_used.is_empty() {
@@ -64,19 +75,14 @@ fn keep_edited_locals(
         .retain(|o| local_kept(o.line, current, &edited));
 }
 
-fn local_kept(line: usize, units: &[AbcOffense], edited: &[(usize, usize)]) -> bool {
+fn local_kept(line: usize, units: &[Unit], edited: &[(usize, usize)]) -> bool {
     !units.iter().any(|o| line >= o.line && line <= o.end_line)
         || edited
             .iter()
             .any(|&(start, end)| line >= start && line <= end)
 }
 
-fn edited_spans(
-    src: &[u8],
-    head: &[u8],
-    current: &[AbcOffense],
-    base: &[AbcOffense],
-) -> Vec<(usize, usize)> {
+fn edited_spans(src: &[u8], head: &[u8], current: &[Unit], base: &[Unit]) -> Vec<(usize, usize)> {
     let mut prior = span_queue(base);
     let mut spans = Vec::new();
     for o in current {
@@ -92,27 +98,27 @@ fn edited_spans(
     spans
 }
 
-fn span_changed(src: &[u8], head: &[u8], unit: &AbcOffense, old: Option<(usize, usize)>) -> bool {
-    match old {
-        None => true,
-        Some((start, end)) => {
-            span_text(src, unit.line, unit.end_line) != span_text(head, start, end)
-        }
+fn span_changed(src: &[u8], head: &[u8], unit: &Unit, old: Option<&Unit>) -> bool {
+    let Some(old) = old else {
+        return true;
+    };
+    if unit.end_byte > unit.start_byte && old.end_byte > old.start_byte {
+        return src.get(unit.start_byte..unit.end_byte) != head.get(old.start_byte..old.end_byte);
     }
+    line_text(src, unit.line, unit.end_line) != line_text(head, old.line, old.end_line)
 }
 
-fn span_queue(units: &[AbcOffense]) -> HashMap<&str, VecDeque<(usize, usize)>> {
-    let mut prior: HashMap<&str, VecDeque<(usize, usize)>> = HashMap::new();
+fn span_queue(units: &[Unit]) -> HashMap<&str, VecDeque<&Unit>> {
+    let mut prior: HashMap<&str, VecDeque<&Unit>> = HashMap::new();
     for o in units {
-        prior
-            .entry(o.name.as_str())
-            .or_default()
-            .push_back((o.line, o.end_line));
+        prior.entry(o.name.as_str()).or_default().push_back(o);
     }
     prior
 }
 
-fn span_text(src: &[u8], start: usize, end: usize) -> String {
+/// Line text for a span that is not a byte slice of the host (a
+/// reconstructed template block). The common path compares byte slices.
+fn line_text(src: &[u8], start: usize, end: usize) -> String {
     if start == 0 || end < start {
         return String::new();
     }
@@ -124,24 +130,8 @@ fn span_text(src: &[u8], start: usize, end: usize) -> String {
         .join("\n")
 }
 
-/// Every scored unit, including those under the ceiling, so pairing walks
-/// source order rather than the over-ceiling subset.
-fn every_method(path: &Path, src: &[u8]) -> Vec<AbcOffense> {
-    super::analyze_src(
-        path,
-        src,
-        Some("abc"),
-        Limits {
-            method: -1.0,
-            module: f64::MAX,
-            increased: false,
-        },
-    )
-    .abc
-}
-
 /// Start line → HEAD score. `None` means the function is new.
-fn risen_priors(current: &[AbcOffense], base: &[AbcOffense]) -> HashMap<usize, Option<f64>> {
+fn risen_priors(current: &[Unit], base: &[Unit]) -> HashMap<usize, Option<f64>> {
     let mut prior: HashMap<&str, VecDeque<f64>> = HashMap::new();
     for o in base {
         prior.entry(o.name.as_str()).or_default().push_back(o.score);
@@ -161,48 +151,22 @@ fn risen_priors(current: &[AbcOffense], base: &[AbcOffense]) -> HashMap<usize, O
     risen
 }
 
-fn committed_source(path: &Path) -> Option<Vec<u8>> {
-    let repo = discover(path)?;
-    let rel = work_rel(&repo, path)?;
-    let oid = head_blob(&repo, &rel)?;
-    Some(repo.find_blob(oid).ok()?.content().to_vec())
-}
-
-fn discover(path: &Path) -> Option<git2::Repository> {
-    let start = if path.exists() { path } else { path.parent()? };
-    git2::Repository::discover(start).ok()
-}
-
-fn work_rel(repo: &git2::Repository, path: &Path) -> Option<PathBuf> {
-    let root = std::fs::canonicalize(repo.workdir()?).ok()?;
-    std::fs::canonicalize(path)
-        .ok()?
-        .strip_prefix(&root)
-        .ok()
-        .map(|p| p.to_path_buf())
-}
-
-fn head_blob(repo: &git2::Repository, rel: &Path) -> Option<git2::Oid> {
-    let tree = repo.head().ok()?.peel_to_tree().ok()?;
-    Some(tree.get_path(rel).ok()?.id())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abc::Limits;
     use crate::modulesize;
     use crate::output::FileResult;
     use std::collections::HashSet;
 
-    fn at(name: &str, line: usize, score: f64) -> AbcOffense {
-        AbcOffense {
+    fn at(name: &str, line: usize, score: f64) -> Unit {
+        Unit {
+            name: name.into(),
             line,
             end_line: line,
-            column: 0,
-            name: name.into(),
+            start_byte: 0,
+            end_byte: 0,
             score,
-            vector: String::new(),
-            prior: None,
         }
     }
 
@@ -405,6 +369,19 @@ mod tests {
             scan(&dir, true).abc.is_empty(),
             "the untouched copy must not inherit the small copy's baseline"
         );
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn cached_scan_keeps_the_rise() {
+        let dir = repo_with_legacy("abc_cache");
+        write(&dir, &method("legacy", "a", 21));
+        let cache = crate::cache::Cache::open_at(&dir.join(".abcop-cache")).unwrap();
+        let path = dir.join("a.rb");
+        super::super::analyze_one(&path, None, limits(true), None, Some(&cache));
+        let hit = super::super::analyze_one(&path, None, limits(true), None, Some(&cache));
+        assert_eq!(hit.abc.len(), 1);
+        assert!(hit.abc[0].prior.is_some());
         cleanup(&dir);
     }
 }
