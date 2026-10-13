@@ -78,24 +78,22 @@ pub(crate) fn fmt_vector(a: u32, b: u32, c: u32) -> String {
 /// vector -- the single RuboCop-compatible assembly point shared by
 /// every language backend.
 pub(crate) fn offense_at(unit: Node<'_>, name: &str, a: u32, b: u32, c: u32) -> AbcOffense {
-    let raw = ((a * a + b * b + c * c) as f64).sqrt();
     let pos = unit.start_position();
-    let (start_byte, end_byte) = byte_span(unit);
     AbcOffense {
         line: pos.row + 1,
         end_line: unit.end_position().row + 1,
         column: pos.column,
-        start_byte,
-        end_byte,
+        start_byte: unit.start_byte(),
+        end_byte: unit.end_byte(),
         name: name.to_string(),
-        score: (raw * 100.0).round() / 100.0,
+        score: score_of(a, b, c),
         vector: fmt_vector(a, b, c),
         prior: None,
     }
 }
 
-fn byte_span(unit: Node<'_>) -> (usize, usize) {
-    (unit.start_byte(), unit.end_byte())
+fn score_of(a: u32, b: u32, c: u32) -> f64 {
+    (((a * a + b * b + c * c) as f64).sqrt() * 100.0).round() / 100.0
 }
 
 /// Lead clause of an AbcSize finding. A recorded HEAD score means the
