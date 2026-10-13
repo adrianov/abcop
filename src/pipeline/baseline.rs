@@ -66,7 +66,7 @@ fn head_blob(repo: &git2::Repository, rel: &Path) -> Option<git2::Oid> {
 }
 
 /// Parse `src` once. `increased` stays off so this does not re-enter the filter.
-fn inventory(path: &Path, src: &[u8]) -> Vec<Unit> {
+pub(super) fn inventory(path: &Path, src: &[u8]) -> Vec<Unit> {
     let mut r = super::blank_with(path);
     let _ = super::analyze_src_into(
         &mut r,

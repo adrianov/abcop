@@ -41,9 +41,19 @@ pub(super) fn apply(
         return;
     };
     let base = head_units(cache, path, oid, &bytes);
-    let current = std::mem::take(&mut r.units);
+    let current = current_units(path, src, r);
     keep_risen(&current, &base, r);
     keep_edited_locals(src, &bytes, &current, &base, r);
+}
+
+/// Worktree units from the analysis. A used-once or never-used run can
+/// skip ABC scoring and leave the list empty; rebuild it so locals in
+/// untouched functions stay quiet.
+fn current_units(path: &Path, src: &[u8], r: &mut FileResult) -> Vec<Unit> {
+    if r.units.is_empty() && !(r.used_once.is_empty() && r.never_used.is_empty()) {
+        return super::baseline::inventory(path, src);
+    }
+    std::mem::take(&mut r.units)
 }
 
 fn keep_risen(current: &[Unit], base: &[Unit], r: &mut FileResult) {
@@ -338,6 +348,28 @@ mod tests {
         let hit = scan(&dir, true);
         assert!(hit.never_used.iter().all(|o| o.name != "stale"));
         assert!(hit.never_used.iter().any(|o| o.name == "m"));
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn used_once_only_skips_untouched_functions() {
+        let dir = commit_ruby(
+            "abc_only_used",
+            "def legacy\n  tmp = 1\n  tmp\nend\ndef other\n  n = 1\nend\n",
+        );
+        write(
+            &dir,
+            "def legacy\n  tmp = 1\n  tmp\nend\ndef other\n  n = 1\n  k = 2\n  k\nend\n",
+        );
+        let hit = super::super::analyze_one(
+            &dir.join("a.rb"),
+            Some("used-once"),
+            limits(true),
+            None,
+            None,
+        );
+        assert!(hit.used_once.iter().all(|o| o.name != "tmp"));
+        assert!(hit.used_once.iter().any(|o| o.name == "k"));
         cleanup(&dir);
     }
 
