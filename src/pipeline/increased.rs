@@ -191,6 +191,21 @@ mod tests {
         super::super::analyze_one(&dir.join("a.rb"), None, limits(increased), None, None)
     }
 
+    /// Units from a used-once-only walk, before the edit filter takes them.
+    fn units_of(name: &str, src: &str) -> Vec<Unit> {
+        let path = Path::new(name);
+        let mut r = super::super::blank_with(path);
+        assert!(super::super::analyze_src_into(
+            &mut r,
+            path,
+            src.as_bytes(),
+            Some("used-once"),
+            limits(true),
+        ));
+        assert!(r.abc.is_empty());
+        r.units
+    }
+
     fn commit_ruby(tag: &str, body: &str) -> std::path::PathBuf {
         let dir = crate::test_repo::temp_dir(tag);
         crate::test_repo::seed_repo_with_base_commit(&dir);
@@ -361,6 +376,17 @@ mod tests {
         assert!(hit.used_once.iter().all(|o| o.name != "tmp"));
         assert!(hit.used_once.iter().any(|o| o.name == "k"));
         cleanup(&dir);
+    }
+
+    #[test]
+    fn used_once_only_records_units() {
+        let ruby = units_of("a.rb", "def legacy\n  tmp = 1\n  tmp\nend\n");
+        assert!(ruby.iter().any(|u| u.name == "legacy"));
+        let host = units_of(
+            "page.html",
+            "<script>\nfunction boot() {\n  const k = 1;\n  k;\n}\n</script>\n",
+        );
+        assert!(host.iter().any(|u| u.name == "boot"));
     }
 
     #[test]
