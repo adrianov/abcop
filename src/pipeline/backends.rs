@@ -25,6 +25,8 @@ fn suppressed<T>(v: Vec<T>, keep: impl Fn(&T) -> bool) -> Vec<T> {
 }
 
 fn set_module_abc(r: &mut FileResult, src: &[u8], all: &[AbcOffense], max: f64) {
+    // Spans for the edit filter, including under-ceiling methods. `only` may
+    // skip ABC offenses below; it does not skip this inventory.
     r.units = all.iter().map(crate::abc::Unit::from).collect();
     r.module_abc =
         modulesize::from_scores(all, &r.path, std::str::from_utf8(src).unwrap_or(""), max);

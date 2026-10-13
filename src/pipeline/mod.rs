@@ -116,6 +116,7 @@ pub(crate) fn analyze_src(
 }
 
 /// Run backends into `r`. False when the tree is unusable (e.g. Ruby reparse).
+/// Every `only` mode records `r.units`; the filter skips a rule's offenses, not the spans.
 fn analyze_src_into(
     r: &mut crate::output::FileResult,
     path: &std::path::Path,
