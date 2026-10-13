@@ -1,6 +1,6 @@
 [package]
 name = "abcop"
-version = "0.19.1"
+version = "0.20.0"
 edition = "2024"
 rust-version = "1.88"
 authors = ["Peter Adrianov"]
@@ -28,7 +28,7 @@ clap = { version = "4", features = ["derive"] }
 libc = "0.2"
 ignore = "0.4"
 rayon = "1"
-rmcp = { version = "3.2", default-features = false, features = ["server", "macros", "transport-io", "schemars"] }
+rmcp = { version = "3.5", default-features = false, features = ["server", "macros", "transport-io", "schemars"] }
 schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
@@ -57,7 +57,7 @@ tree-sitter-haskell = { version = "0.23.1", path = "vendor/tree-sitter-haskell" 
 git2 = { version = "0.20", default-features = false }
 
 [dev-dependencies]
-rmcp = { version = "3.2", default-features = false, features = ["client"] }
+rmcp = { version = "3.5", default-features = false, features = ["client"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util"] }
 
 [profile.release]
