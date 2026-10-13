@@ -18,6 +18,7 @@ fn sample(module_abc: Option<crate::modulesize::ModuleAbc>) -> CachedDiags {
             name: "Foo#bar".into(),
             score: 22.5,
             vector: "<9, 4, 2>".into(),
+            prior: None,
         }],
         vec![crate::used_once::UsedOnceOffense {
             line: 12,

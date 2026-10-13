@@ -23,6 +23,7 @@ impl Default for State {
             limits: Limits {
                 method: 17.0,
                 module: modulesize::MAX_ABC,
+                increased: true,
             },
         }
     }

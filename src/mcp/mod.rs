@@ -55,7 +55,7 @@ impl AbcopMcp {
 
     #[tool(
         name = "abcop_inspection",
-        description = "Inspect code for ABC complexity, UsedOnce, and NeverUsed findings. Pass `path` (string or array), `paths`, and/or `source_code` (inline; `path` picks language). Always pass an explicit project path.",
+        description = "Inspect code for ABC complexity, UsedOnce, and NeverUsed findings. AbcSize reports a function only when its score rose against HEAD; a score that stayed the same or fell stays quiet, even when the function is still over the ceiling. Clear that finding by bringing the score back down to the HEAD score or below. UsedOnce and NeverUsed report only inside functions whose text changed against HEAD. Pass `path` (string or array), `paths`, and/or `source_code` (inline; `path` picks language). Always pass an explicit project path.",
         annotations(
             title = "abcop inspection",
             read_only_hint = true,
@@ -94,6 +94,8 @@ impl ServerHandler for AbcopMcp {
             .with_protocol_version(ProtocolVersion::V_2025_06_18)
             .with_instructions(
                 "abcop complexity gate: abcop_inspection (ABC / UsedOnce / NeverUsed). \
+                 AbcSize reports a function only when its score rose against HEAD. \
+                 UsedOnce and NeverUsed report only inside edited functions. \
                  Always pass `path` or `paths` (absolute preferred; `path` may be a string or array)."
                     .to_string(),
             )

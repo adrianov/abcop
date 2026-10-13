@@ -26,8 +26,9 @@ fn abc_offense(o: &AbcOffense) -> Value {
         o.column,
         "Metrics/AbcSize",
         format!(
-            "Assignment Branch Condition size for `{}` is too high. [{} {}]",
+            "Assignment Branch Condition size for `{}` {}. [{} {}]",
             o.name,
+            crate::abc::finding_clause(o),
             o.vector,
             crate::abc::g4(o.score)
         ),

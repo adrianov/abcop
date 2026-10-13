@@ -14,6 +14,7 @@ fn test_limits() -> Limits {
     Limits {
         method: 17.0,
         module: modulesize::MAX_ABC,
+        increased: false,
     }
 }
 

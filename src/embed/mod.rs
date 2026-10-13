@@ -167,7 +167,7 @@ fn usage_never(frag: &extract::Fragment, scopes: &crate::clike::JsScopes) -> Vec
 
 fn keep_abc(dirs: &Directives, all: Vec<AbcOffense>, max: f64) -> Vec<AbcOffense> {
     all.into_iter()
-        .filter(|o| o.score > max && !dirs.suppresses_abc(o.line))
+        .filter(|o| o.score > max && (max < 0.0 || !dirs.suppresses_abc(o.line)))
         .collect()
 }
 

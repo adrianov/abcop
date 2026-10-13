@@ -27,6 +27,7 @@ fn method(line: usize, end_line: usize, a: u32, b: u32, c: u32) -> AbcOffense {
         column: 0,
         score: (((a * a + b * b + c * c) as f64).sqrt() * 100.0).round() / 100.0,
         vector: format!("<{a}, {b}, {c}>"),
+        prior: None,
     }
 }
 

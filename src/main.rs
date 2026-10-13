@@ -86,11 +86,13 @@ pub(crate) struct Cli {
     #[arg(long, conflicts_with_all = ["mr", "full", "everything"])]
     pub(crate) uncommitted: bool,
     /// Scan the whole production tree instead of the scoped run (default
-    /// skips for vendored/generated/test trees stay active)
+    /// skips for vendored/generated/test trees stay active). Reports every
+    /// function over `--max-abc` and every local, not only the current edit.
     #[arg(long, conflicts_with_all = ["mr", "everything"])]
     pub(crate) full: bool,
     /// Scan literally everything below the target: no gitignore, no hidden
-    /// skipping, no vendored/generated/test pruning
+    /// skipping, no vendored/generated/test pruning. Same full report as
+    /// `--full`: every function over `--max-abc` and every local.
     #[arg(long, conflicts_with_all = ["mr", "full"])]
     pub(crate) everything: bool,
     /// Disable the on-disk result cache

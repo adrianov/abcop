@@ -8,6 +8,7 @@ fn limits() -> Limits {
     Limits {
         method: 17.0,
         module: modulesize::MAX_ABC,
+        increased: false,
     }
 }
 
@@ -119,6 +120,7 @@ fn html_script_abc_remaps_to_host_line() {
         Limits {
             method: 0.0,
             module: modulesize::MAX_ABC,
+            increased: false,
         },
     )
     .abc

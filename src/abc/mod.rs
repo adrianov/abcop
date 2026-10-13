@@ -23,6 +23,10 @@ pub struct AbcOffense {
     pub name: String,
     pub score: f64,
     pub vector: String,
+    /// HEAD score when this hit is a rise. Absent for a new function and
+    /// for `--full` / `--everything`, which report every over-ceiling method.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prior: Option<f64>,
 }
 
 /// Method and module ABC ceilings for one scan.
@@ -30,6 +34,9 @@ pub struct AbcOffense {
 pub(crate) struct Limits {
     pub method: f64,
     pub module: f64,
+    /// When set, AbcSize keeps a rise against HEAD, and UsedOnce / NeverUsed
+    /// keep locals only inside functions whose text changed.
+    pub increased: bool,
 }
 
 pub(crate) fn fmt_vector(a: u32, b: u32, c: u32) -> String {
@@ -49,6 +56,21 @@ pub(crate) fn offense_at(unit: Node<'_>, name: &str, a: u32, b: u32, c: u32) -> 
         name: name.to_string(),
         score: (raw * 100.0).round() / 100.0,
         vector: fmt_vector(a, b, c),
+        prior: None,
+    }
+}
+
+/// Lead clause of an AbcSize finding. A recorded HEAD score means the
+/// working tree rose; otherwise the function is simply over the ceiling.
+pub(crate) fn finding_clause(o: &AbcOffense) -> String {
+    match o.prior {
+        Some(was) => format!(
+            "rose from {} to {} -- back to {} or below",
+            g4(was),
+            g4(o.score),
+            g4(was)
+        ),
+        None => "is too high".to_string(),
     }
 }
 

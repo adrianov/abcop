@@ -126,8 +126,9 @@ fn abc_diag(r: &FileResult, o: &AbcOffense) -> Diagnostic {
         severity: "C",
         rule: "Metrics/AbcSize",
         message: format!(
-            "Assignment Branch Condition size for `{}` is too high. [{} {}]",
+            "Assignment Branch Condition size for `{}` {}. [{} {}]",
             o.name,
+            abc::finding_clause(o),
             o.vector,
             abc::g4(o.score)
         ),
@@ -196,6 +197,7 @@ mod tests {
                     name: "small".into(),
                     score: 18.0,
                     vector: "<10, 10, 10>".into(),
+                    prior: None,
                 }],
                 used_once: vec![UsedOnceOffense {
                     line: 3,
@@ -214,6 +216,7 @@ mod tests {
                     name: "big".into(),
                     score: 42.0,
                     vector: "<20, 30, 20>".into(),
+                    prior: None,
                 }],
                 used_once: vec![],
                 never_used: vec![NeverUsedOffense {

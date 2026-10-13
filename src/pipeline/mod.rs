@@ -1,6 +1,6 @@
 //! Per-file analysis pipeline: scope resolution feeding the backend
-//! dispatch (`backends`), cache round-trip, and changeset narrowing
-//! (`narrow`).
+//! dispatch (`backends`), cache round-trip, changeset narrowing
+//! (`narrow`), and the HEAD edit filter (`increased`).
 
 use crate::abc::Limits;
 use crate::cache;
@@ -8,6 +8,7 @@ use crate::git_changes;
 use crate::paths::{Lang, is_code_path, lang_for, parse_file_lang};
 use crate::srcbuf::{SrcBuf, load_src};
 mod backends;
+mod increased;
 mod narrow;
 mod non_clike;
 
@@ -68,7 +69,7 @@ pub(crate) fn analyze_one(
     // must also apply when the analysis itself comes from the cache.
     let hit = cache.and_then(|c| cache_hit(c, path, &src_buf, only, limits));
     if let Some(mut hit) = hit {
-        narrow::apply(changeset, &mut hit, limits.module, &src_buf);
+        apply_scope(changeset, limits, path, &src_buf, &mut hit);
         return hit;
     }
 
@@ -76,8 +77,20 @@ pub(crate) fn analyze_one(
         return r;
     }
     store_result(cache, path, &src_buf, only, limits, &r);
-    narrow::apply(changeset, &mut r, limits.module, &src_buf);
+    apply_scope(changeset, limits, path, &src_buf, &mut r);
     r
+}
+
+/// Narrow to the changeset, then apply the HEAD edit filter.
+fn apply_scope(
+    changeset: Option<&git_changes::Changeset>,
+    limits: Limits,
+    path: &std::path::Path,
+    src: &[u8],
+    r: &mut crate::output::FileResult,
+) {
+    narrow::apply(changeset, r, limits.module, src);
+    increased::apply(limits.increased, path, src, r);
 }
 
 /// Analyse in-memory source (MCP inline `source_code`); `path` selects language.
@@ -95,6 +108,7 @@ pub(crate) fn analyze_src(
         return r;
     }
     let _ = analyze_src_into(&mut r, path, src, only, limits);
+    increased::apply(limits.increased, path, src, &mut r);
     r
 }
 

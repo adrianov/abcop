@@ -30,9 +30,13 @@ fn set_module_abc(r: &mut FileResult, src: &[u8], all: &[AbcOffense], max: f64) 
 }
 
 fn keep_abc(dirs: &Directives, all: Vec<AbcOffense>, max: f64) -> Vec<AbcOffense> {
-    suppressed(all.into_iter().filter(|o| o.score > max).collect(), |o| {
-        dirs.suppresses_abc(o.line)
-    })
+    let over: Vec<_> = all.into_iter().filter(|o| o.score > max).collect();
+    // Negative max is the edit-filter inventory: every unit, including
+    // ones a directive would hide from the report.
+    if max < 0.0 {
+        return over;
+    }
+    suppressed(over, |o| dirs.suppresses_abc(o.line))
 }
 
 /// Run the clike scope-model family (JS/TS, Swift and the plain-C trio):

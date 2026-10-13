@@ -35,6 +35,7 @@ impl<'a> From<&'a super::Cli> for ScanRun<'a> {
             limits: Limits {
                 method: cli.max_abc,
                 module: cli.max_module_abc,
+                increased: !(cli.full || cli.everything),
             },
             format: &cli.format,
             mr: cli.mr,

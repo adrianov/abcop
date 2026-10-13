@@ -64,6 +64,8 @@ impl Cache {
         limits: crate::abc::Limits,
     ) -> String {
         let path = path.display().to_string();
+        // `limits.increased` is applied after lookup, so absolute scores
+        // stay reusable for both modes.
         hash_parts(&[
             env!("CARGO_PKG_VERSION").as_bytes(),
             &RULES_REV.to_le_bytes(),

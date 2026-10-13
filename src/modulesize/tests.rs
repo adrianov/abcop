@@ -84,6 +84,7 @@ fn offense_at(line: usize, end_line: usize, a: u32, b: u32, c: u32) -> AbcOffens
         name: "m".into(),
         score: (((a * a + b * b + c * c) as f64).sqrt() * 100.0).round() / 100.0,
         vector: format!("<{a}, {b}, {c}>"),
+        prior: None,
     }
 }
 
@@ -126,6 +127,7 @@ fn rust_cfg_test_tail_is_excluded_from_module_abc() {
             name: "prod".into(),
             score: 0.0,
             vector: "<0, 0, 0>".into(),
+            prior: None,
         },
         AbcOffense {
             line: 4,
@@ -134,6 +136,7 @@ fn rust_cfg_test_tail_is_excluded_from_module_abc() {
             name: "t".into(),
             score: 100.0,
             vector: "<60, 80, 0>".into(),
+            prior: None,
         },
     ];
     assert!(from_scores(&scores, "src/lib.rs", src, super::MAX_ABC).is_none());

@@ -102,11 +102,12 @@ fn module_abc_text(r: &FileResult, m: &ModuleAbc, max_module: f64) -> String {
 
 fn abc_text(r: &FileResult, o: &AbcOffense, max: f64) -> String {
     format!(
-        "{}:{}:{}: C: Metrics/AbcSize: Assignment Branch Condition size for `{}` is too high. [{} {}/{}]",
+        "{}:{}:{}: C: Metrics/AbcSize: Assignment Branch Condition size for `{}` {}. [{} {}/{}]",
         r.path,
         o.line,
         o.column,
         o.name,
+        abc::finding_clause(o),
         o.vector,
         abc::g4(o.score),
         abc::g4(max)
@@ -321,6 +322,7 @@ mod tests {
                     name: "small".into(),
                     score: 18.0,
                     vector: "<10, 10, 10>".into(),
+                    prior: None,
                 }],
                 used_once: vec![UsedOnceOffense {
                     line: 3,
@@ -339,6 +341,7 @@ mod tests {
                     name: "big".into(),
                     score: 42.0,
                     vector: "<20, 30, 20>".into(),
+                    prior: None,
                 }],
                 used_once: vec![],
                 never_used: vec![NeverUsedOffense {
@@ -363,6 +366,7 @@ mod tests {
             abc::Limits {
                 method: 17.0,
                 module: crate::modulesize::MAX_ABC,
+                increased: false,
             },
         );
         sort_text_lines(&mut lines);
