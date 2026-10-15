@@ -39,20 +39,22 @@ pub(super) fn head_baseline(
 ) -> Baseline {
     if let Some(hit) = cache.and_then(|c| c.get(&c.blob_key(path, &oid))) {
         return Baseline {
-            units: hit.4,
-            module_score: hit.5,
+            units: hit.units,
+            module_score: hit.module_score,
         };
     }
     let found = inventory(path, src);
     if let Some(c) = cache {
         c.store(
             &c.blob_key(path, &oid),
-            &[],
-            &[],
-            &[],
-            None,
-            &found.units,
-            found.module_score,
+            &crate::cache::CachedDiags {
+                abc: Vec::new(),
+                used_once: Vec::new(),
+                never_used: Vec::new(),
+                module_abc: None,
+                units: found.units.clone(),
+                module_score: found.module_score,
+            },
         );
     }
     found

@@ -14,7 +14,7 @@ use tree_sitter::Node;
 use crate::inlinable::{RUBY_UNITS, keep_init_kind, ruby_inlinable_rhs};
 use crate::model::{Entry, FileModel, Write, WriteKind};
 
-#[derive(PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NeverUsedOffense {
     pub line: usize,
     pub column: usize,

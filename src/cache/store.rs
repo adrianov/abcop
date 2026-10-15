@@ -34,34 +34,25 @@ impl EntryStore {
         let table = rtx.open_table(ENTRIES).ok()?;
         let value = table.get(key).ok()??;
         let f: CachedFile = serde_json::from_slice(value.value()).ok()?;
-        Some((
-            f.abc,
-            f.used_once,
-            f.never_used,
-            f.module_abc,
-            f.units,
-            f.module_score,
-        ))
+        Some(CachedDiags {
+            abc: f.abc,
+            used_once: f.used_once,
+            never_used: f.never_used,
+            module_abc: f.module_abc,
+            units: f.units,
+            module_score: f.module_score,
+        })
     }
 
-    pub(crate) fn store(
-        &self,
-        key: &str,
-        abc: &[crate::abc::AbcOffense],
-        used_once: &[crate::used_once::UsedOnceOffense],
-        never_used: &[crate::never_used::NeverUsedOffense],
-        module_abc: Option<crate::modulesize::ModuleAbc>,
-        units: &[crate::abc::Unit],
-        module_score: f64,
-    ) {
+    pub(crate) fn store(&self, key: &str, diags: &CachedDiags) {
         let payload = CachedFileRef {
             ts: now_ms(),
-            abc,
-            used_once,
-            never_used,
-            module_abc,
-            units,
-            module_score,
+            abc: &diags.abc,
+            used_once: &diags.used_once,
+            never_used: &diags.never_used,
+            module_abc: diags.module_abc.as_ref(),
+            units: &diags.units,
+            module_score: diags.module_score,
         };
         let bytes = serde_json::to_vec(&payload);
         let tx = self.write_tx();
@@ -191,20 +182,21 @@ struct CachedFileRef<'a> {
     abc: &'a [crate::abc::AbcOffense],
     used_once: &'a [crate::used_once::UsedOnceOffense],
     never_used: &'a [crate::never_used::NeverUsedOffense],
-    module_abc: Option<crate::modulesize::ModuleAbc>,
+    module_abc: Option<&'a crate::modulesize::ModuleAbc>,
     units: &'a [crate::abc::Unit],
     module_score: f64,
 }
 
-/// The stored-diagnostics tuple handed back to the pipeline.
-pub type CachedDiags = (
-    Vec<crate::abc::AbcOffense>,
-    Vec<crate::used_once::UsedOnceOffense>,
-    Vec<crate::never_used::NeverUsedOffense>,
-    Option<crate::modulesize::ModuleAbc>,
-    Vec<crate::abc::Unit>,
-    f64,
-);
+/// Diagnostics stored for one file or HEAD blob. Fields are named so a new
+/// cached value cannot be read from the wrong slot.
+pub(crate) struct CachedDiags {
+    pub abc: Vec<crate::abc::AbcOffense>,
+    pub used_once: Vec<crate::used_once::UsedOnceOffense>,
+    pub never_used: Vec<crate::never_used::NeverUsedOffense>,
+    pub module_abc: Option<crate::modulesize::ModuleAbc>,
+    pub units: Vec<crate::abc::Unit>,
+    pub module_score: f64,
+}
 
 /// Parse one stored row into `(timestamp, key)`; corrupt rows are skipped
 /// by the caller so one bad entry cannot break pruning.

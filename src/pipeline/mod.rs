@@ -157,16 +157,15 @@ fn cache_hit(
     only: Option<&str>,
     limits: Limits,
 ) -> Option<crate::output::FileResult> {
-    let (abc, used_once, never_used, module_abc, units, module_score) =
-        cache.get(&cache.file_key(path, src, only, limits))?;
+    let hit = cache.get(&cache.file_key(path, src, only, limits))?;
     Some(crate::output::FileResult {
         path: path.display().to_string(),
-        abc,
-        used_once,
-        never_used,
-        module_abc,
-        module_score,
-        units,
+        abc: hit.abc,
+        used_once: hit.used_once,
+        never_used: hit.never_used,
+        module_abc: hit.module_abc,
+        module_score: hit.module_score,
+        units: hit.units,
     })
 }
 
@@ -181,12 +180,14 @@ fn store_result(
     if let Some(cache) = cache {
         cache.store(
             &cache.file_key(path, src, only, limits),
-            &r.abc,
-            &r.used_once,
-            &r.never_used,
-            r.module_abc.clone(),
-            &r.units,
-            r.module_score,
+            &cache::CachedDiags {
+                abc: r.abc.clone(),
+                used_once: r.used_once.clone(),
+                never_used: r.never_used.clone(),
+                module_abc: r.module_abc.clone(),
+                units: r.units.clone(),
+                module_score: r.module_score,
+            },
         );
     }
 }

@@ -9,7 +9,7 @@ use tree_sitter::Node;
 use crate::inlinable::ruby_inlinable_rhs;
 use crate::model::{Entry, FileModel, IntroKind, Read, Write};
 
-#[derive(PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct UsedOnceOffense {
     pub line: usize,
     pub column: usize,

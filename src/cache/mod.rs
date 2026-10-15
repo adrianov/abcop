@@ -81,18 +81,8 @@ impl Cache {
         self.store.get(key)
     }
 
-    pub(crate) fn store(
-        &self,
-        key: &str,
-        abc: &[crate::abc::AbcOffense],
-        used_once: &[crate::used_once::UsedOnceOffense],
-        never_used: &[crate::never_used::NeverUsedOffense],
-        module_abc: Option<crate::modulesize::ModuleAbc>,
-        units: &[crate::abc::Unit],
-        module_score: f64,
-    ) {
-        self.store
-            .store(key, abc, used_once, never_used, module_abc, units, module_score)
+    pub(crate) fn store(&self, key: &str, diags: &CachedDiags) {
+        self.store.store(key, diags)
     }
 
     /// Identity of a HEAD blob's unit inventory. The blob id is the

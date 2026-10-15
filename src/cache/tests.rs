@@ -10,8 +10,8 @@ fn temp_cache_dir(tag: &str) -> PathBuf {
 }
 
 fn sample(module_abc: Option<crate::modulesize::ModuleAbc>) -> CachedDiags {
-    (
-        vec![crate::abc::AbcOffense {
+    CachedDiags {
+        abc: vec![crate::abc::AbcOffense {
             line: 7,
             end_line: 19,
             column: 3,
@@ -22,30 +22,33 @@ fn sample(module_abc: Option<crate::modulesize::ModuleAbc>) -> CachedDiags {
             end_byte: 0,
             prior: None,
         }],
-        vec![crate::used_once::UsedOnceOffense {
+        used_once: vec![crate::used_once::UsedOnceOffense {
             line: 12,
             column: 4,
             name: "x".into(),
         }],
-        vec![crate::never_used::NeverUsedOffense {
+        never_used: vec![crate::never_used::NeverUsedOffense {
             line: 30,
             column: 2,
             name: "dead".into(),
             keep_init: false,
         }],
-        module_abc.clone(),
-        vec![],
-        module_abc.as_ref().map(|m| m.score).unwrap_or(0.0),
-    )
+        module_score: module_abc.as_ref().map(|m| m.score).unwrap_or(0.0),
+        module_abc,
+        units: vec![],
+    }
 }
 
 fn assert_sample_hit(hit: &CachedDiags, module_abc: Option<crate::modulesize::ModuleAbc>) {
-    assert_eq!(hit.0[0].name, "Foo#bar");
-    assert_eq!(hit.0[0].score, 22.5);
-    assert_eq!(hit.1[0].name, "x");
-    assert_eq!(hit.2[0].name, "dead");
-    assert_eq!(hit.3, module_abc);
-    assert_eq!(hit.5, module_abc.as_ref().map(|m| m.score).unwrap_or(0.0));
+    assert_eq!(hit.abc[0].name, "Foo#bar");
+    assert_eq!(hit.abc[0].score, 22.5);
+    assert_eq!(hit.used_once[0].name, "x");
+    assert_eq!(hit.never_used[0].name, "dead");
+    assert_eq!(hit.module_abc, module_abc);
+    assert_eq!(
+        hit.module_score,
+        module_abc.as_ref().map(|m| m.score).unwrap_or(0.0)
+    );
 }
 
 #[test]
@@ -58,15 +61,7 @@ fn roundtrip_returns_stored_diagnostics() {
     };
     let diags = sample(Some(module_abc.clone()));
     let key = "a".repeat(64);
-    cache.store(
-        &key,
-        &diags.0,
-        &diags.1,
-        &diags.2,
-        diags.3.clone(),
-        &diags.4,
-        diags.5,
-    );
+    cache.store(&key, &diags);
     assert_sample_hit(&cache.get(&key).expect("cache hit"), Some(module_abc));
 }
 
@@ -74,15 +69,7 @@ fn roundtrip_returns_stored_diagnostics() {
 fn miss_on_other_key_is_none() {
     let cache = Cache::open_at(&temp_cache_dir("miss")).expect("cache opens");
     let diags = sample(None);
-    cache.store(
-        &"a".repeat(64),
-        &diags.0,
-        &diags.1,
-        &diags.2,
-        diags.3,
-        &diags.4,
-        diags.5,
-    );
+    cache.store(&"a".repeat(64), &diags);
     assert!(cache.get(&"b".repeat(64)).is_none(), "unrelated key misses");
 }
 
