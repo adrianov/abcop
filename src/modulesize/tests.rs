@@ -73,13 +73,9 @@ fn fixture_trees_are_dropped_from_scope() {
 }
 
 fn offense(a: u32, b: u32, c: u32) -> AbcOffense {
-    offense_at(1, 1, a, b, c)
-}
-
-fn offense_at(line: usize, end_line: usize, a: u32, b: u32, c: u32) -> AbcOffense {
     AbcOffense {
-        line,
-        end_line,
+        line: 1,
+        end_line: 1,
         column: 0,
         name: "m".into(),
         score: (((a * a + b * b + c * c) as f64).sqrt() * 100.0).round() / 100.0,
