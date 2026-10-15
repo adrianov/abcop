@@ -97,8 +97,10 @@ NeverUsed are secondary.
 Inspired by [RuboCop](https://github.com/rubocop/rubocop) (Ruby AbcSize
 parity and `# rubocop:disable` directives) and
 [lizard](https://github.com/terryyin/lizard) (one tool, many languages).
-Ruby's counting matches RuboCop 1.89 byte-for-byte
-(`scripts/compare_parity.py`).
+Ruby method counting matches RuboCop 1.89 byte-for-byte
+(`scripts/compare_parity.py`). A block outside a method (`match do`,
+`before do`, a class-level `each`) is its own unit; `each` / `map` /
+`select` still roll into the block that contains them.
 
 ## Advantages
 
@@ -199,17 +201,17 @@ to `HEAD`:
   every method over the ceiling and every local.
 
 `--uncommitted` and `--mr` also drop findings on lines the diff did not
-touch. **ModuleAbcSize** on those runs re-sums only methods that intersect
+touch. **ModuleAbcSize** on those runs re-sums only functions that intersect
 the diff and compares that total to `--max-module-abc` (default 120;
-untracked = every method). A small patch into an oversized legacy file
-stays quiet unless the touched methods themselves exceed the ceiling.
+untracked = every function). A small patch into an oversized legacy file
+stays quiet unless the touched functions themselves exceed the ceiling.
 
 ### Whole-tree report
 
 `--full` and `--everything` report every method over `--max-abc` and every
 local. They also report every production module over
 `--max-module-abc`. ModuleAbcSize still exempts test trees on `--full`;
-a scoped run can flag a test file when the changed methods sum over the
+a scoped run can flag a test file when the changed functions sum over the
 limit. `--full` keeps the default skips. `--everything` lifts gitignore,
 hidden directories, and vendored/generated/test pruning. `ignore` in the
 user config still applies to both.
@@ -303,7 +305,7 @@ Seventeen languages plus embedded JS in HTML/templates, four rules each, one CI 
 
 | Language | Files | Notes |
 |---|---|---|
-| Ruby | `.rb .rake .ru .gemspec`, `Gemfile`, `Rakefile`, … | RuboCop-parity AbcSize |
+| Ruby | `.rb .rake .ru .gemspec`, `Gemfile`, `Rakefile`, … | RuboCop-parity method AbcSize; blocks outside methods are units |
 | Rust | `.rs` | |
 | Python | `.py .pyi .pyw` | |
 | Go | `.go` | |

@@ -104,11 +104,24 @@ in the message.
 .IP \(bu
 Ruby units are
 .B def,
-.B defs
-and
+.B defs,
 .B define_method(:sym){}
-blocks; ordinary iteration blocks roll into the enclosing method, mirroring
-RuboCop.
+and any other block that is not already inside a method. The block is
+named after the call it is passed to
+.RB ( match ,
+.BR before ).
+.B define
+and
+.B define_method
+use their name argument instead
+.RB ( :have_recorded ,
+.BR :dyn ).
+Iteration blocks
+.RB ( each ,
+.BR map ,
+.BR select )
+roll into the enclosing method or block. Counting inside a method still
+matches RuboCop.
 .IP \(bu
 Rust units are
 .B fn
@@ -116,13 +129,14 @@ items (free functions and inherent/trait methods); closures roll into the
 enclosing function. Match arms each count as one condition, guards via their
 binary expressions, and the ? try operator counts as a branch.
 .SS ModuleAbcSize
-Production modules whose summed method ABC exceeds
+Production modules whose summed function ABC exceeds
 .I max\-module\-abc
 (default 120) are flagged for
-extraction (Fitzpatrick total of method vectors). Test suites and test
+extraction (Fitzpatrick total of those vectors). Ruby block units count
+in the sum. Test suites and test
 directories, lockfiles, schema dumps and documentation trees are exempt
-on full scans. On scoped runs the score is re\-summed from methods that
-intersect the diff only (untracked files count every method). A normal
+on full scans. On scoped runs the score is re\-summed from functions that
+intersect the diff only (untracked files count every function). A normal
 scan reports AbcSize only when the score rose against HEAD.
 .B \-\-full
 and
