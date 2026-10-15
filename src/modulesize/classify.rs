@@ -141,8 +141,8 @@ fn third_party_tree(path: &std::path::Path) -> bool {
 /// `user_pb.rb`). Matched on any path form (repo-relative or absolute)
 /// so both the walker's default prune and MR/changed-scope selection
 /// drop them: touching a vendored file does not make it owned production
-/// code. Test trees are deliberately NOT matched -- specs stay
-/// size-accountable in scoped runs.
+/// code. Test trees are deliberately NOT matched -- a spec in the diff
+/// is still reviewed.
 pub(crate) fn is_third_party(path: &std::path::Path) -> bool {
     third_party_tree(path) || path.file_name().is_some_and(is_generated_name)
 }

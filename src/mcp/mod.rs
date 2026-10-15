@@ -55,7 +55,7 @@ impl AbcopMcp {
 
     #[tool(
         name = "abcop_inspection",
-        description = "Inspect code for ABC complexity, UsedOnce, and NeverUsed findings. AbcSize reports a function only when its score rose against HEAD; a score that stayed the same or fell stays quiet, even when the function is still over the ceiling. Clear that finding by bringing the score back down to the HEAD score or below. UsedOnce and NeverUsed report only inside functions whose text changed against HEAD. Pass `path` (string or array), `paths`, and/or `source_code` (inline; `path` picks language). Always pass an explicit project path.",
+        description = "Inspect code for ABC complexity, UsedOnce, and NeverUsed findings. AbcSize reports a function only when its score rose against HEAD; a score that stayed the same or fell stays quiet, even when the function is still over the ceiling. ModuleAbcSize does the same for a whole module: an existing module may stay over the ceiling when its score did not rise, and a new module is held to the ceiling. Clear either finding by bringing the score back down to the HEAD score or below. UsedOnce and NeverUsed report only inside functions whose text changed against HEAD. Pass `path` (string or array), `paths`, and/or `source_code` (inline; `path` picks language). Always pass an explicit project path.",
         annotations(
             title = "abcop inspection",
             read_only_hint = true,
@@ -95,6 +95,7 @@ impl ServerHandler for AbcopMcp {
             .with_instructions(
                 "abcop complexity gate: abcop_inspection (ABC / UsedOnce / NeverUsed). \
                  AbcSize reports a function only when its score rose against HEAD. \
+                 ModuleAbcSize reports a module only when its whole-file score rose against HEAD; a new module is held to the ceiling. \
                  UsedOnce and NeverUsed report only inside edited functions. \
                  Always pass `path` or `paths` (absolute preferred; `path` may be a string or array)."
                     .to_string(),

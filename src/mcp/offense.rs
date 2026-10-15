@@ -43,11 +43,7 @@ fn module_offense(m: &ModuleAbc) -> Value {
         1,
         0,
         "Metrics/ModuleAbcSize",
-        format!(
-            "Assignment Branch Condition size for module is too high. [{} {}] -- extract a coherent subunit",
-            m.vector,
-            crate::abc::g4(m.score)
-        ),
+        crate::modulesize::finding_message(m, None),
     );
     v["score"] = json!(m.score);
     v["vector"] = json!(m.vector);
@@ -114,6 +110,7 @@ mod tests {
                 keep_init: false,
             }],
             module_abc: None,
+            module_score: 0.0,
             units: Vec::new(),
         };
         let text = offenses_json(&r);

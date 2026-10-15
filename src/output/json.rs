@@ -108,11 +108,7 @@ fn module_abc_diag(r: &FileResult, m: &ModuleAbc) -> Diagnostic {
         column: 0,
         severity: "W",
         rule: "Metrics/ModuleAbcSize",
-        message: format!(
-            "Assignment Branch Condition size for module is too high. [{} {}] -- extract a coherent subunit",
-            m.vector,
-            abc::g4(m.score)
-        ),
+        message: crate::modulesize::finding_message(m, None),
         score: Some(m.score),
         vector: Some(m.vector.clone()),
     }
@@ -208,6 +204,7 @@ mod tests {
                 }],
                 never_used: vec![],
                 module_abc: None,
+                module_score: 0.0,
                 units: Vec::new(),
             },
             FileResult {
@@ -233,8 +230,9 @@ mod tests {
                 module_abc: Some(ModuleAbc {
                     score: 130.0,
                     vector: "<50, 80, 60>".into(),
-                    methods: vec![],
+                    prior: None,
                 }),
+                module_score: 130.0,
                 units: Vec::new(),
             },
         ]

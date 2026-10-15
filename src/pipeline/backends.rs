@@ -5,7 +5,6 @@ use tree_sitter::Tree;
 
 use crate::abc::{AbcOffense, Limits};
 use crate::directives::{self, Directives};
-use crate::modulesize;
 use crate::never_used::NeverUsedOffense;
 use crate::output::FileResult;
 use crate::used_once::UsedOnceOffense;
@@ -22,14 +21,6 @@ fn directives_for(src: &[u8]) -> Directives {
 /// Drops entries the inline directives suppress.
 fn suppressed<T>(v: Vec<T>, keep: impl Fn(&T) -> bool) -> Vec<T> {
     v.into_iter().filter(|o| !keep(o)).collect()
-}
-
-fn set_module_abc(r: &mut FileResult, src: &[u8], all: &[AbcOffense], max: f64) {
-    // Spans for the edit filter, including under-ceiling methods. `only` may
-    // skip ABC offenses below; it does not skip this inventory.
-    r.units = all.iter().map(crate::abc::Unit::from).collect();
-    r.module_abc =
-        modulesize::from_scores(all, &r.path, std::str::from_utf8(src).unwrap_or(""), max);
 }
 
 fn keep_abc(dirs: &Directives, all: Vec<AbcOffense>, max: f64) -> Vec<AbcOffense> {
@@ -50,7 +41,7 @@ pub(super) fn clike_arm(
 ) {
     let dirs = directives_for(src);
     let all = crate::clike::all_scores(src, tree, lang);
-    set_module_abc(r, src, &all, limits.module);
+    r.record_module(src, &all, limits.module);
     if checks.want_abc {
         r.abc = keep_abc(&dirs, all, limits.method);
     }
@@ -88,7 +79,7 @@ fn directed<A, U, N>(
     N: FnOnce() -> Vec<NeverUsedOffense>,
 {
     let all = all_scores();
-    set_module_abc(r, src, &all, limits.module);
+    r.record_module(src, &all, limits.module);
     if checks.want_abc {
         r.abc = keep_abc(dirs, all, limits.method);
     }
@@ -128,7 +119,7 @@ fn non_clike_directed<B: NonClike>(
 fn rust_arm(r: &mut FileResult, src: &[u8], tree: Tree, checks: &Checks, limits: Limits) -> bool {
     let fm = crate::rustlang::build(src, tree);
     let all = crate::rustlang::all_scores(&fm);
-    set_module_abc(r, src, &all, limits.module);
+    r.record_module(src, &all, limits.module);
     if checks.want_abc {
         r.abc = all
             .into_iter()
@@ -152,7 +143,7 @@ fn ruby_arm(r: &mut FileResult, src: &[u8], checks: &Checks, limits: Limits) -> 
         return false;
     };
     let all = crate::abc::all_scores(&fm);
-    set_module_abc(r, src, &all, limits.module);
+    r.record_module(src, &all, limits.module);
     if checks.want_abc {
         r.abc = keep_abc(&dirs, all, limits.method);
     }

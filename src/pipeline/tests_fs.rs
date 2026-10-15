@@ -3,7 +3,6 @@
 
 use super::analyze_one;
 use super::analyze_src;
-use super::narrow::apply;
 use crate::abc::Limits;
 use crate::git_changes::{Changeset, Lines};
 use crate::modulesize;
@@ -61,7 +60,7 @@ fn cache_hits_are_scope_narrowed_like_fresh_analysis() {
     let first = assert_fresh_unflagged(&file, &cs);
     let second = warm_narrowed(&file, &cs, &dir.join(".cache"));
     assert_same_diagnostics(&first, &second);
-    assert_eq!(second.module_abc, None, "cache hit must stay narrowed");
+    assert_eq!(second.module_abc, None, "score at the ceiling stays quiet");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -88,7 +87,7 @@ fn assert_fresh_unflagged(file: &std::path::Path, cs: &Changeset) -> FileResult 
     r
 }
 
-/// Dense method bodies so many changed methods sum past ModuleAbcSize.
+/// Dense method bodies so a test tree is over the module ceiling.
 fn dense_ruby_template() -> &'static str {
     "def fill_{i}\n  a = 1\n  b = 2\n  c = 3\n  d = 4\n  e = 5\n  \
      f = 6\n  g = 7\n  h = 8\n  i = 9\n  j = 10\n  \
@@ -109,34 +108,6 @@ fn spec_fixture(tag: &str) -> (std::path::PathBuf, std::path::PathBuf, String) {
         dense_ruby_template(),
     );
     (dir, file, src)
-}
-
-#[test]
-fn small_spec_diff_keeps_module_quiet() {
-    let (dir, file, src) = spec_fixture("small");
-    let cs = scoped_changeset(&dir, "test/commit_plan_finalize_test.rb", 3);
-    let mut r = analyze_one(&file, None, test_limits(), Some(&cs), None);
-    apply(Some(&cs), &mut r, modulesize::MAX_ABC, src.as_bytes());
-    assert_eq!(r.module_abc, None, "few changed methods stay under ceiling");
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn many_changed_spec_methods_are_size_accountable() {
-    let (dir, file, src) = spec_fixture("big");
-    let cs = scoped_changeset(&dir, "test/commit_plan_finalize_test.rb", 2000);
-    let mut r = analyze_one(&file, None, test_limits(), Some(&cs), None);
-    apply(Some(&cs), &mut r, modulesize::MAX_ABC, src.as_bytes());
-    assert!(
-        r.module_abc
-            .as_ref()
-            .is_some_and(|m| m.score > modulesize::MAX_ABC),
-        "changed-method sum over ceiling must surface ModuleAbcSize, got {:?}",
-        r.module_abc
-    );
-
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

@@ -42,6 +42,7 @@ fn blank_with(path: &std::path::Path) -> crate::output::FileResult {
         used_once: Vec::new(),
         never_used: Vec::new(),
         module_abc: None,
+        module_score: 0.0,
         units: Vec::new(),
     }
 }
@@ -92,7 +93,7 @@ fn apply_scope(
     cache: Option<&cache::Cache>,
     r: &mut crate::output::FileResult,
 ) {
-    narrow::apply(changeset, r, limits.module, src);
+    narrow::apply(changeset, r);
     increased::apply(limits.increased, path, src, cache, r);
 }
 
@@ -156,7 +157,7 @@ fn cache_hit(
     only: Option<&str>,
     limits: Limits,
 ) -> Option<crate::output::FileResult> {
-    let (abc, used_once, never_used, module_abc, units) =
+    let (abc, used_once, never_used, module_abc, units, module_score) =
         cache.get(&cache.file_key(path, src, only, limits))?;
     Some(crate::output::FileResult {
         path: path.display().to_string(),
@@ -164,6 +165,7 @@ fn cache_hit(
         used_once,
         never_used,
         module_abc,
+        module_score,
         units,
     })
 }
@@ -184,6 +186,7 @@ fn store_result(
             &r.never_used,
             r.module_abc.clone(),
             &r.units,
+            r.module_score,
         );
     }
 }

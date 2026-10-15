@@ -33,8 +33,9 @@ fn sample(module_abc: Option<crate::modulesize::ModuleAbc>) -> CachedDiags {
             name: "dead".into(),
             keep_init: false,
         }],
-        module_abc,
+        module_abc.clone(),
         vec![],
+        module_abc.as_ref().map(|m| m.score).unwrap_or(0.0),
     )
 }
 
@@ -44,6 +45,7 @@ fn assert_sample_hit(hit: &CachedDiags, module_abc: Option<crate::modulesize::Mo
     assert_eq!(hit.1[0].name, "x");
     assert_eq!(hit.2[0].name, "dead");
     assert_eq!(hit.3, module_abc);
+    assert_eq!(hit.5, module_abc.as_ref().map(|m| m.score).unwrap_or(0.0));
 }
 
 #[test]
@@ -52,11 +54,19 @@ fn roundtrip_returns_stored_diagnostics() {
     let module_abc = crate::modulesize::ModuleAbc {
         score: 120.5,
         vector: "<40, 100, 40>".into(),
-        methods: vec![],
+        prior: None,
     };
     let diags = sample(Some(module_abc.clone()));
     let key = "a".repeat(64);
-    cache.store(&key, &diags.0, &diags.1, &diags.2, diags.3.clone(), &diags.4);
+    cache.store(
+        &key,
+        &diags.0,
+        &diags.1,
+        &diags.2,
+        diags.3.clone(),
+        &diags.4,
+        diags.5,
+    );
     assert_sample_hit(&cache.get(&key).expect("cache hit"), Some(module_abc));
 }
 
@@ -64,7 +74,15 @@ fn roundtrip_returns_stored_diagnostics() {
 fn miss_on_other_key_is_none() {
     let cache = Cache::open_at(&temp_cache_dir("miss")).expect("cache opens");
     let diags = sample(None);
-    cache.store(&"a".repeat(64), &diags.0, &diags.1, &diags.2, diags.3, &diags.4);
+    cache.store(
+        &"a".repeat(64),
+        &diags.0,
+        &diags.1,
+        &diags.2,
+        diags.3,
+        &diags.4,
+        diags.5,
+    );
     assert!(cache.get(&"b".repeat(64)).is_none(), "unrelated key misses");
 }
 

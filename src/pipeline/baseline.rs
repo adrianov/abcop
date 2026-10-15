@@ -26,20 +26,36 @@ pub(super) fn load_head(path: &Path, src: &[u8]) -> Option<Head> {
     Some(Head::Diff { oid, bytes })
 }
 
-pub(super) fn head_units(
+pub(super) struct Baseline {
+    pub units: Vec<Unit>,
+    pub module_score: f64,
+}
+
+pub(super) fn head_baseline(
     cache: Option<&crate::cache::Cache>,
     path: &Path,
     oid: git2::Oid,
     src: &[u8],
-) -> Vec<Unit> {
+) -> Baseline {
     if let Some(hit) = cache.and_then(|c| c.get(&c.blob_key(path, &oid))) {
-        return hit.4;
+        return Baseline {
+            units: hit.4,
+            module_score: hit.5,
+        };
     }
-    let units = inventory(path, src);
+    let found = inventory(path, src);
     if let Some(c) = cache {
-        c.store(&c.blob_key(path, &oid), &[], &[], &[], None, &units);
+        c.store(
+            &c.blob_key(path, &oid),
+            &[],
+            &[],
+            &[],
+            None,
+            &found.units,
+            found.module_score,
+        );
     }
-    units
+    found
 }
 
 fn blob_id(src: &[u8]) -> Option<git2::Oid> {
@@ -66,7 +82,7 @@ fn head_blob(repo: &git2::Repository, rel: &Path) -> Option<git2::Oid> {
 }
 
 /// Parse `src` once. `increased` stays off so this does not re-enter the filter.
-fn inventory(path: &Path, src: &[u8]) -> Vec<Unit> {
+fn inventory(path: &Path, src: &[u8]) -> Baseline {
     let mut r = super::blank_with(path);
     let _ = super::analyze_src_into(
         &mut r,
@@ -79,5 +95,8 @@ fn inventory(path: &Path, src: &[u8]) -> Vec<Unit> {
             increased: false,
         },
     );
-    r.units
+    Baseline {
+        units: r.units,
+        module_score: r.module_score,
+    }
 }

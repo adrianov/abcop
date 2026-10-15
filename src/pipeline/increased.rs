@@ -6,7 +6,9 @@
 //! in source order, so an earlier copy cannot consume a later copy's
 //! baseline. A name missing from HEAD counts as new. No HEAD blob
 //! (untracked file, or not a git checkout) keeps the absolute hits.
-//! Identical bytes clear those three rules. ModuleAbcSize is left alone.
+//! Identical bytes clear all four rules. ModuleAbcSize is reported only
+//! when the whole-module score is strictly higher than the same file in
+//! HEAD. A file missing from HEAD is held to the ceiling.
 //!
 //! Pairing uses the unit inventory captured during the file's own
 //! analysis (and cached with it). The HEAD inventory is cached by blob
@@ -15,12 +17,12 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 
-use super::baseline::{Head, head_units, load_head};
+use super::baseline::{Head, head_baseline, load_head};
 use crate::abc::Unit;
 use crate::output::FileResult;
 
-/// Drop edit-scoped hits when `enabled`: AbcSize that did not rise, and
-/// locals that sit in a function whose text matches HEAD.
+/// Drop edit-scoped hits when `enabled`: AbcSize and ModuleAbcSize that
+/// did not rise, and locals that sit in a function whose text matches HEAD.
 pub(super) fn apply(
     enabled: bool,
     path: &Path,
@@ -28,7 +30,7 @@ pub(super) fn apply(
     cache: Option<&crate::cache::Cache>,
     r: &mut FileResult,
 ) {
-    if !enabled || (r.abc.is_empty() && r.used_once.is_empty() && r.never_used.is_empty()) {
+    if !enabled || edit_rules_empty(r) {
         return;
     }
     let Some(head) = load_head(path, src) else {
@@ -38,12 +40,25 @@ pub(super) fn apply(
         r.abc.clear();
         r.used_once.clear();
         r.never_used.clear();
+        r.module_abc = None;
         return;
     };
-    let base = head_units(cache, path, oid, &bytes);
+    let base = head_baseline(cache, path, oid, &bytes);
     let current = std::mem::take(&mut r.units);
-    keep_risen(&current, &base, r);
-    keep_edited_locals(src, &bytes, &current, &base, r);
+    keep_risen(&current, &base.units, r);
+    keep_edited_locals(src, &bytes, &current, &base.units, r);
+    keep_module(&mut r.module_abc, base.module_score);
+}
+
+fn edit_rules_empty(r: &FileResult) -> bool {
+    r.abc.is_empty() && r.used_once.is_empty() && r.never_used.is_empty() && r.module_abc.is_none()
+}
+
+fn keep_module(module_abc: &mut Option<crate::modulesize::ModuleAbc>, head_score: f64) {
+    match module_abc.as_mut() {
+        Some(m) if m.score > head_score => m.prior = Some(head_score),
+        _ => *module_abc = None,
+    }
 }
 
 fn keep_risen(current: &[Unit], base: &[Unit], r: &mut FileResult) {
@@ -430,6 +445,83 @@ mod tests {
         let hit = super::super::analyze_one(&path, None, limits(true), None, Some(&cache));
         assert_eq!(hit.abc.len(), 1);
         assert!(hit.abc[0].prior.is_some());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn committed_over_ceiling_module_stays_quiet() {
+        let dir = commit_ruby("mod_quiet", &method("legacy", "a", 121));
+        assert!(scan(&dir, true).module_abc.is_none());
+        assert!(scan(&dir, false).module_abc.is_some());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn module_edit_that_keeps_the_score_stays_quiet() {
+        let dir = commit_ruby("mod_same", &method("legacy", "a", 121));
+        write(&dir, &method("legacy", "a", 121).replace("a1 = 1", "a1 = 2"));
+        assert!(scan(&dir, true).module_abc.is_none());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn module_score_rise_records_the_head_score() {
+        let dir = commit_ruby("mod_rose", &method("legacy", "a", 121));
+        write(&dir, &method("legacy", "a", 122));
+        let rose = scan(&dir, true).module_abc.expect("rise");
+        assert_eq!(rose.prior, Some(121.0));
+        assert!(rose.score > 121.0);
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn lower_module_score_stays_quiet_while_still_over_ceiling() {
+        let dir = commit_ruby("mod_down", &method("legacy", "a", 140));
+        write(&dir, &method("legacy", "a", 121));
+        assert!(scan(&dir, true).module_abc.is_none());
+        assert!(scan(&dir, false).module_abc.is_some());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn growth_under_the_module_ceiling_stays_quiet() {
+        let dir = commit_ruby("mod_under", &method("legacy", "a", 40));
+        write(&dir, &method("legacy", "a", 80));
+        assert!(scan(&dir, true).module_abc.is_none());
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn module_crossing_the_ceiling_reports_the_head_score() {
+        let dir = commit_ruby("mod_cross", &method("legacy", "a", 100));
+        write(&dir, &method("legacy", "a", 121));
+        let hit = scan(&dir, true).module_abc.expect("crossed");
+        assert_eq!(hit.prior, Some(100.0));
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn new_over_ceiling_module_reports_without_a_prior() {
+        let dir = repo_with_legacy("mod_new");
+        let added = dir.join("b.rb");
+        std::fs::write(&added, method("added", "c", 121)).unwrap();
+        let module = super::super::analyze_one(&added, None, limits(true), None, None)
+            .module_abc
+            .expect("new module");
+        assert!(module.prior.is_none());
+        assert!(module.score > modulesize::MAX_ABC);
+        cleanup(&dir);
+    }
+
+    #[test]
+    fn cached_module_scan_keeps_the_head_score() {
+        let dir = commit_ruby("mod_cache", &method("legacy", "a", 121));
+        write(&dir, &method("legacy", "a", 122));
+        let cache = crate::cache::Cache::open_at(&dir.join(".abcop-cache")).unwrap();
+        let path = dir.join("a.rb");
+        super::super::analyze_one(&path, None, limits(true), None, Some(&cache));
+        let hit = super::super::analyze_one(&path, None, limits(true), None, Some(&cache));
+        assert_eq!(hit.module_abc.and_then(|m| m.prior), Some(121.0));
         cleanup(&dir);
     }
 }

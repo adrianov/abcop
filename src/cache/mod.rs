@@ -89,9 +89,10 @@ impl Cache {
         never_used: &[crate::never_used::NeverUsedOffense],
         module_abc: Option<crate::modulesize::ModuleAbc>,
         units: &[crate::abc::Unit],
+        module_score: f64,
     ) {
         self.store
-            .store(key, abc, used_once, never_used, module_abc, units)
+            .store(key, abc, used_once, never_used, module_abc, units, module_score)
     }
 
     /// Identity of a HEAD blob's unit inventory. The blob id is the

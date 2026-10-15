@@ -67,8 +67,8 @@ impl From<&AbcOffense> for Unit {
 pub(crate) struct Limits {
     pub method: f64,
     pub module: f64,
-    /// When set, AbcSize keeps a rise against HEAD, and UsedOnce / NeverUsed
-    /// keep locals only inside functions whose text changed.
+    /// When set, AbcSize and ModuleAbcSize keep a rise against HEAD, and
+    /// UsedOnce / NeverUsed keep locals only inside functions whose text changed.
     pub increased: bool,
 }
 

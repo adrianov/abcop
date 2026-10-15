@@ -1,10 +1,10 @@
-//! Synthetic pipeline contracts: AbcSize keeps changed methods, and
-//! ModuleAbcSize re-scores from changed methods only.
+//! Synthetic pipeline contracts: AbcSize keeps changed methods.
+//! ModuleAbcSize is a whole-file score, so a diff does not rescore it.
 
 use super::narrow::apply;
 use crate::abc::AbcOffense;
 use crate::git_changes::{Changeset, Lines};
-use crate::modulesize::{self, ModuleAbc};
+use crate::modulesize::ModuleAbc;
 use crate::output::FileResult;
 use std::collections::BTreeMap;
 
@@ -37,8 +37,6 @@ fn sample_abc() -> AbcOffense {
     method(5, 20, 10, 40, 20)
 }
 
-/// Oversized module: three dense methods; only the middle one sits in a
-/// typical small-diff window.
 fn sample_module_abc() -> ModuleAbc {
     let methods = vec![
         method(1, 40, 40, 40, 0),
@@ -49,7 +47,7 @@ fn sample_module_abc() -> ModuleAbc {
     ModuleAbc {
         score,
         vector: crate::abc::fmt_vector(a, b, c),
-        methods,
+        prior: None,
     }
 }
 
@@ -60,6 +58,7 @@ fn result_with_size_findings(path: &str) -> FileResult {
         used_once: Vec::new(),
         never_used: Vec::new(),
         module_abc: Some(sample_module_abc()),
+        module_score: sample_module_abc().score,
         units: Vec::new(),
     }
 }
@@ -72,7 +71,7 @@ fn result_with_module_abc() -> FileResult {
 fn small_diffs_still_report_method_abc() {
     let cs = cs_with_ranges("app/models/big.rb", 3, 9);
     let mut r = result_with_module_abc();
-    apply(Some(&cs), &mut r, modulesize::MAX_ABC, b"");
+    apply(Some(&cs), &mut r);
     assert_eq!(
         r.abc,
         vec![sample_abc()],
@@ -81,41 +80,21 @@ fn small_diffs_still_report_method_abc() {
 }
 
 #[test]
-fn small_diffs_rescope_module_under_ceiling() {
+fn small_diffs_keep_the_whole_module_score() {
     let cs = cs_with_ranges("app/models/big.rb", 50, 55);
     let mut r = result_with_module_abc();
-    apply(Some(&cs), &mut r, modulesize::MAX_ABC, b"");
-    assert_eq!(
-        r.module_abc, None,
-        "one medium method must not keep full-module ModuleAbcSize"
-    );
-}
-
-#[test]
-fn changed_methods_over_ceiling_keep_module_abc() {
-    let cs = cs_with_ranges("app/models/big.rb", 1, 140);
-    let mut r = result_with_module_abc();
-    apply(Some(&cs), &mut r, modulesize::MAX_ABC, b"");
-    let hit = r.module_abc.expect("all methods changed => still over");
-    assert!(hit.score > modulesize::MAX_ABC);
-    assert_eq!(hit.methods.len(), 3);
-}
-
-#[test]
-fn new_files_count_as_fully_changed() {
-    let cs = cs_with("app/models/big.rb", Lines::All);
-    let mut r = result_with_module_abc();
-    apply(Some(&cs), &mut r, modulesize::MAX_ABC, b"");
+    apply(Some(&cs), &mut r);
     assert_eq!(
         r.module_abc.as_ref().map(|m| m.score),
-        Some(sample_module_abc().score)
+        Some(sample_module_abc().score),
+        "a small diff must not rescore the module from touched methods"
     );
 }
 
 #[test]
 fn full_scans_keep_module_abc() {
     let mut r = result_with_module_abc();
-    apply(None, &mut r, modulesize::MAX_ABC, b"");
+    apply(None, &mut r);
     assert_eq!(
         r.module_abc.as_ref().map(|m| m.score),
         Some(sample_module_abc().score)

@@ -1,7 +1,7 @@
-//! Classification and ModuleAbcSize scoring (including scoped rescope).
+//! Classification and ModuleAbcSize scoring.
 
 use super::classify::{is_fixture_tree, is_route_table, is_third_party};
-use super::{ModuleAbc, from_scores, rescope};
+use super::{ModuleAbc, finding_message, measure};
 use crate::abc::AbcOffense;
 
 #[test]
@@ -93,13 +93,13 @@ fn offense_at(line: usize, end_line: usize, a: u32, b: u32, c: u32) -> AbcOffens
 #[test]
 fn module_abc_sums_method_vectors() {
     let scores = vec![offense(30, 40, 0), offense(0, 0, 120)];
-    let hit = from_scores(&scores, "app/models/user.rb", "", super::MAX_ABC).unwrap();
+    let hit = measure(&scores, "app/models/user.rb", "", super::MAX_ABC).1.unwrap();
     assert_eq!(
         hit,
         ModuleAbc {
             score: 130.0,
             vector: "<30, 40, 120>".into(),
-            methods: scores,
+            prior: None,
         }
     );
 }
@@ -108,14 +108,14 @@ fn module_abc_sums_method_vectors() {
 fn module_abc_ignores_scores_at_the_threshold() {
     // magnitude 120 exactly must not fire (AbcSize-style `>`).
     let scores = vec![offense(72, 96, 0)]; // 120
-    assert!(from_scores(&scores, "app/models/user.rb", "", super::MAX_ABC).is_none());
+    assert!(measure(&scores, "app/models/user.rb", "", super::MAX_ABC).1.is_none());
 }
 
 #[test]
 fn module_abc_respects_custom_max() {
     let scores = vec![offense(30, 40, 0)]; // 50
-    assert!(from_scores(&scores, "app/models/user.rb", "", 50.0).is_none());
-    assert!(from_scores(&scores, "app/models/user.rb", "", 49.0).is_some());
+    assert!(measure(&scores, "app/models/user.rb", "", 50.0).1.is_none());
+    assert!(measure(&scores, "app/models/user.rb", "", 49.0).1.is_some());
 }
 
 #[test]
@@ -145,40 +145,22 @@ fn rust_cfg_test_tail_is_excluded_from_module_abc() {
             prior: None,
         },
     ];
-    assert!(from_scores(&scores, "src/lib.rs", src, super::MAX_ABC).is_none());
+    assert!(measure(&scores, "src/lib.rs", src, super::MAX_ABC).1.is_none());
 }
 
 #[test]
-fn rescope_keeps_only_intersecting_methods() {
-    let mut module_abc = from_scores(
-        &[
-            offense_at(1, 10, 40, 0, 0),
-            offense_at(20, 30, 0, 80, 0),
-            offense_at(40, 50, 0, 0, 90),
-        ],
-        "app/models/user.rb",
-        "",
-        50.0,
+fn risen_module_message_names_the_head_score() {
+    let hit = ModuleAbc {
+        score: 130.0,
+        vector: "<130, 0, 0>".into(),
+        prior: Some(121.0),
+    };
+    assert_eq!(
+        finding_message(&hit, Some(120.0)),
+        "Assignment Branch Condition size for module rose from 121 to 130 -- back to 121 or below. [<130, 0, 0> 130/120]"
     );
-    assert!(module_abc.is_some());
-    rescope(&mut module_abc, 50.0, |o| o.line >= 20 && o.end_line <= 30);
-    let hit = module_abc.expect("touched method still over max");
-    assert_eq!(hit.vector, "<0, 80, 0>");
-    assert_eq!(hit.methods.len(), 1);
-}
-
-#[test]
-fn rescope_clears_when_touched_methods_are_under_max() {
-    let mut module_abc = from_scores(
-        &[
-            offense_at(1, 10, 40, 0, 0),
-            offense_at(20, 30, 0, 80, 0),
-            offense_at(40, 50, 0, 0, 90),
-        ],
-        "app/models/user.rb",
-        "",
-        50.0,
+    assert_eq!(
+        finding_message(&hit, None),
+        "Assignment Branch Condition size for module rose from 121 to 130 -- back to 121 or below. [<130, 0, 0> 130]"
     );
-    rescope(&mut module_abc, 50.0, |o| o.line <= 10);
-    assert_eq!(module_abc, None);
 }

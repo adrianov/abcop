@@ -1,7 +1,9 @@
-//! Metrics/ModuleAbcSize: production modules must stay under MAX_ABC.
+//! Metrics/ModuleAbcSize: a module's Fitzpatrick total of its function vectors.
+//! New modules must stay under [`MAX_ABC`]. An existing module may stay over
+//! that ceiling when its score does not rise against `HEAD`.
 //! Classification mirrors refactor_gpt quality standards: spec/test trees,
-//! test-file suffixes, lockfiles, docs and schema dumps are exempt.
-//! Scoped runs re-score from methods that intersect the diff only.
+//! test-file suffixes, lockfiles, docs and schema dumps are exempt on a
+//! whole-tree scan.
 
 mod classify;
 #[cfg(test)]
@@ -17,6 +19,8 @@ use crate::abc::{self, AbcOffense};
 /// Default ModuleAbcSize ceiling. Calibrated against ~200-line Ruby modules
 /// in RuboCop/Sinatra lib trees (~85–90 median); 120 is a looser default
 /// so typical mid-size files stay quiet while still flagging oversized ones.
+/// A normal scan applies it to modules absent from `HEAD`; an existing
+/// module is reported only when its score rose.
 pub const MAX_ABC: f64 = 120.0;
 
 pub(crate) const NON_PROD_DIRS: [&str; 9] = [
@@ -35,10 +39,10 @@ pub(crate) const NON_PROD_DIRS: [&str; 9] = [
 pub struct ModuleAbc {
     pub score: f64,
     pub vector: String,
-    /// Method ABC parts that formed this total. Scoped runs re-sum the
-    /// subset intersecting the diff against the same ceiling.
-    #[serde(default)]
-    pub(crate) methods: Vec<AbcOffense>,
+    /// HEAD score when this hit is a rise. Absent for a new module and
+    /// for `--full` / `--everything`, which report every over-ceiling module.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prior: Option<f64>,
 }
 
 pub(crate) fn is_test_path(path: &str) -> bool {
@@ -72,33 +76,47 @@ pub fn is_production(path: &str) -> bool {
     !is_test_path(path) && !technical
 }
 
-/// File ABC over method scores; Rust `#[cfg(test)]` tails are omitted
-/// (same exemption the old line budget used).
-pub fn from_scores(scores: &[AbcOffense], path: &str, src: &str, max: f64) -> Option<ModuleAbc> {
-    scored(rust_prod_scores(scores, path, src).into_owned(), max)
-}
-
-/// Re-sum `module_abc` from methods that `keep` accepts; clear when the
-/// rescored total no longer exceeds `max`.
-pub(crate) fn rescope(
-    module_abc: &mut Option<ModuleAbc>,
+/// Whole-module magnitude, then a hit when it exceeds `max`.
+/// Rust `#[cfg(test)]` tails are omitted (same exemption the old line budget used).
+pub(crate) fn measure(
+    scores: &[AbcOffense],
+    path: &str,
+    src: &str,
     max: f64,
-    keep: impl Fn(&AbcOffense) -> bool,
-) {
-    let Some(m) = module_abc.take() else {
-        return;
-    };
-
-    *module_abc = scored(m.methods.into_iter().filter(|o| keep(o)).collect(), max);
+) -> (f64, Option<ModuleAbc>) {
+    let (a, b, c, score) = abc::module_score(&rust_prod_scores(scores, path, src));
+    (
+        score,
+        (score > max).then(|| ModuleAbc {
+            score,
+            vector: abc::fmt_vector(a, b, c),
+            prior: None,
+        }),
+    )
 }
 
-fn scored(methods: Vec<AbcOffense>, max: f64) -> Option<ModuleAbc> {
-    let (a, b, c, score) = abc::module_score(&methods);
-    (score > max).then(|| ModuleAbc {
-        score,
-        vector: abc::fmt_vector(a, b, c),
-        methods,
-    })
+/// Lead sentence of a ModuleAbcSize finding. `ceiling` adds the `/max`
+/// budget used by text output; JSON and MCP omit it.
+pub(crate) fn finding_message(m: &ModuleAbc, ceiling: Option<f64>) -> String {
+    let lead = match m.prior {
+        Some(was) => format!(
+            "rose from {} to {} -- back to {} or below",
+            abc::g4(was),
+            abc::g4(m.score),
+            abc::g4(was)
+        ),
+        None => "is too high".to_string(),
+    };
+    let numbers = match ceiling {
+        Some(max) => format!("{} {}/{}", m.vector, abc::g4(m.score), abc::g4(max)),
+        None => format!("{} {}", m.vector, abc::g4(m.score)),
+    };
+    let suffix = if m.prior.is_some() {
+        ""
+    } else {
+        " -- extract a coherent subunit"
+    };
+    format!("Assignment Branch Condition size for module {lead}. [{numbers}]{suffix}")
 }
 
 /// Drop non-production ModuleAbcSize hits on full (unscoped) scans.

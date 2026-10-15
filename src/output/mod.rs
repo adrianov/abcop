@@ -32,11 +32,25 @@ pub(crate) struct FileResult {
     pub used_once: Vec<UsedOnceOffense>,
     pub never_used: Vec<NeverUsedOffense>,
     pub module_abc: Option<ModuleAbc>,
+    /// Whole-module ABC, including files under the ceiling. Not reported.
+    pub module_score: f64,
     /// Every scored function, under the ceiling included. Not reported.
     pub units: Vec<abc::Unit>,
 }
 
 impl FileResult {
+    /// Scores every function into `units` and the whole-module total.
+    /// `module_abc` is set only when the total exceeds `max`.
+    pub(crate) fn record_module(&mut self, src: &[u8], scores: &[AbcOffense], max: f64) {
+        self.units = scores.iter().map(abc::Unit::from).collect();
+        (self.module_score, self.module_abc) = crate::modulesize::measure(
+            scores,
+            &self.path,
+            std::str::from_utf8(src).unwrap_or(""),
+            max,
+        );
+    }
+
     pub(crate) fn is_clean(&self) -> bool {
         self.abc.is_empty()
             && self.used_once.is_empty()
@@ -94,11 +108,9 @@ fn print_module_abc(r: &FileResult, max_module: f64) {
 
 fn module_abc_text(r: &FileResult, m: &ModuleAbc, max_module: f64) -> String {
     format!(
-        "{}: W: Metrics/ModuleAbcSize: Assignment Branch Condition size for module is too high. [{} {}/{}] -- extract a coherent subunit",
+        "{}: W: Metrics/ModuleAbcSize: {}",
         r.path,
-        m.vector,
-        abc::g4(m.score),
-        abc::g4(max_module)
+        crate::modulesize::finding_message(m, Some(max_module))
     )
 }
 
@@ -335,6 +347,7 @@ mod tests {
                 }],
                 never_used: vec![],
                 module_abc: None,
+                module_score: 0.0,
                 units: Vec::new(),
             },
             FileResult {
@@ -360,8 +373,9 @@ mod tests {
                 module_abc: Some(ModuleAbc {
                     score: 130.0,
                     vector: "<50, 80, 60>".into(),
-                    methods: vec![],
+                    prior: None,
                 }),
+                module_score: 130.0,
                 units: Vec::new(),
             },
         ]

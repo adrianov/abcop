@@ -14,7 +14,6 @@ mod tests;
 
 use crate::abc::{AbcOffense, Limits};
 use crate::directives::{self, Directives};
-use crate::modulesize;
 use crate::never_used::NeverUsedOffense;
 use crate::output::FileResult;
 use crate::paths::{Lang, parse_file_lang};
@@ -66,13 +65,7 @@ fn finish(
     scored: (Vec<AbcOffense>, Vec<UsedOnceOffense>, Vec<NeverUsedOffense>),
 ) {
     let (all_scores, used, never) = scored;
-    r.units = all_scores.iter().map(crate::abc::Unit::from).collect();
-    r.module_abc = modulesize::from_scores(
-        &all_scores,
-        &r.path,
-        std::str::from_utf8(src).unwrap_or(""),
-        limits.module,
-    );
+    r.record_module(src, &all_scores, limits.module);
     if want.abc {
         r.abc = keep_abc(dirs, all_scores, limits.method);
     }
