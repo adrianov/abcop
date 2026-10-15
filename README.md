@@ -193,9 +193,11 @@ to `HEAD`:
   strictly higher than the same method in `HEAD` (same name, source
   order). A score that stayed the same or fell stays quiet, including a
   legacy method that was already over the ceiling. A method that exists
-  only in the working tree counts as an increase. The message names the
-  previous score (`rose from 20 to 21 -- back to 20 or below`). Clear it
-  by bringing the score back down to that `HEAD` score or below.
+  only in the working tree counts as an increase. The message asks to
+  return to the previous score when that score was already over the
+  ceiling (`rose from 20 to 21 -- back to 20 or below`). When `HEAD` was
+  under the ceiling, the target is the ceiling (`rose from 16.28 to 21.28
+  -- back to 17 or below`).
 - **UsedOnce / NeverUsed** report only inside a function whose text
   changed against `HEAD`. A local in a function the edit did not touch
   stays quiet. Locals outside any function still report.
@@ -203,9 +205,10 @@ to `HEAD`:
   whole-file score is strictly higher than that file in `HEAD`. A score
   that stayed the same or fell stays quiet, including a legacy module
   already over the ceiling. A file that does not exist in `HEAD` is held
-  to the ceiling. The message names the previous score (`rose from 200 to
-  210 -- back to 200 or below`). Clear it by bringing the score back down
-  to that `HEAD` score or below.
+  to the ceiling. The message asks to return to the previous score when
+  that score was already over the ceiling (`rose from 200 to 210 -- back
+  to 200 or below`). When `HEAD` was under the ceiling, the target is the
+  ceiling.
 - **No `HEAD` blob** (not a git checkout, or an untracked file) reports
   every method over the ceiling, every local, and every module over the
   ceiling.

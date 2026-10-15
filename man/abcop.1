@@ -88,7 +88,9 @@ decimals. Units scoring strictly above
 are candidates. A normal scan reports one only when its working\-tree
 score is strictly higher than the same function in HEAD (matched by name,
 in source order). A score that stayed the same or fell stays quiet,
-including a legacy function that was already over the ceiling. A function
+including a legacy function that was already over the ceiling. The message
+asks to return to the previous score when that score was already over the
+ceiling, and to the ceiling otherwise. A function
 missing from HEAD counts as new. UsedOnce and NeverUsed report only
 inside a function whose text changed against HEAD. A local in a function
 the edit did not touch stays quiet. Locals outside any function still
@@ -135,7 +137,9 @@ block units count in the sum. A normal scan reports a module over
 (default 120) only when that whole\-file score is strictly higher than
 the same file in HEAD. A score that stayed the same or fell stays quiet,
 including a legacy module already over the ceiling. A file missing from
-HEAD is held to the ceiling. The message names the previous score.
+HEAD is held to the ceiling. The message asks to return to the previous
+score when that score was already over the ceiling, and to the ceiling
+otherwise.
 Test suites and test directories, lockfiles, schema dumps and
 documentation trees are exempt on full scans.
 .B \-\-full
