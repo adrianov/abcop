@@ -28,19 +28,19 @@ macOS (`.tar.gz` from [GitHub Releases](https://github.com/adrianov/abcop/releas
 
 ```sh
 # Apple Silicon — use the *-x86_64-apple-darwin.tar.gz asset on Intel Macs
-curl -LO https://github.com/adrianov/abcop/releases/download/v0.21.0/abcop-0.21.0-aarch64-apple-darwin.tar.gz
-tar -xzf abcop-0.21.0-aarch64-apple-darwin.tar.gz
-sudo cp abcop-0.21.0-aarch64-apple-darwin/abcop /usr/local/bin/
+curl -LO https://github.com/adrianov/abcop/releases/download/v0.22.0/abcop-0.22.0-aarch64-apple-darwin.tar.gz
+tar -xzf abcop-0.22.0-aarch64-apple-darwin.tar.gz
+sudo cp abcop-0.22.0-aarch64-apple-darwin/abcop /usr/local/bin/
 sudo mkdir -p /usr/local/share/man/man1
-sudo cp abcop-0.21.0-aarch64-apple-darwin/abcop.1 /usr/local/share/man/man1/
+sudo cp abcop-0.22.0-aarch64-apple-darwin/abcop.1 /usr/local/share/man/man1/
 ```
 
 Ubuntu / Debian (`.deb` from [GitHub Releases](https://github.com/adrianov/abcop/releases); amd64, Ubuntu 22.04+ / Debian bookworm+):
 
 ```sh
-# example for v0.21.0 — use the asset name from the release page
-curl -LO https://github.com/adrianov/abcop/releases/download/v0.21.0/abcop_0.21.0-1_amd64.deb
-sudo dpkg -i abcop_0.21.0-1_amd64.deb
+# example for v0.22.0 — use the asset name from the release page
+curl -LO https://github.com/adrianov/abcop/releases/download/v0.22.0/abcop_0.22.0-1_amd64.deb
+sudo dpkg -i abcop_0.22.0-1_amd64.deb
 man abcop
 ```
 
@@ -62,7 +62,7 @@ Fitzpatrick defined both method and module scope; abcop gates both:
 | Rule | Severity | Meaning |
 |---|---|---|
 | `Metrics/AbcSize` | C | function ABC above `--max-abc` (default 17). A normal scan reports a rise vs `HEAD`; `--full` and `--everything` report every function over the ceiling |
-| `Metrics/ModuleAbcSize` | W | module ABC above `--max-module-abc` (default 120) |
+| `Metrics/ModuleAbcSize` | W | module ABC above `--max-module-abc` (default 120). A normal scan reports a rise vs `HEAD`; `--full` and `--everything` report every production module over the ceiling |
 | `UsedOnce` | W | local written once and read once, inside a function the edit changed. `--full` and `--everything` report every such local |
 | `NeverUsed` | W | local written and never read, inside a function the edit changed. Same whole-tree switch as UsedOnce |
 
@@ -73,8 +73,10 @@ NeverUsed are secondary.
 ## Built for AI workflows
 
 - **Understandable by construction.** AbcSize 17 and ModuleAbcSize 120 keep
-  every unit inside a human head and an LLM context window. Models edit
-  small units reliably; when something breaks, the blast radius is tiny.
+  every new unit inside a human head and an LLM context window. An existing
+  unit may stay over that ceiling when the edit does not raise its score.
+  Models edit small units reliably; when something breaks, the blast radius
+  is tiny.
 - **Refactoring hook.** Exit code `1` plus stable JSON/JSONL diagnostics
   (`rule`, `score`, `vector`, `message`) feed agents and scripts: split
   oversized modules, extract hot methods. Each finding is an actionable
@@ -197,24 +199,27 @@ to `HEAD`:
 - **UsedOnce / NeverUsed** report only inside a function whose text
   changed against `HEAD`. A local in a function the edit did not touch
   stays quiet. Locals outside any function still report.
+- **ModuleAbcSize** reports a module over `--max-module-abc` only when its
+  whole-file score is strictly higher than that file in `HEAD`. A score
+  that stayed the same or fell stays quiet, including a legacy module
+  already over the ceiling. A file that does not exist in `HEAD` is held
+  to the ceiling. The message names the previous score (`rose from 200 to
+  210 -- back to 200 or below`). Clear it by bringing the score back down
+  to that `HEAD` score or below.
 - **No `HEAD` blob** (not a git checkout, or an untracked file) reports
-  every method over the ceiling and every local.
+  every method over the ceiling, every local, and every module over the
+  ceiling.
 
-`--uncommitted` and `--mr` also drop findings on lines the diff did not
-touch. **ModuleAbcSize** on those runs re-sums only functions that intersect
-the diff and compares that total to `--max-module-abc` (default 120;
-untracked = every function). A small patch into an oversized legacy file
-stays quiet unless the touched functions themselves exceed the ceiling.
+`--uncommitted` and `--mr` also drop function and local findings on lines
+the diff did not touch.
 
 ### Whole-tree report
 
-`--full` and `--everything` report every method over `--max-abc` and every
-local. They also report every production module over
-`--max-module-abc`. ModuleAbcSize still exempts test trees on `--full`;
-a scoped run can flag a test file when the changed functions sum over the
-limit. `--full` keeps the default skips. `--everything` lifts gitignore,
-hidden directories, and vendored/generated/test pruning. `ignore` in the
-user config still applies to both.
+`--full` and `--everything` report every method over `--max-abc`, every
+local, and every production module over `--max-module-abc`. ModuleAbcSize
+still exempts test trees on those runs. `--full` keeps the default skips.
+`--everything` lifts gitignore, hidden directories, and vendored/generated/test
+pruning. `ignore` in the user config still applies to both.
 
 ### User config
 
@@ -258,7 +263,7 @@ gem. Tool:
 
 | Tool | Purpose |
 |---|---|
-| `abcop_inspection` | Analyse via `path` / `paths` (string or array) and/or inline `source_code`; returns compact offense JSON (`code`, `line`, `column`, `message`; `score` / `vector` for ABC rules). Same edit filter as a normal scan: AbcSize only when the score rose against `HEAD`, UsedOnce and NeverUsed only inside functions the edit changed. Always pass an explicit project path — omitting targets errors out (avoids scanning `$HOME` when MCP `cwd` is mis-set). |
+| `abcop_inspection` | Analyse via `path` / `paths` (string or array) and/or inline `source_code`; returns compact offense JSON (`code`, `line`, `column`, `message`; `score` / `vector` for ABC rules). Same edit filter as a normal scan: AbcSize and ModuleAbcSize only when the score rose against `HEAD`, UsedOnce and NeverUsed only inside functions the edit changed. A new module is held to the module ceiling. Always pass an explicit project path — omitting targets errors out (avoids scanning `$HOME` when MCP `cwd` is mis-set). |
 
 - MCP Registry name: `mcp-name: io.github.adrianov/abcop`
 

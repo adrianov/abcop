@@ -1,4 +1,4 @@
-.TH ABCOP 1 "2026-10-15" "abcop 0.21.0" "User Commands"
+.TH ABCOP 1 "2026-10-15" "abcop 0.22.0" "User Commands"
 .SH NAME
 abcop \- must\-have ABC complexity gate for AI development. Ruby, Rust, Python, Go, JS/TS, C/C++, PHP, Java, C#, Swift, Zig, Dart, Solidity, Haskell, ObjC
 .SH SYNOPSIS
@@ -129,19 +129,19 @@ items (free functions and inherent/trait methods); closures roll into the
 enclosing function. Match arms each count as one condition, guards via their
 binary expressions, and the ? try operator counts as a branch.
 .SS ModuleAbcSize
-Production modules whose summed function ABC exceeds
+A module's score is the Fitzpatrick total of its function vectors. Ruby
+block units count in the sum. A normal scan reports a module over
 .I max\-module\-abc
-(default 120) are flagged for
-extraction (Fitzpatrick total of those vectors). Ruby block units count
-in the sum. Test suites and test
-directories, lockfiles, schema dumps and documentation trees are exempt
-on full scans. On scoped runs the score is re\-summed from functions that
-intersect the diff only (untracked files count every function). A normal
-scan reports AbcSize only when the score rose against HEAD.
+(default 120) only when that whole\-file score is strictly higher than
+the same file in HEAD. A score that stayed the same or fell stays quiet,
+including a legacy module already over the ceiling. A file missing from
+HEAD is held to the ceiling. The message names the previous score.
+Test suites and test directories, lockfiles, schema dumps and
+documentation trees are exempt on full scans.
 .B \-\-full
 and
 .B \-\-everything
-report every function over
+report every production module over the ceiling and every function over
 .IR max\-abc .
 For Rust files the trailing
 .B #[cfg(test)]
