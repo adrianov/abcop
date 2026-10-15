@@ -110,7 +110,7 @@ fn module_abc_text(r: &FileResult, m: &ModuleAbc, max_module: f64) -> String {
     format!(
         "{}: W: Metrics/ModuleAbcSize: {}",
         r.path,
-        crate::modulesize::finding_message(m, Some(max_module))
+        crate::modulesize::finding_message(m, max_module, true)
     )
 }
 
@@ -121,7 +121,7 @@ fn abc_text(r: &FileResult, o: &AbcOffense, max: f64) -> String {
         o.line,
         o.column,
         o.name,
-        abc::finding_clause(o),
+        abc::finding_clause(o, max),
         o.vector,
         abc::g4(o.score),
         abc::g4(max)

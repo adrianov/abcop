@@ -5,7 +5,7 @@
 
 use serde_json::{Value, json};
 
-use crate::abc::AbcOffense;
+use crate::abc::{AbcOffense, Limits};
 use crate::modulesize::ModuleAbc;
 use crate::never_used::NeverUsedOffense;
 use crate::output::FileResult;
@@ -20,7 +20,7 @@ fn offense(line: usize, column: usize, code: &str, message: String) -> Value {
     })
 }
 
-fn abc_offense(o: &AbcOffense) -> Value {
+fn abc_offense(o: &AbcOffense, ceiling: f64) -> Value {
     let mut v = offense(
         o.line,
         o.column,
@@ -28,7 +28,7 @@ fn abc_offense(o: &AbcOffense) -> Value {
         format!(
             "Assignment Branch Condition size for `{}` {}. [{} {}]",
             o.name,
-            crate::abc::finding_clause(o),
+            crate::abc::finding_clause(o, ceiling),
             o.vector,
             crate::abc::g4(o.score)
         ),
@@ -38,12 +38,12 @@ fn abc_offense(o: &AbcOffense) -> Value {
     v
 }
 
-fn module_offense(m: &ModuleAbc) -> Value {
+fn module_offense(m: &ModuleAbc, ceiling: f64) -> Value {
     let mut v = offense(
         1,
         0,
         "Metrics/ModuleAbcSize",
-        crate::modulesize::finding_message(m, None),
+        crate::modulesize::finding_message(m, ceiling, false),
     );
     v["score"] = json!(m.score);
     v["vector"] = json!(m.vector);
@@ -77,19 +77,19 @@ fn never_used_offense(o: &NeverUsedOffense) -> Value {
 }
 
 /// Every finding for one file as compact offenses.
-pub(crate) fn to_offenses(r: &FileResult) -> Vec<Value> {
+pub(crate) fn to_offenses(r: &FileResult, limits: Limits) -> Vec<Value> {
     let mut out = Vec::new();
     if let Some(m) = &r.module_abc {
-        out.push(module_offense(m));
+        out.push(module_offense(m, limits.module));
     }
-    out.extend(r.abc.iter().map(abc_offense));
+    out.extend(r.abc.iter().map(|o| abc_offense(o, limits.method)));
     out.extend(r.never_used.iter().map(never_used_offense));
     out.extend(r.used_once.iter().map(used_once_offense));
     out
 }
 
-pub(crate) fn offenses_json(r: &FileResult) -> String {
-    serde_json::to_string(&to_offenses(r)).unwrap_or_else(|_| "[]".into())
+pub(crate) fn offenses_json(r: &FileResult, limits: Limits) -> String {
+    serde_json::to_string(&to_offenses(r, limits)).unwrap_or_else(|_| "[]".into())
 }
 
 #[cfg(test)]
@@ -113,7 +113,14 @@ mod tests {
             module_score: 0.0,
             units: Vec::new(),
         };
-        let text = offenses_json(&r);
+        let text = offenses_json(
+            &r,
+            Limits {
+                method: 17.0,
+                module: crate::modulesize::MAX_ABC,
+                increased: true,
+            },
+        );
         assert!(text.contains("\"code\":\"NeverUsed\""));
         assert!(
             text.find("\"line\"").unwrap() < text.find("\"column\"").unwrap(),

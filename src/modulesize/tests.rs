@@ -152,11 +152,24 @@ fn risen_module_message_names_the_head_score() {
         prior: Some(121.0),
     };
     assert_eq!(
-        finding_message(&hit, Some(120.0)),
+        finding_message(&hit, 120.0, true),
         "Assignment Branch Condition size for module rose from 121 to 130 -- back to 121 or below. [<130, 0, 0> 130/120]"
     );
     assert_eq!(
-        finding_message(&hit, None),
+        finding_message(&hit, 120.0, false),
         "Assignment Branch Condition size for module rose from 121 to 130 -- back to 121 or below. [<130, 0, 0> 130]"
+    );
+}
+
+#[test]
+fn risen_module_under_the_ceiling_targets_the_ceiling() {
+    let hit = ModuleAbc {
+        score: 130.0,
+        vector: "<130, 0, 0>".into(),
+        prior: Some(100.0),
+    };
+    assert_eq!(
+        finding_message(&hit, 120.0, true),
+        "Assignment Branch Condition size for module rose from 100 to 130 -- back to 120 or below. [<130, 0, 0> 130/120]"
     );
 }

@@ -99,8 +99,10 @@ impl ScanRun<'_> {
             prepared.cache.as_ref(),
         );
         match self.format {
-            "json" => crate::output::print_json(&results.len(), &results, start.elapsed()),
-            "jsonl" => crate::output::print_jsonl(&results),
+            "json" => {
+                crate::output::print_json(&results.len(), &results, self.limits, start.elapsed())
+            }
+            "jsonl" => crate::output::print_jsonl(&results, self.limits),
             _ => crate::output::print_text_sorted(&results, self.limits, start.elapsed()),
         }
         exit_code(&results)
@@ -130,7 +132,7 @@ impl ScanRun<'_> {
         let sink = Mutex::new((JsonStream::begin(), RunStats::default()));
         self.for_each_file(prepared, |r| {
             let mut sink = sink.lock().unwrap();
-            sink.0.write_file(r);
+            sink.0.write_file(r, self.limits);
             sink.1.add(r);
         });
         let (stream, stats) = sink.into_inner().unwrap();
@@ -142,7 +144,7 @@ impl ScanRun<'_> {
         let sink = Mutex::new(RunStats::default());
         self.for_each_file(prepared, |r| {
             let mut sink = sink.lock().unwrap();
-            crate::output::print_file_jsonl(r);
+            crate::output::print_file_jsonl(r, self.limits);
             sink.add(r);
         });
         exit_from_stats(&sink.into_inner().unwrap())

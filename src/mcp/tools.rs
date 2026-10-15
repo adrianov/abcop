@@ -49,12 +49,15 @@ fn inspect_inline(state: &State, path: Option<&str>, code: &str) -> String {
     {
         return "[]".into();
     }
-    offense::offenses_json(&pipeline::analyze_src(
-        Path::new(path.unwrap_or("example.rb")),
-        code.as_bytes(),
-        None,
+    offense::offenses_json(
+        &pipeline::analyze_src(
+            Path::new(path.unwrap_or("example.rb")),
+            code.as_bytes(),
+            None,
+            state.limits,
+        ),
         state.limits,
-    ))
+    )
 }
 
 fn inspect_paths(state: &State, targets: Vec<String>) -> Result<String, String> {
@@ -70,10 +73,11 @@ fn inspect_paths(state: &State, targets: Vec<String>) -> Result<String, String> 
                 )
             })
             .collect::<Vec<_>>(),
+        state.limits,
     ))
 }
 
-fn pack_offenses(targets: &[PathBuf], all: &[(String, FileResult)]) -> String {
+fn pack_offenses(targets: &[PathBuf], all: &[(String, FileResult)], limits: Limits) -> String {
     let offense_count: usize = all.iter().map(|(_, r)| finding_count(r)).sum();
     let files: Vec<Value> = all
         .iter()
@@ -81,7 +85,7 @@ fn pack_offenses(targets: &[PathBuf], all: &[(String, FileResult)]) -> String {
         .map(|(path, r)| {
             json!({
                 "path": path,
-                "offenses": offense::to_offenses(r)
+                "offenses": offense::to_offenses(r, limits)
             })
         })
         .collect();

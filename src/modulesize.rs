@@ -95,21 +95,15 @@ pub(crate) fn measure(
     )
 }
 
-/// Lead sentence of a ModuleAbcSize finding. `ceiling` adds the `/max`
-/// budget used by text output; JSON and MCP omit it.
-pub(crate) fn finding_message(m: &ModuleAbc, ceiling: Option<f64>) -> String {
-    let lead = match m.prior {
-        Some(was) => format!(
-            "rose from {} to {} -- back to {} or below",
-            abc::g4(was),
-            abc::g4(m.score),
-            abc::g4(was)
-        ),
-        None => "is too high".to_string(),
-    };
-    let numbers = match ceiling {
-        Some(max) => format!("{} {}/{}", m.vector, abc::g4(m.score), abc::g4(max)),
-        None => format!("{} {}", m.vector, abc::g4(m.score)),
+/// Lead sentence of a ModuleAbcSize finding. `show_budget` adds the `/max`
+/// budget used by text output; JSON and MCP omit it. The return target
+/// is [`abc::rise_clause`].
+pub(crate) fn finding_message(m: &ModuleAbc, ceiling: f64, show_budget: bool) -> String {
+    let lead = abc::rise_clause(m.prior, m.score, ceiling);
+    let numbers = if show_budget {
+        format!("{} {}/{}", m.vector, abc::g4(m.score), abc::g4(ceiling))
+    } else {
+        format!("{} {}", m.vector, abc::g4(m.score))
     };
     let suffix = if m.prior.is_some() {
         ""
