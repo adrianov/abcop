@@ -1,11 +1,13 @@
 //! RuboCop-compatible AbcSize calculator (default config):
-//! sqrt(A²+B²+C²) over the body of every `def`/`defs` and
-//! `define_method(:sym){}` block, post-order walk, with the unconditional
-//! repeated-safe-navigation discount.
+//! sqrt(A²+B²+C²) over every `def`/`defs`, `define_method(:sym){}`
+//! block, and any other block that is not already inside a method.
+//! Post-order walk, with the unconditional repeated-safe-navigation
+//! discount. Iteration blocks roll into the enclosing method or block.
 //!
 //! Layout: [`calc`] owns the `Calc` accumulator and the unit walk,
-//! [`count`] holds the per-node counters it dispatches to, [`helpers`]
-//! the shared syntax predicates.
+//! [`blocks`] decides which blocks are units, [`count`] holds the
+//! per-node counters, [`helpers`] the shared syntax predicates.
+mod blocks;
 mod calc;
 mod count;
 mod flow;
@@ -277,5 +279,74 @@ mod tests {
         // emits unary + operand (integer/float/rational/complex).
         let s = scores("def f(x)\n  -1\n  +2.5\n  -1r\n  -1i\n  -x\n  !true\nend\n");
         assert_eq!(s[0].vector, "<0, 2, 0>"); // -x and !true only
+    }
+
+    #[test]
+    fn block_outside_method_is_a_unit_and_method_vector_stays() {
+        let s = scores(
+            "def m(u)\n  u.transaction do |x|\n    x.commit\n  end\nend\nrun do\n  ready\nend\n",
+        );
+        let m = s.iter().find(|o| o.name == "m").unwrap();
+        assert_eq!(m.vector, "<1, 2, 0>");
+        let run = s.iter().find(|o| o.name == "run").unwrap();
+        assert_eq!(run.vector, "<0, 1, 0>");
+    }
+
+    #[test]
+    fn iterating_block_rolls_into_outer_block_but_toplevel_each_is_a_unit() {
+        let names: Vec<_> = scores(
+            "match do\n  list.each do |item|\n    item.values.map { |v| v * 2 }\n  end\nend\n",
+        )
+        .iter()
+        .map(|o| o.name.clone())
+        .collect::<Vec<_>>();
+        assert_eq!(names, ["match"]);
+
+        let top = scores("list.each do |item|\n  item.save\nend\n");
+        assert_eq!(top.len(), 1);
+        assert_eq!(top[0].name, "each");
+        assert_eq!(top[0].vector, "<0, 1, 0>");
+    }
+
+    #[test]
+    fn define_method_keeps_inner_block_and_class_eval_skips_nested_def() {
+        let defined = scores("define_method(:dyn) do |x|\n  tap do\n    y = 1\n  end\n  x\nend\n");
+        assert_eq!(defined.len(), 1);
+        assert_eq!(defined[0].name, "dyn");
+        assert_eq!(defined[0].vector, "<1, 1, 0>");
+
+        let eval = scores("class_eval do\n  def inner\n    total = 1\n    total\n  end\nend\n");
+        let inner = eval.iter().find(|o| o.name == "inner").unwrap();
+        assert_eq!(inner.vector, "<1, 0, 0>");
+        let host = eval.iter().find(|o| o.name == "class_eval").unwrap();
+        assert_eq!(host.vector, "<0, 0, 0>");
+    }
+
+    #[test]
+    fn assigned_lambda_is_a_unit_and_lambda_inside_method_is_not() {
+        let names: Vec<_> =
+            scores("HANDLER = ->(x) { x ? 1 : 0 }\ndef m\n  y = ->(z) { z + 1 }\n  y\nend\n")
+                .iter()
+                .map(|o| o.name.clone())
+                .collect::<Vec<_>>();
+        assert_eq!(names, ["HANDLER", "m"]);
+    }
+
+    #[test]
+    fn matcher_blocks_score_on_their_own() {
+        assert_eq!(
+            scores(
+                "module TelemetryMetrics\n  extend self\n  def metric_points(name)\n    EXPORTER.pull\n    EXPORTER.metric_snapshots.select { it.name == name }.flat_map(&:data_points)\n  end\nend\nRSpec::Matchers.define :have_recorded do |value = nil, **attributes|\n  match do |subject|\n    args = recorded\n    expected = TelemetryMetrics.normalize_attributes(attributes)\n    if args.last.is_a?(Hash)\n      expected = TelemetryMetrics.normalize_attributes(args.last).merge(expected)\n      args = args[0...-1]\n    end\n    @expected = args.empty? ? [expected] : [args.first, expected]\n    @points = subject.is_a?(Array) ? subject : TelemetryMetrics.metric_points(TelemetryMetrics.instrument_name(subject))\n    matching = @points.select { TelemetryMetrics.normalize_attributes(it.attributes) == expected }\n    matching.any? && (args.empty? || matching.sum { TelemetryMetrics.point_value(it) } == args.first)\n  end\n  failure_message do |subject|\n    recorded_name(subject)\n  end\nend\n",
+            )
+            .into_iter()
+            .map(|o| (o.name, o.vector))
+            .collect::<Vec<_>>(),
+            [
+                ("metric_points".into(), "<0, 6, 3>".into()),
+                ("have_recorded".into(), "<0, 2, 0>".into()),
+                ("match".into(), "<7, 23, 9>".into()),
+                ("failure_message".into(), "<0, 1, 0>".into()),
+            ]
+        );
     }
 }

@@ -1,10 +1,12 @@
 //! The `Calc` accumulator, its post-order walk, and the scoring loop
-//! that turns each `def`/`defs`/`define_method` unit into an [`AbcOffense`].
+//! that turns each `def`/`defs`, `define_method`, and free-standing
+//! block into an [`AbcOffense`].
 
 use std::collections::{HashMap, HashSet};
 
 use tree_sitter::Node;
 
+use super::blocks::{block_unit_name, define_method_block_name};
 use super::{AbcOffense, offense_at};
 use crate::model::FileModel;
 
@@ -16,6 +18,10 @@ pub(crate) struct Calc<'f> {
     pub(crate) a: u32,
     pub(crate) b: u32,
     pub(crate) c: u32,
+    /// Block units skip nested methods and nested block units so a
+    /// module sum counts each body once. Methods and `define_method`
+    /// keep the RuboCop walk, which still includes nested defs.
+    skip_nested: bool,
 }
 
 impl<'f> Calc<'f> {
@@ -39,6 +45,9 @@ impl<'f> Calc<'f> {
     ];
 
     fn walk(&mut self, n: Node) {
+        if self.skip_nested && hides_nested(self.fm, n) {
+            return;
+        }
         let children: Vec<_> = n.children(&mut n.walk()).collect();
         for ch in children {
             self.walk(ch);
@@ -85,8 +94,9 @@ pub(crate) fn score_unit(ctx: &ScoreCtx, fm: &FileModel, unit: Node, name: &str)
         a: 0,
         b: 0,
         c: 0,
+        skip_nested: skips_nested_units(fm, unit),
     };
-    if let Some(body) = unit.child_by_field_name("body") {
+    if let Some(body) = scored_body(unit) {
         calc.walk(body);
     }
     offense_at(unit, name, calc.a, calc.b, calc.c)
@@ -97,8 +107,7 @@ pub(super) fn visit_units(fm: &FileModel, n: Node, f: &mut impl FnMut(Node, &str
     if is_fn && let Some(name_node) = n.child_by_field_name("name") {
         f(n, fm.text(name_node));
     }
-    let is_block = n.kind() == "block" || n.kind() == "do_block";
-    if is_block && let Some(name) = define_method_block_name(fm, n) {
+    if let Some(name) = block_unit_name(fm, n) {
         f(n, &name);
     }
     let mut cursor = n.walk();
@@ -107,25 +116,24 @@ pub(super) fn visit_units(fm: &FileModel, n: Node, f: &mut impl FnMut(Node, &str
     }
 }
 
-fn define_method_argument(fm: &FileModel, call: Node) -> Option<String> {
-    let args = call.child_by_field_name("arguments")?;
-    // Prefer named children: `child(0)` is the anonymous `(` of `argument_list`.
-
-    let name = fm
-        .text(args.named_child(0)?)
-        .trim_start_matches(':')
-        .trim_matches(|c| c == '\'' || c == '"');
-    (!name.is_empty()).then(|| name.to_string())
+/// A lambda scores like a method: its parameter list stays outside the body.
+fn scored_body(unit: Node) -> Option<Node> {
+    let body = unit.child_by_field_name("body")?;
+    if unit.kind() == "lambda" {
+        return body.child_by_field_name("body").or(Some(body));
+    }
+    Some(body)
 }
 
-fn define_method_block_name(fm: &FileModel, block: Node) -> Option<String> {
-    let call = block.parent()?;
-    if call.kind() != "call" {
-        return None;
+fn skips_nested_units(fm: &FileModel, unit: Node) -> bool {
+    matches!(unit.kind(), "block" | "do_block" | "lambda")
+        && define_method_block_name(fm, unit).is_none()
+}
+
+fn hides_nested(fm: &FileModel, n: Node) -> bool {
+    match n.kind() {
+        "method" | "singleton_method" => true,
+        "block" | "do_block" | "lambda" => block_unit_name(fm, n).is_some(),
+        _ => false,
     }
-    let m = call.child_by_field_name("method")?;
-    if fm.text(m) != "define_method" || call.child_by_field_name("receiver").is_some() {
-        return None;
-    }
-    define_method_argument(fm, call)
 }
