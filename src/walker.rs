@@ -40,7 +40,8 @@ pub(crate) fn collect_files_with(
 
 /// Split CLI targets: existing files are scanned directly (depth 0),
 /// everything else that exists becomes a walked root; missing paths drop.
-/// Files matching the user config's ignore list are dropped even when named.
+/// Non-code files and files matching the user config's ignore list are
+/// dropped even when named.
 fn classify_targets(
     paths: &[String],
     excludes: &Excludes,
@@ -50,7 +51,7 @@ fn classify_targets(
     for raw in paths {
         let p = std::path::Path::new(raw);
         if p.is_file() {
-            if !excludes.skips(p) {
+            if is_code_path(p) && !excludes.skips(p) {
                 explicit.push(Found {
                     path: p.to_path_buf(),
                     depth: 0,
