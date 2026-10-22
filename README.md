@@ -175,6 +175,8 @@ Default walks prune test/fixture trees, vendored/build output
 (`vendor/`, `node_modules/`, `target/`, …), `db/migrate/`, route tables
 (`config/routes.rb`, `config/routes/*.rb`), and generated names
 (`*.min.js`, `*_pb.go`, …). Name a path explicitly to scan it anyway.
+Rails schema dumps (`db/schema.rb`, `db/*_schema.rb`, `db/schema_*.rb`)
+are never scanned, even when named.
 Third-party, route-table, and fixture paths are never scoped review
 surface — a diff through `vendor/` or `tests/fixtures/` does not make
 that material owned code.

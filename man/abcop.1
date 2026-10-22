@@ -44,6 +44,9 @@ A bare invocation
 prefers uncommitted work against HEAD when the tree is dirty, covering
 the branch's changes against its base otherwise.
 A path named explicitly on the command line is walked in full regardless.
+Rails schema dumps
+.RB ( db/schema.rb, " db/*_schema.rb, " db/schema_*.rb )
+are never scanned, even when named.
 .SH DESCRIPTION
 .B abcop
 is a static\-analysis utility in the spirit of
@@ -140,8 +143,7 @@ including a legacy module already over the ceiling. A file missing from
 HEAD is held to the ceiling. The message asks to return to the previous
 score when that score was already over the ceiling, and to the ceiling
 otherwise.
-Test suites and test directories, lockfiles, schema dumps and
-documentation trees are exempt on full scans.
+Test suites and test directories are exempt on full scans.
 .B \-\-full
 and
 .B \-\-everything
