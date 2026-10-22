@@ -1,9 +1,8 @@
 //! Metrics/ModuleAbcSize: a module's Fitzpatrick total of its function vectors.
 //! New modules must stay under [`MAX_ABC`]. An existing module may stay over
 //! that ceiling when its score does not rise against `HEAD`.
-//! Classification mirrors refactor_gpt quality standards: spec/test trees,
-//! test-file suffixes, lockfiles, docs and schema dumps are exempt on a
-//! whole-tree scan.
+//! Classification mirrors refactor_gpt quality standards: spec/test trees
+//! and test-file suffixes are exempt on a whole-tree scan.
 
 mod classify;
 #[cfg(test)]
@@ -70,12 +69,6 @@ fn is_test_basename(base: &str) -> bool {
         || base.ends_with(".test.")
 }
 
-pub fn is_production(path: &str) -> bool {
-    let p = path.to_ascii_lowercase();
-    let technical = p.ends_with("schema.rb") || p.ends_with(".lock") || p.contains("schema.rb");
-    !is_test_path(path) && !technical
-}
-
 /// Whole-module magnitude, then a hit when it exceeds `max`.
 /// Rust `#[cfg(test)]` tails are omitted (same exemption the old line budget used).
 pub(crate) fn measure(
@@ -115,7 +108,7 @@ pub(crate) fn finding_message(m: &ModuleAbc, ceiling: f64, show_budget: bool) ->
 
 /// Drop non-production ModuleAbcSize hits on full (unscoped) scans.
 pub(crate) fn drop_non_production(path: &str, module_abc: &mut Option<ModuleAbc>) {
-    if module_abc.is_some() && !is_production(path) {
+    if module_abc.is_some() && is_test_path(path) {
         *module_abc = None;
     }
 }
