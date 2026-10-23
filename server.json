@@ -8,13 +8,13 @@
     "url": "https://github.com/adrianov/abcop",
     "source": "github"
   },
-  "version": "0.22.0",
+  "version": "0.23.0",
   "packages": [
     {
       "registryType": "cargo",
       "registryBaseUrl": "https://crates.io",
       "identifier": "abcop",
-      "version": "0.22.0",
+      "version": "0.23.0",
       "transport": {
         "type": "stdio"
       },
