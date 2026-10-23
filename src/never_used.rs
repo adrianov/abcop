@@ -159,6 +159,15 @@ mod tests {
     }
 
     #[test]
+    fn stabby_lambda_bodies_are_walked() {
+        let f = flags(
+            "def k\n  by_id = items.index_by(&:id)\n  f(m: ->(id) { by_id[id] }, n: -> do\n    dead = 1\n  end)\nend\n",
+        );
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert_eq!(f[0].name, "dead");
+    }
+
+    #[test]
     fn read_variable_not_flagged() {
         let f = flags("def k\n  x = 1\n  p x\nend\n");
         assert!(f.is_empty());

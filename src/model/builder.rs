@@ -146,8 +146,12 @@ pub(super) fn declared_name(child: Node, src: &[u8]) -> Option<String> {
     }
 }
 
-/// Body of a block-ish node regardless of brace/do form.
+/// Body of a block-ish node regardless of brace/do form. A stabby lambda
+/// wraps its body in a `block` / `do_block` child.
 pub(super) fn body_of(n: Node) -> Option<Node> {
-    n.children(&mut n.walk())
-        .find(|c| c.kind() == "body_statement" || c.kind() == "block_body")
+    n.children(&mut n.walk()).find_map(|c| match c.kind() {
+        "body_statement" | "block_body" => Some(c),
+        "block" | "do_block" if n.kind() == "lambda" => body_of(c),
+        _ => None,
+    })
 }
